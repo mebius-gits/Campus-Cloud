@@ -7,6 +7,7 @@ import httpx
 import websockets
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.api.deps import VmInfoDep
 from app.core.config import settings
 from app.core.proxmox import get_proxmox_api
 
@@ -14,12 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 async def vnc_proxy(websocket: WebSocket, vmid: int):
+    """WebSocket proxy for VM VNC console access."""
     await websocket.accept()
     logger.info(f"VNC proxy connection request for VM {vmid}")
 
     pve_websocket = None
 
     try:
+        # Get session ticket using password authentication
         async with httpx.AsyncClient(verify=settings.PROXMOX_VERIFY_SSL) as client:
             auth_response = await client.post(
                 f"https://{settings.PROXMOX_HOST}:8006/api2/json/access/ticket",
@@ -38,9 +41,11 @@ async def vnc_proxy(websocket: WebSocket, vmid: int):
 
             auth_data = auth_response.json()["data"]
             pve_auth_cookie = auth_data["ticket"]
+            logger.info("Retrieved session ticket for VNC WebSocket authentication")
 
         proxmox = get_proxmox_api()
 
+        # Find VM in cluster resources
         vm_info = None
         for vm in proxmox.cluster.resources.get(type="vm"):
             if vm["vmid"] == vmid:
@@ -57,6 +62,7 @@ async def vnc_proxy(websocket: WebSocket, vmid: int):
             f"VM {vmid} found on node {node}, status: {vm_info.get('status', 'unknown')}"
         )
 
+        # Get VNC proxy ticket
         console_data = proxmox.nodes(node).qemu(vmid).vncproxy.post(websocket=1)
         vnc_port = console_data["port"]
         vnc_ticket = console_data["ticket"]
@@ -64,6 +70,7 @@ async def vnc_proxy(websocket: WebSocket, vmid: int):
         encoded_vnc_ticket = quote(vnc_ticket, safe="")
         encoded_auth_cookie = quote(pve_auth_cookie, safe="")
 
+        # WebSocket URL for VNC
         pve_ws_url = (
             f"wss://{settings.PROXMOX_HOST}:8006"
             f"/api2/json/nodes/{node}/qemu/{vmid}/vncwebsocket"
@@ -76,12 +83,13 @@ async def vnc_proxy(websocket: WebSocket, vmid: int):
             ssl_context.verify_mode = ssl.CERT_NONE
 
         try:
+            # Use Cookie with session ticket
             pve_websocket = await websockets.connect(
                 pve_ws_url,
                 ssl=ssl_context,
                 additional_headers={"Cookie": f"PVEAuthCookie={encoded_auth_cookie}"},
             )
-            logger.info("Successfully connected to Proxmox WebSocket")
+            logger.info("Successfully connected to Proxmox VNC WebSocket")
         except websockets.exceptions.InvalidStatus as e:
             logger.error(
                 f"Proxmox WebSocket connection rejected: HTTP {e.response.status_code}"
@@ -142,8 +150,7 @@ async def vnc_proxy(websocket: WebSocket, vmid: int):
 
         # Wait for either task to complete, then cancel the other
         _, pending = await asyncio.wait(
-            {forward_from_task, forward_to_task},
-            return_when=asyncio.FIRST_COMPLETED
+            {forward_from_task, forward_to_task}, return_when=asyncio.FIRST_COMPLETED
         )
 
         # Cancel any pending tasks

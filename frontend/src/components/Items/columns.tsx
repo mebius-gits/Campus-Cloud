@@ -1,16 +1,8 @@
 import type { ColumnDef } from "@tanstack/react-table"
-import {
-  Activity,
-  Clock,
-  Cpu,
-  HardDrive,
-  MonitorPlay,
-  Server,
-  Terminal,
-} from "lucide-react"
+import { Activity, Clock, Cpu, HardDrive, Server } from "lucide-react"
 
 import type { VMSchema } from "@/client"
-import { Button } from "@/components/ui/button"
+import { VMActions } from "@/components/Items/VMActions"
 import { cn } from "@/lib/utils"
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -140,25 +132,15 @@ export const createColumns = (
   {
     id: "actions",
     header: "Actions",
-    cell: ({ row }) => {
-      const isRunning = row.original.status === "running"
-      const isLXC = row.original.type === "lxc"
-      return (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!isRunning}
-          onClick={() => onOpenConsole(row.original.vmid, row.original.name, row.original.type)}
-        >
-          {isLXC ? (
-            <Terminal className="h-4 w-4 mr-1" />
-          ) : (
-            <MonitorPlay className="h-4 w-4 mr-1" />
-          )}
-          {isLXC ? "Terminal" : "Console"}
-        </Button>
-      )
-    },
+    cell: ({ row }) => (
+      <VMActions
+        vmid={row.original.vmid}
+        name={row.original.name}
+        type={row.original.type}
+        status={row.original.status}
+        onOpenConsole={onOpenConsole}
+      />
+    ),
   },
 ]
 

@@ -153,6 +153,13 @@ export type VMSchema = {
     mem?: (number | null);
     maxmem?: (number | null);
     uptime?: (number | null);
+    netin?: (number | null);
+    diskread?: (number | null);
+    diskwrite?: (number | null);
+    disk?: (number | null);
+    template?: (number | null);
+    memhost?: (number | null);
+    maxdisk?: (number | null);
 };
 
 /**
@@ -191,37 +198,61 @@ export type LoginRecoverPasswordHtmlContentData = {
 
 export type LoginRecoverPasswordHtmlContentResponse = (string);
 
-export type MachineListNodesResponse = (Array<NodeSchema>);
-
-export type MachineListVmsData = {
-    node?: (string | null);
-};
-
-export type MachineListVmsResponse = (Array<VMSchema>);
-
-export type MachineGetVmInfoData = {
+export type LxcGetLxcTerminalData = {
     vmid: number;
 };
 
-export type MachineGetVmInfoResponse = (VMSchema);
-
-export type MachineGetVmConsoleData = {
-    vmid: number;
-};
-
-export type MachineGetVmConsoleResponse = (VNCInfoSchema);
-
-export type MachineGetLxcTerminalData = {
-    vmid: number;
-};
-
-export type MachineGetLxcTerminalResponse = (TerminalInfoSchema);
+export type LxcGetLxcTerminalResponse = (TerminalInfoSchema);
 
 export type PrivateCreateUserData = {
     requestBody: PrivateUserCreate;
 };
 
 export type PrivateCreateUserResponse = (UserPublic);
+
+export type ResourcesListNodesResponse = (Array<NodeSchema>);
+
+export type ResourcesListResourcesData = {
+    node?: (string | null);
+};
+
+export type ResourcesListResourcesResponse = (Array<VMSchema>);
+
+export type ResourcesGetResourceData = {
+    vmid: number;
+};
+
+export type ResourcesGetResourceResponse = (VMSchema);
+
+export type ResourcesStartResourceData = {
+    vmid: number;
+};
+
+export type ResourcesStartResourceResponse = (unknown);
+
+export type ResourcesStopResourceData = {
+    vmid: number;
+};
+
+export type ResourcesStopResourceResponse = (unknown);
+
+export type ResourcesRebootResourceData = {
+    vmid: number;
+};
+
+export type ResourcesRebootResourceResponse = (unknown);
+
+export type ResourcesShutdownResourceData = {
+    vmid: number;
+};
+
+export type ResourcesShutdownResourceResponse = (unknown);
+
+export type ResourcesResetResourceData = {
+    vmid: number;
+};
+
+export type ResourcesResetResourceResponse = (unknown);
 
 export type UsersReadUsersData = {
     limit?: number;
@@ -284,3 +315,9 @@ export type UtilsTestEmailData = {
 export type UtilsTestEmailResponse = (Message);
 
 export type UtilsHealthCheckResponse = (boolean);
+
+export type VmGetVmConsoleData = {
+    vmid: number;
+};
+
+export type VmGetVmConsoleResponse = (VNCInfoSchema);

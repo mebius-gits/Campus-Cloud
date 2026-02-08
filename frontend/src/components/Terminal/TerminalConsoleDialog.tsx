@@ -1,3 +1,4 @@
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import {
   Loader2,
   Maximize,
@@ -8,9 +9,8 @@ import {
   X,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 import useXTermDisplay from "./XTermDisplay"
@@ -64,7 +64,6 @@ export function TerminalConsoleDialog({
   const handleClose = () => {
     handleDisconnect()
     onOpenChange(false)
-    setTerminalTicket(null)
   }
 
   const toggleFullscreen = () => {
@@ -87,6 +86,9 @@ export function TerminalConsoleDialog({
           "[&>button]:hidden",
         )}
       >
+        <VisuallyHidden>
+          <DialogTitle>{vmName || `LXC ${vmid}`} Terminal</DialogTitle>
+        </VisuallyHidden>
         <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-zinc-700 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/20">
@@ -200,12 +202,7 @@ export function TerminalConsoleDialog({
             </div>
           )}
 
-          {vmid && open && (
-            <div
-              ref={terminalRef}
-              className="w-full h-full"
-            />
-          )}
+          {vmid && open && <div ref={terminalRef} className="w-full h-full" />}
         </div>
 
         <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-800/50 border-t border-zinc-700/50 shrink-0">

@@ -43,7 +43,7 @@ export function VNCConsoleDialog({
 
       const token = localStorage.getItem("access_token")
       const apiBase = import.meta.env.VITE_API_URL || ""
-      fetch(`${apiBase}/api/v1/machine/${vmid}/console`, {
+      fetch(`${apiBase}/api/v1/vm/${vmid}/console`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },

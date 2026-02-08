@@ -92,7 +92,11 @@ export default function useNoVNCDisplay({
 
               rfb = new RFB(container, ws, {
                 shared: true,
-                credentials: { password: data.ticket },
+                credentials: {
+                  username: "",
+                  password: data.ticket,
+                  target: "",
+                },
               })
 
               rfb.scaleViewport = scaleViewport

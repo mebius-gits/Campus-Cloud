@@ -15,7 +15,9 @@ export default function useXTermDisplay({
   vmid,
   onDisconnect,
 }: XTermDisplayProps) {
-  const [terminalElement, setTerminalElement] = useState<HTMLDivElement | null>(null)
+  const [terminalElement, setTerminalElement] = useState<HTMLDivElement | null>(
+    null,
+  )
   const termRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -146,8 +148,12 @@ export default function useXTermDisplay({
               const uint8Array = new Uint8Array(event.data)
 
               // Check for "OK" in binary format (ASCII 79, 75)
-              if (!isTerminalReady && uint8Array.length >= 2 &&
-                  uint8Array[0] === 79 && uint8Array[1] === 75) {
+              if (
+                !isTerminalReady &&
+                uint8Array.length >= 2 &&
+                uint8Array[0] === 79 &&
+                uint8Array[1] === 75
+              ) {
                 isTerminalReady = true
                 setStatus("connected")
                 setError("")

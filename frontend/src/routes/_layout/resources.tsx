@@ -2,22 +2,22 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { Monitor, RefreshCw } from "lucide-react"
 import { Suspense, useMemo, useState } from "react"
-import { MachineService } from "@/client"
+import { ResourcesService } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
 import { createColumns } from "@/components/Items/columns"
 import PendingItems from "@/components/Pending/PendingItems"
+import { TerminalConsoleDialog } from "@/components/Terminal"
 import { Button } from "@/components/ui/button"
 import { VNCConsoleDialog } from "@/components/VNC"
-import { TerminalConsoleDialog } from "@/components/Terminal"
 
 function getVMsQueryOptions() {
   return {
-    queryFn: () => MachineService.listVms({}),
-    queryKey: ["vms"],
+    queryFn: () => ResourcesService.listResources({}),
+    queryKey: ["resources"],
   }
 }
 
-export const Route = createFileRoute("/_layout/items")({
+export const Route = createFileRoute("/_layout/resources")({
   component: VirtualMachines,
   head: () => ({
     meta: [
@@ -33,11 +33,11 @@ function VMsTableContent({
 }: {
   onOpenConsole: (vmid: number, name: string, type: string) => void
 }) {
-  const { data: vms } = useSuspenseQuery(getVMsQueryOptions())
+  const { data: resources } = useSuspenseQuery(getVMsQueryOptions())
 
   const columns = useMemo(() => createColumns(onOpenConsole), [onOpenConsole])
 
-  if (vms.length === 0) {
+  if (resources.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center text-center py-12">
         <div className="rounded-full bg-muted p-4 mb-4">
@@ -51,7 +51,7 @@ function VMsTableContent({
     )
   }
 
-  return <DataTable columns={columns} data={vms} />
+  return <DataTable columns={columns} data={resources} />
 }
 
 function VMsTable({
@@ -70,7 +70,7 @@ function RefreshButton() {
   const queryClient = useQueryClient()
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["vms"] })
+    queryClient.invalidateQueries({ queryKey: ["resources"] })
   }
 
   return (
@@ -107,7 +107,8 @@ function VirtualMachines() {
             Virtual Machines & Containers
           </h1>
           <p className="text-muted-foreground">
-            View and manage your virtual machines and LXC containers from Proxmox
+            View and manage your virtual machines and LXC containers from
+            Proxmox
           </p>
         </div>
         <RefreshButton />

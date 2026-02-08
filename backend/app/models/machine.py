@@ -30,6 +30,13 @@ class VMSchema(SQLModel):
     mem: int | None = None
     maxmem: int | None = None
     uptime: int | None = None
+    netin: int | None = None
+    diskread: int | None = None
+    diskwrite: int | None = None
+    disk: int | None = None
+    template: int | None = None
+    memhost: int | None = None
+    maxdisk: int | None = None
 
 
 class VNCInfoSchema(SQLModel):

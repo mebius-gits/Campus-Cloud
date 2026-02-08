@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, MachineListNodesResponse, MachineListVmsData, MachineListVmsResponse, MachineGetVmInfoData, MachineGetVmInfoResponse, MachineGetVmConsoleData, MachineGetVmConsoleResponse, MachineGetLxcTerminalData, MachineGetLxcTerminalResponse, PrivateCreateUserData, PrivateCreateUserResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse } from './types.gen';
+import type { LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, LxcGetLxcTerminalData, LxcGetLxcTerminalResponse, PrivateCreateUserData, PrivateCreateUserResponse, ResourcesListNodesResponse, ResourcesListResourcesData, ResourcesListResourcesResponse, ResourcesGetResourceData, ResourcesGetResourceResponse, ResourcesStartResourceData, ResourcesStartResourceResponse, ResourcesStopResourceData, ResourcesStopResourceResponse, ResourcesRebootResourceData, ResourcesRebootResourceResponse, ResourcesShutdownResourceData, ResourcesShutdownResourceResponse, ResourcesResetResourceData, ResourcesResetResourceResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse, VmGetVmConsoleData, VmGetVmConsoleResponse } from './types.gen';
 
 export class LoginService {
     /**
@@ -102,110 +102,18 @@ export class LoginService {
     }
 }
 
-export class MachineService {
-    /**
-     * List Nodes
-     * @returns NodeSchema Successful Response
-     * @throws ApiError
-     */
-    public static listNodes(): CancelablePromise<MachineListNodesResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/machine/nodes'
-        });
-    }
-    
-    /**
-     * List Vms
-     * @param data The data for the request.
-     * @param data.node
-     * @returns VMSchema Successful Response
-     * @throws ApiError
-     */
-    public static listVms(data: MachineListVmsData = {}): CancelablePromise<MachineListVmsResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/machine/vms',
-            query: {
-                node: data.node
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Vm Info
-     * @param data The data for the request.
-     * @param data.vmid
-     * @returns VMSchema Successful Response
-     * @throws ApiError
-     */
-    public static getVmInfo(data: MachineGetVmInfoData): CancelablePromise<MachineGetVmInfoResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/machine/{vmid}',
-            path: {
-                vmid: data.vmid
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
-    /**
-     * Get Vm Console
-     * Get VNC console connection information for a VM.
-     *
-     * This endpoint returns the WebSocket URL that the frontend should connect to.
-     * The actual VNC connection is proxied through WebSocket at /ws/vnc/{vmid}/
-     *
-     * Args:
-     * vmid: Virtual machine ID
-     *
-     * Returns:
-     * WebSocket URL for connecting to the VM console
-     * @param data The data for the request.
-     * @param data.vmid
-     * @returns VNCInfoSchema Successful Response
-     * @throws ApiError
-     */
-    public static getVmConsole(data: MachineGetVmConsoleData): CancelablePromise<MachineGetVmConsoleResponse> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/v1/machine/{vmid}/console',
-            path: {
-                vmid: data.vmid
-            },
-            errors: {
-                422: 'Validation Error'
-            }
-        });
-    }
-    
+export class LxcService {
     /**
      * Get Lxc Terminal
-     * Get terminal console connection information for an LXC container.
-     *
-     * This endpoint returns the WebSocket URL that the frontend should connect to.
-     * The actual terminal connection is proxied through WebSocket at /ws/terminal/{vmid}/
-     *
-     * Args:
-     * vmid: LXC container ID
-     *
-     * Returns:
-     * WebSocket URL for connecting to the container terminal
      * @param data The data for the request.
      * @param data.vmid
      * @returns TerminalInfoSchema Successful Response
      * @throws ApiError
      */
-    public static getLxcTerminal(data: MachineGetLxcTerminalData): CancelablePromise<MachineGetLxcTerminalResponse> {
+    public static getLxcTerminal(data: LxcGetLxcTerminalData): CancelablePromise<LxcGetLxcTerminalResponse> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/v1/machine/{vmid}/terminal',
+            url: '/api/v1/lxc/{vmid}/terminal',
             path: {
                 vmid: data.vmid
             },
@@ -231,6 +139,160 @@ export class PrivateService {
             url: '/api/v1/private/users/',
             body: data.requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+}
+
+export class ResourcesService {
+    /**
+     * List Nodes
+     * @returns NodeSchema Successful Response
+     * @throws ApiError
+     */
+    public static listNodes(): CancelablePromise<ResourcesListNodesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/resources/nodes'
+        });
+    }
+    
+    /**
+     * List Resources
+     * @param data The data for the request.
+     * @param data.node
+     * @returns VMSchema Successful Response
+     * @throws ApiError
+     */
+    public static listResources(data: ResourcesListResourcesData = {}): CancelablePromise<ResourcesListResourcesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/resources/',
+            query: {
+                node: data.node
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Get Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns VMSchema Successful Response
+     * @throws ApiError
+     */
+    public static getResource(data: ResourcesGetResourceData): CancelablePromise<ResourcesGetResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/resources/{vmid}',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Start Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static startResource(data: ResourcesStartResourceData): CancelablePromise<ResourcesStartResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/resources/{vmid}/start',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Stop Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static stopResource(data: ResourcesStopResourceData): CancelablePromise<ResourcesStopResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/resources/{vmid}/stop',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Reboot Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static rebootResource(data: ResourcesRebootResourceData): CancelablePromise<ResourcesRebootResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/resources/{vmid}/reboot',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Shutdown Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static shutdownResource(data: ResourcesShutdownResourceData): CancelablePromise<ResourcesShutdownResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/resources/{vmid}/shutdown',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
+        });
+    }
+    
+    /**
+     * Reset Resource
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns unknown Successful Response
+     * @throws ApiError
+     */
+    public static resetResource(data: ResourcesResetResourceData): CancelablePromise<ResourcesResetResourceResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/resources/{vmid}/reset',
+            path: {
+                vmid: data.vmid
+            },
             errors: {
                 422: 'Validation Error'
             }
@@ -466,6 +528,28 @@ export class UtilsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/v1/utils/health-check/'
+        });
+    }
+}
+
+export class VmService {
+    /**
+     * Get Vm Console
+     * @param data The data for the request.
+     * @param data.vmid
+     * @returns VNCInfoSchema Successful Response
+     * @throws ApiError
+     */
+    public static getVmConsole(data: VmGetVmConsoleData): CancelablePromise<VmGetVmConsoleResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/vm/{vmid}/console',
+            path: {
+                vmid: data.vmid
+            },
+            errors: {
+                422: 'Validation Error'
+            }
         });
     }
 }

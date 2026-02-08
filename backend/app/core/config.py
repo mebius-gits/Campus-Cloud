@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
 
     PROXMOX_HOST: str = "localhost"
-    PROXMOX_USER: str = "root@pam"
+    PROXMOX_USER: str = ""
     PROXMOX_PASSWORD: str = ""
     PROXMOX_VERIFY_SSL: bool = False
 

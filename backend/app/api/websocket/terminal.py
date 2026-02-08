@@ -21,6 +21,9 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
     pve_websocket = None
 
     try:
+        # Get session ticket using password authentication
+        # NOTE: Proxmox termproxy WebSocket does NOT support API token authentication
+        # We must use password to get a session ticket (PVEAuthCookie)
         async with httpx.AsyncClient(verify=settings.PROXMOX_VERIFY_SSL) as client:
             auth_response = await client.post(
                 f"https://{settings.PROXMOX_HOST}:8006/api2/json/access/ticket",
@@ -39,7 +42,9 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
 
             auth_data = auth_response.json()["data"]
             pve_auth_cookie = auth_data["ticket"]
+            logger.info("Retrieved session ticket for WebSocket authentication")
 
+        # Use API token for REST API calls (more secure for resource queries)
         proxmox = get_proxmox_api()
 
         # Find LXC container in cluster resources
@@ -80,6 +85,7 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
             ssl_context.verify_mode = ssl.CERT_NONE
 
         try:
+            # Use Cookie with session ticket (NOT API token!)
             pve_websocket = await websockets.connect(
                 pve_ws_url,
                 ssl=ssl_context,
@@ -88,7 +94,7 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
             logger.info("Successfully connected to Proxmox WebSocket for terminal")
 
             # Send initial authentication to termproxy
-            # Format: username:ticket\n
+            # Format: username:ticket\n (newline is critical!)
             auth_message = f"{settings.PROXMOX_USER}:{terminal_ticket}\n"
             await pve_websocket.send(auth_message)
             logger.info("Sent authentication to termproxy")
@@ -137,7 +143,9 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
                     except RuntimeError as e:
                         # Handle "Cannot call receive once disconnect message received"
                         if "disconnect" in str(e).lower():
-                            logger.info(f"Frontend WebSocket disconnected for LXC {vmid}")
+                            logger.info(
+                                f"Frontend WebSocket disconnected for LXC {vmid}"
+                            )
                             break
                         raise
             except WebSocketDisconnect:
@@ -153,8 +161,7 @@ async def terminal_proxy(websocket: WebSocket, vmid: int):
 
         # Wait for either task to complete, then cancel the other
         _, pending = await asyncio.wait(
-            {forward_from_task, forward_to_task},
-            return_when=asyncio.FIRST_COMPLETED
+            {forward_from_task, forward_to_task}, return_when=asyncio.FIRST_COMPLETED
         )
 
         # Cancel any pending tasks
