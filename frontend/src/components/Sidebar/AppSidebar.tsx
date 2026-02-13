@@ -29,7 +29,6 @@ const adminItems: Item[] = [
   { icon: Home, title: "Dashboard", path: "/" },
   { icon: ServerCog, title: "My Resources", path: "/my-resources" },
   { icon: Monitor, title: "Resources", path: "/resources" },
-  { icon: FileText, title: "Applications", path: "/applications" },
   { icon: ClipboardCheck, title: "Approvals", path: "/approvals" },
   { icon: Users, title: "Admin", path: "/admin" },
 ]
