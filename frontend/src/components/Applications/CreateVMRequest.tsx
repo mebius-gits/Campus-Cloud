@@ -153,6 +153,7 @@ const CreateVMRequest = () => {
     onSuccess: () => {
       showSuccessToast("申請已提交，等待管理員審核")
       form.reset()
+      setResourceType("lxc")
       setIsOpen(false)
     },
     onError: handleError.bind(showErrorToast),
@@ -166,7 +167,13 @@ const CreateVMRequest = () => {
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      setIsOpen(open)
+      if (!open) {
+        form.reset()
+        setResourceType("lxc")
+      }
+    }}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="mr-2 h-4 w-4" />

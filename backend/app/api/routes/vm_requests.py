@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
+from app.core.security import decrypt_value
 from app.crud import resource as resource_crud
 from app.crud import vm_request as vm_request_crud
 from app.models import (
@@ -174,7 +175,7 @@ def review_vm_request(
         raise HTTPException(status_code=400, detail="Invalid request ID")
 
     db_request = vm_request_crud.get_vm_request_by_id(
-        session=session, request_id=req_uuid
+        session=session, request_id=req_uuid, for_update=True
     )
     if not db_request:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -225,6 +226,9 @@ def _provision_resource(db_request, session) -> int:
     proxmox = get_proxmox_api()
     new_vmid = proxmox.cluster.nextid.get()
 
+    # Decrypt the stored password for Proxmox provisioning
+    plain_password = decrypt_value(db_request.password)
+
     if db_request.resource_type == "lxc":
         config = {
             "vmid": new_vmid,
@@ -234,7 +238,7 @@ def _provision_resource(db_request, session) -> int:
             "memory": db_request.memory,
             "swap": 512,
             "rootfs": f"{settings.PROXMOX_DATA_STORAGE}:{db_request.rootfs_size or 8}",
-            "password": db_request.password,
+            "password": plain_password,
             "net0": "name=eth0,bridge=vmbr0,ip=dhcp,firewall=0",
             "unprivileged": 1,
             "start": 1,
@@ -272,7 +276,7 @@ def _provision_resource(db_request, session) -> int:
             "cores": db_request.cores,
             "memory": db_request.memory,
             "ciuser": db_request.username,
-            "cipassword": db_request.password,
+            "cipassword": plain_password,
             "sshkeys": "",
             "ciupgrade": 0,
         }

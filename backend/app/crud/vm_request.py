@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, func, select
 
+from app.core.security import encrypt_value
 from app.models import VMRequest, VMRequestCreate, VMRequestStatus
 
 
@@ -23,7 +24,7 @@ def create_vm_request(
         hostname=vm_request_in.hostname,
         cores=vm_request_in.cores,
         memory=vm_request_in.memory,
-        password=vm_request_in.password,
+        password=encrypt_value(vm_request_in.password),
         storage=vm_request_in.storage,
         environment_type="自訂規格",
         os_info=vm_request_in.os_info,
@@ -41,7 +42,7 @@ def create_vm_request(
     session.refresh(db_request)
     return db_request
 def get_vm_request_by_id(
-    *, session: Session, request_id: uuid.UUID
+    *, session: Session, request_id: uuid.UUID, for_update: bool = False
 ) -> VMRequest | None:
     """Get a VM request by ID."""
     statement = (
@@ -49,6 +50,8 @@ def get_vm_request_by_id(
         .where(VMRequest.id == request_id)
         .options(selectinload(VMRequest.user))  # type: ignore[arg-type]
     )
+    if for_update:
+        statement = statement.with_for_update()
     return session.exec(statement).first()
 
 

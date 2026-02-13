@@ -1,7 +1,10 @@
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
+from cryptography.fernet import Fernet
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from pwdlib.hashers.bcrypt import BcryptHasher
@@ -14,6 +17,22 @@ password_hash = PasswordHash(
         BcryptHasher(),
     )
 )
+
+
+def _get_fernet() -> Fernet:
+    """Derive a Fernet key from SECRET_KEY."""
+    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def encrypt_value(plain_text: str) -> str:
+    """Encrypt a string value using Fernet symmetric encryption."""
+    return _get_fernet().encrypt(plain_text.encode()).decode()
+
+
+def decrypt_value(encrypted_text: str) -> str:
+    """Decrypt a Fernet-encrypted string value."""
+    return _get_fernet().decrypt(encrypted_text.encode()).decode()
 
 
 ALGORITHM = "HS256"
