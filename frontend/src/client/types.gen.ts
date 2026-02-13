@@ -318,6 +318,8 @@ export type ResourcesListResourcesData = {
 
 export type ResourcesListResourcesResponse = (Array<ResourcePublic>);
 
+export type ResourcesListMyResourcesResponse = (Array<ResourcePublic>);
+
 export type ResourcesGetResourceData = {
     vmid: number;
 };

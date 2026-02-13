@@ -3,7 +3,7 @@
 import type { CancelablePromise } from './core/CancelablePromise';
 import { OpenAPI } from './core/OpenAPI';
 import { request as __request } from './core/request';
-import type { LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, LxcGetLxcTerminalData, LxcGetLxcTerminalResponse, LxcGetTemplatesResponse, LxcCreateLxcData, LxcCreateLxcResponse, PrivateCreateUserData, PrivateCreateUserResponse, ResourcesListNodesResponse, ResourcesListResourcesData, ResourcesListResourcesResponse, ResourcesGetResourceData, ResourcesGetResourceResponse, ResourcesDeleteResourceData, ResourcesDeleteResourceResponse, ResourcesGetResourceConfigData, ResourcesGetResourceConfigResponse, ResourcesStartResourceData, ResourcesStartResourceResponse, ResourcesStopResourceData, ResourcesStopResourceResponse, ResourcesRebootResourceData, ResourcesRebootResourceResponse, ResourcesShutdownResourceData, ResourcesShutdownResourceResponse, ResourcesResetResourceData, ResourcesResetResourceResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse, VmGetVmConsoleData, VmGetVmConsoleResponse, VmCreateVmData, VmCreateVmResponse, VmGetVmTemplatesResponse, VmRequestsCreateData, VmRequestsCreateResponse, VmRequestsListMyData, VmRequestsListMyResponse, VmRequestsListAllData, VmRequestsListAllResponse, VmRequestsGetData, VmRequestsGetResponse, VmRequestsReviewData, VmRequestsReviewResponse } from './types.gen';
+import type { LoginLoginAccessTokenData, LoginLoginAccessTokenResponse, LoginTestTokenResponse, LoginRecoverPasswordData, LoginRecoverPasswordResponse, LoginResetPasswordData, LoginResetPasswordResponse, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentResponse, LxcGetLxcTerminalData, LxcGetLxcTerminalResponse, LxcGetTemplatesResponse, LxcCreateLxcData, LxcCreateLxcResponse, PrivateCreateUserData, PrivateCreateUserResponse, ResourcesListNodesResponse, ResourcesListResourcesData, ResourcesListResourcesResponse, ResourcesListMyResourcesResponse, ResourcesGetResourceData, ResourcesGetResourceResponse, ResourcesDeleteResourceData, ResourcesDeleteResourceResponse, ResourcesGetResourceConfigData, ResourcesGetResourceConfigResponse, ResourcesStartResourceData, ResourcesStartResourceResponse, ResourcesStopResourceData, ResourcesStopResourceResponse, ResourcesRebootResourceData, ResourcesRebootResourceResponse, ResourcesShutdownResourceData, ResourcesShutdownResourceResponse, ResourcesResetResourceData, ResourcesResetResourceResponse, UsersReadUsersData, UsersReadUsersResponse, UsersCreateUserData, UsersCreateUserResponse, UsersReadUserMeResponse, UsersDeleteUserMeResponse, UsersUpdateUserMeData, UsersUpdateUserMeResponse, UsersUpdatePasswordMeData, UsersUpdatePasswordMeResponse, UsersRegisterUserData, UsersRegisterUserResponse, UsersReadUserByIdData, UsersReadUserByIdResponse, UsersUpdateUserData, UsersUpdateUserResponse, UsersDeleteUserData, UsersDeleteUserResponse, UtilsTestEmailData, UtilsTestEmailResponse, UtilsHealthCheckResponse, VmGetVmConsoleData, VmGetVmConsoleResponse, VmCreateVmData, VmCreateVmResponse, VmGetVmTemplatesResponse, VmRequestsCreateData, VmRequestsCreateResponse, VmRequestsListMyData, VmRequestsListMyResponse, VmRequestsListAllData, VmRequestsListAllResponse, VmRequestsGetData, VmRequestsGetResponse, VmRequestsReviewData, VmRequestsReviewResponse } from './types.gen';
 
 export class LoginService {
     /**
@@ -209,6 +209,19 @@ export class ResourcesService {
             errors: {
                 422: 'Validation Error'
             }
+        });
+    }
+
+    /**
+     * List My Resources
+     * List resources owned by the current user (approved VMs/containers).
+     * @returns ResourcePublic Successful Response
+     * @throws ApiError
+     */
+    public static listMyResources(): CancelablePromise<ResourcesListMyResourcesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/resources/my'
         });
     }
     

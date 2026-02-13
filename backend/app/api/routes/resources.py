@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.deps import ResourceInfoDep, SessionDep
+from app.api.deps import CurrentUser, ResourceInfoDep, SessionDep
 from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
 from app.crud import resource as resource_crud
 from app.models import NodeSchema, ResourcePublic, VMSchema
@@ -108,6 +108,67 @@ def list_resources(
         return result
     except Exception as e:
         logger.error(f"Failed to get resources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/my", response_model=list[ResourcePublic])
+def list_my_resources(
+    session: SessionDep,
+    current_user: CurrentUser,
+):
+    """List resources owned by the current user (approved VMs/containers)."""
+    try:
+        # Get user's resource records from DB
+        user_resources = resource_crud.get_resources_by_user(
+            session=session, user_id=current_user.id
+        )
+        if not user_resources:
+            return []
+
+        owned_vmids = {r.vmid: r for r in user_resources}
+
+        proxmox = get_proxmox_api()
+        result = []
+        resources = proxmox.cluster.resources.get(type="vm")
+
+        for resource in resources:
+            if resource.get("template") == 1:
+                continue
+
+            vmid = resource.get("vmid")
+            if vmid not in owned_vmids:
+                continue
+
+            vm_type = resource.get("type")
+            vm_node = resource.get("node")
+            db_resource = owned_vmids[vmid]
+
+            ip_address = _get_vm_ip_address(proxmox, vm_node, vmid, vm_type)
+
+            resource_public = ResourcePublic(
+                vmid=vmid,
+                name=resource.get("name", ""),
+                status=resource.get("status", ""),
+                node=vm_node,
+                type=vm_type,
+                environment_type=db_resource.environment_type,
+                os_info=db_resource.os_info,
+                expiry_date=db_resource.expiry_date,
+                ip_address=ip_address,
+                cpu=resource.get("cpu"),
+                maxcpu=resource.get("maxcpu"),
+                mem=resource.get("mem"),
+                maxmem=resource.get("maxmem"),
+                uptime=resource.get("uptime"),
+            )
+            result.append(resource_public)
+
+        logger.debug(
+            f"Retrieved {len(result)} resources for user {current_user.email}"
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get user resources: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

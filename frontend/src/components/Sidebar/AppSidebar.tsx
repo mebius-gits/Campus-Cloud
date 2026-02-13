@@ -1,4 +1,11 @@
-import { ClipboardCheck, FileText, Home, Monitor, Users } from "lucide-react"
+import {
+  ClipboardCheck,
+  FileText,
+  Home,
+  Monitor,
+  ServerCog,
+  Users,
+} from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"
 import { Logo } from "@/components/Common/Logo"
@@ -14,20 +21,21 @@ import { User } from "./User"
 
 const baseItems: Item[] = [
   { icon: Home, title: "Dashboard", path: "/" },
-  { icon: Monitor, title: "Resources", path: "/resources" },
+  { icon: ServerCog, title: "My Resources", path: "/my-resources" },
   { icon: FileText, title: "Applications", path: "/applications" },
+]
+
+const adminItems: Item[] = [
+  { icon: Home, title: "Dashboard", path: "/" },
+  { icon: Monitor, title: "Resources", path: "/resources" },
+  { icon: ClipboardCheck, title: "Approvals", path: "/approvals" },
+  { icon: Users, title: "Admin", path: "/admin" },
 ]
 
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
 
-  const items = currentUser?.is_superuser
-    ? [
-        ...baseItems,
-        { icon: ClipboardCheck, title: "Approvals", path: "/approvals" },
-        { icon: Users, title: "Admin", path: "/admin" },
-      ]
-    : baseItems
+  const items = currentUser?.is_superuser ? adminItems : baseItems
 
   return (
     <Sidebar collapsible="icon">
