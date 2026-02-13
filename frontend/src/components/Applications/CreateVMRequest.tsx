@@ -62,7 +62,7 @@ const formSchema = z.object({
   password: z
     .string()
     .min(1, { message: "密碼為必填項" })
-    .min(6, { message: "密碼至少需要 6 個字符" }),
+    .min(8, { message: "密碼至少需要 8 個字符" }),
   storage: z.string().default("local-lvm"),
   os_info: z.string().optional(),
   expiry_date: z.string().optional(),

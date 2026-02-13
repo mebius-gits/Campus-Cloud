@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query"
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, redirect } from "@tanstack/react-router"
 import { ClipboardCheck } from "lucide-react"
 import { Suspense, useState } from "react"
@@ -80,6 +80,26 @@ function AdminRequestsTable({
   )
 }
 
+function PendingCountBadge() {
+  const { data } = useQuery({
+    queryFn: () =>
+      VmRequestsService.listAllVmRequests({
+        status: "pending" as VMRequestStatus,
+        limit: 100,
+      }),
+    queryKey: ["vm-requests-admin", "pending-count"],
+  })
+
+  const count = data?.count ?? 0
+  if (count === 0) return null
+
+  return (
+    <Badge variant="outline" className="ml-1.5 text-xs">
+      {count}
+    </Badge>
+  )
+}
+
 function Approvals() {
   const [statusFilter, setStatusFilter] = useState<VMRequestStatus | null>(
     "pending",
@@ -105,9 +125,7 @@ function Approvals() {
         <TabsList>
           <TabsTrigger value="pending">
             待審核
-            <Badge variant="outline" className="ml-1.5 text-xs">
-              !
-            </Badge>
+            <PendingCountBadge />
           </TabsTrigger>
           <TabsTrigger value="approved">已通過</TabsTrigger>
           <TabsTrigger value="rejected">已拒絕</TabsTrigger>

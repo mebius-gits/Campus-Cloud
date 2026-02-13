@@ -10,7 +10,6 @@ from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
 from app.crud import resource as resource_crud
 from app.crud import vm_request as vm_request_crud
 from app.models import (
-    Message,
     VMRequestCreate,
     VMRequestPublic,
     VMRequestReview,
@@ -191,11 +190,13 @@ def review_vm_request(
     if review.status == VMRequestStatus.approved:
         try:
             vmid = _provision_resource(db_request, session)
-        except Exception as e:
-            logger.error(f"Failed to provision resource for request {request_id}: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to provision resource for request %s", request_id
+            )
             raise HTTPException(
                 status_code=500,
-                detail=f"Approved but failed to create resource: {e}",
+                detail="Approved but failed to create resource",
             )
 
     updated = vm_request_crud.update_vm_request_status(
@@ -279,7 +280,7 @@ def _provision_resource(db_request, session) -> int:
 
         if db_request.disk_size:
             proxmox.nodes("pve").qemu(new_vmid).resize.put(
-                disk="scsi0", size=db_request.disk_size
+                disk="scsi0", size=f"{db_request.disk_size}G"
             )
 
         # Auto-start the VM

@@ -91,12 +91,12 @@ class VMRequest(SQLModel, table=True):
 class VMRequestCreate(SQLModel):
     """建立虛擬機申請的 Schema."""
 
-    reason: str
+    reason: str = Field(min_length=10)
     resource_type: str  # "lxc" 或 "vm"
-    hostname: str
+    hostname: str = Field(pattern=r"^[a-z0-9-]+$")
     cores: int = 2
     memory: int = 2048
-    password: str
+    password: str = Field(min_length=8, max_length=128)
     storage: str = "local-lvm"
     os_info: str | None = None
     expiry_date: date | None = None

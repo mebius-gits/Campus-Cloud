@@ -1,7 +1,7 @@
 """Add vm_requests table for VM application workflow
 
 Revision ID: a3b7c9d1e2f4
-Revises: 1a31ce608336
+Revises: 1ae4a06403df
 Create Date: 2026-02-13 00:00:00.000000
 
 """
