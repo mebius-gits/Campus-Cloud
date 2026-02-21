@@ -49,8 +49,8 @@ const formSchema = z.object({
   hostname: z
     .string()
     .min(1, { message: "名稱為必填項" })
-    .regex(/^[a-z0-9-]+$/, {
-      message: "僅允許小寫字母、數字和連字符",
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
+      message: "僅允許小寫字母、數字和連字符，且不能以連字符開頭或結尾",
     }),
   ostemplate: z.string().optional(),
   rootfs_size: z.number().min(8).max(500).optional(),
