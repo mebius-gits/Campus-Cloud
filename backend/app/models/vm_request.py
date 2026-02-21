@@ -93,7 +93,7 @@ class VMRequestCreate(SQLModel):
 
     reason: str = Field(min_length=10)
     resource_type: str  # "lxc" 或 "vm"
-    hostname: str = Field(regex=r"^[a-z0-9-]+$")
+    hostname: str = Field(pattern=r"^[a-z0-9-]+$")
     cores: int = 2
     memory: int = 2048
     password: str = Field(min_length=8, max_length=128)
