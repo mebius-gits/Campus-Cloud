@@ -93,11 +93,9 @@ function MyResources() {
 
   const handleOpenConsole = (vmid: number, name: string, type: string) => {
     setSelectedVM({ vmid, name, type })
-    if (type === "lxc") {
-      setTerminalConsoleOpen(true)
-    } else {
-      setVncConsoleOpen(true)
-    }
+    const isLxc = type === "lxc"
+    setTerminalConsoleOpen(isLxc)
+    setVncConsoleOpen(!isLxc)
   }
 
   return (
