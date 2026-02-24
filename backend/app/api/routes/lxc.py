@@ -20,6 +20,7 @@ router = APIRouter(prefix="/lxc", tags=["lxc"])
 
 @router.get("/{vmid}/terminal", response_model=TerminalInfoSchema)
 def get_lxc_terminal(vmid: int, container_info: LxcInfoDep):
+    """Get terminal access for an LXC container (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = container_info["node"]
@@ -44,8 +45,8 @@ def get_lxc_terminal(vmid: int, container_info: LxcInfoDep):
 
 
 @router.get("/templates", response_model=list[TemplateSchema])
-def get_templates():
-    """Get available OS templates for LXC containers."""
+def get_templates(current_user: CurrentUser):
+    """Get available OS templates for LXC containers. Requires authentication."""
     try:
         proxmox = get_proxmox_api()
         templates = (

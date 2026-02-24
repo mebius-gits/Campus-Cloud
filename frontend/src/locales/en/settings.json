@@ -41,6 +41,10 @@
     "inactive": "Inactive"
   },
   "admin": {
+    "page": {
+      "title": "Users",
+      "description": "Manage user accounts and permissions"
+    },
     "addUser": {
       "title": "Add User",
       "description": "Fill in the form below to add a new user to the system.",

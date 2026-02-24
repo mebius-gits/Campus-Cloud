@@ -50,6 +50,7 @@
     "description": "描述",
     "noDescription": "尚無描述",
     "categories": "分類",
+    "configLocation": "配置檔案位置",
     "webInterface": "Web 介面",
     "defaultUsername": "預設帳號",
     "defaultPassword": "預設密碼",

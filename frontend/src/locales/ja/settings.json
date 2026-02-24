@@ -41,6 +41,10 @@
     "inactive": "無効"
   },
   "admin": {
+    "page": {
+      "title": "ユーザー管理",
+      "description": "ユーザーアカウントと権限を管理"
+    },
     "addUser": {
       "title": "ユーザー追加",
       "description": "以下のフォームに入力して、システムに新しいユーザーを追加します。",

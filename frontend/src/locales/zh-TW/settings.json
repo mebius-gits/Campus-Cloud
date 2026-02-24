@@ -41,6 +41,10 @@
     "inactive": "停用"
   },
   "admin": {
+    "page": {
+      "title": "使用者管理",
+      "description": "管理使用者帳戶與權限"
+    },
     "addUser": {
       "title": "新增使用者",
       "description": "填寫下方表單以新增使用者到系統。",

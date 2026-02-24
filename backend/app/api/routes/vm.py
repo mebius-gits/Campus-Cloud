@@ -15,6 +15,7 @@ router = APIRouter(prefix="/vm", tags=["vm"])
 
 @router.get("/{vmid}/console", response_model=VNCInfoSchema)
 def get_vm_console(vmid: int, vm_info: VmInfoDep):
+    """Get VNC console access for a VM (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         if vm_info["type"] != "qemu":
@@ -122,8 +123,8 @@ def create_vm(
 
 
 @router.get("/templates", response_model=list[VMTemplateSchema])
-def get_vm_templates():
-    """Get available VM templates (VMs marked as templates)."""
+def get_vm_templates(current_user: CurrentUser):
+    """Get available VM templates (VMs marked as templates). Requires authentication."""
     try:
         proxmox = get_proxmox_api()
         all_vms = proxmox.cluster.resources.get(type="vm")

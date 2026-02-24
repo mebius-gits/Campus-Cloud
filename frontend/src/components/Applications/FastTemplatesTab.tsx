@@ -3,17 +3,12 @@ import rawData from "virtual:templates"
 import {
   AlertTriangle,
   ArrowLeft,
-  Check,
-  Copy,
-  Cpu,
   FileText,
   Globe,
-  HardDrive,
   Info,
   LayoutTemplate,
   Search,
   Server,
-  Terminal,
 } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -22,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -51,29 +45,6 @@ const templates = Object.entries(allData)
   )
   .map(([_, val]) => val)
   .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-  return (
-    <Button
-      variant="outline"
-      size="icon"
-      onClick={handleCopy}
-      className="h-8 w-8 shrink-0"
-    >
-      {copied ? (
-        <Check className="h-4 w-4 text-green-500" />
-      ) : (
-        <Copy className="h-4 w-4" />
-      )}
-    </Button>
-  )
-}
 
 function NoteBox({ note }: { note: { text: string; type?: string } }) {
   let colorClasses =
@@ -222,6 +193,17 @@ export function FastTemplatesTab() {
             )}
 
           <div className="grid grid-cols-2 gap-4">
+            {selectedTemplate.config_path && (
+              <div className="rounded-lg border bg-card p-3">
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5" />{" "}
+                  {t("templates.configLocation")}
+                </div>
+                <div className="text-sm font-medium break-all">
+                  {selectedTemplate.config_path}
+                </div>
+              </div>
+            )}
             {selectedTemplate.interface_port && (
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
@@ -258,64 +240,6 @@ export function FastTemplatesTab() {
               </div>
             )}
           </div>
-
-          {selectedTemplate.install_methods?.map((method: any, idx: number) => (
-            <div key={idx} className="space-y-3">
-              <h4 className="text-sm font-medium flex items-center gap-2">
-                <Terminal className="h-4 w-4" />
-                {method.type === "default"
-                  ? t("templates.defaultInstallScript")
-                  : `${method.type} ${t("templates.installScript")}`}
-              </h4>
-
-              <div className="relative group">
-                <div className="text-sm bg-muted rounded-md p-3 pr-12 font-mono whitespace-pre-wrap break-all text-muted-foreground border">
-                  {`bash -c "$(wget -qЛО - https://github.com/community-scripts/ProxmoxVE/raw/main/${method.script})"`}
-                </div>
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <CopyButton
-                    text={`bash -c "$(wget -qLO - https://github.com/community-scripts/ProxmoxVE/raw/main/${method.script})"`}
-                  />
-                </div>
-              </div>
-
-              {method.resources && (
-                <div className="bg-card/50 rounded-lg border p-4 space-y-3 mt-4">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    {t("templates.defaultResources")}
-                  </div>
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-3">
-                    {method.resources.cpu && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Cpu className="h-4 w-4 text-muted-foreground" />
-                        <span>{method.resources.cpu} vCPU</span>
-                      </div>
-                    )}
-                    {method.resources.ram && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <HardDrive className="h-4 w-4 text-muted-foreground" />
-                        <span>{method.resources.ram} MB RAM</span>
-                      </div>
-                    )}
-                    {method.resources.hdd && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <HardDrive className="h-4 w-4 text-muted-foreground" />
-                        <span>{method.resources.hdd} GB Storage</span>
-                      </div>
-                    )}
-                    {method.resources.os && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Server className="h-4 w-4 text-muted-foreground" />
-                        <span className="capitalize">
-                          {method.resources.os} {method.resources.version}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
 
           {(selectedTemplate.website || selectedTemplate.documentation) && (
             <div className="flex gap-3 pt-4 border-t">
@@ -406,9 +330,6 @@ export function FastTemplatesTab() {
                 <CardTitle className="text-base truncate" title={template.name}>
                   {template.name}
                 </CardTitle>
-                <CardDescription className="truncate text-xs">
-                  {template.type?.toUpperCase()}
-                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="p-4 pt-0">

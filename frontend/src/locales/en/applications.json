@@ -50,6 +50,7 @@
     "description": "Description",
     "noDescription": "No description",
     "categories": "Categories",
+    "configLocation": "Location of config file",
     "webInterface": "Web Interface",
     "defaultUsername": "Default Username",
     "defaultPassword": "Default Password",

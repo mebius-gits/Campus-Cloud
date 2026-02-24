@@ -1,8 +1,12 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import CurrentUser, ResourceInfoDep, SessionDep
+from app.api.deps import (
+    CurrentUser,
+    ResourceInfoDep,
+    SessionDep,
+)
 from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
 from app.crud import resource as resource_crud
 from app.models import NodeSchema, ResourcePublic, VMSchema
@@ -12,7 +16,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 @router.get("/nodes", response_model=list[NodeSchema])
-def list_nodes():
+def list_nodes(current_user: CurrentUser):
+    """List all Proxmox nodes (requires authentication)."""
     try:
         proxmox = get_proxmox_api()
         nodes = proxmox.nodes.get()
@@ -62,8 +67,17 @@ def _get_vm_ip_address(proxmox, node: str, vmid: int, vm_type: str) -> str | Non
 @router.get("/", response_model=list[ResourcePublic])
 def list_resources(
     session: SessionDep,
+    current_user: CurrentUser,
     node: str | None = None,
 ):
+    """List all resources (admin only) or user's own resources."""
+    # Non-superusers can only see their own resources - redirect to /my
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. Use /resources/my to view your own resources.",
+        )
+
     try:
         proxmox = get_proxmox_api()
         result = []
@@ -174,10 +188,12 @@ def list_my_resources(
 
 @router.get("/{vmid}", response_model=VMSchema)
 def get_resource(resource_info: ResourceInfoDep):
+    """Get resource details (requires ownership or admin)."""
     return resource_info
 
 @router.get("/{vmid}/config")
 def get_resource_config(vmid: int, resource_info: ResourceInfoDep):
+    """Get resource configuration (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         resource_config = proxmox.nodes(resource_info["node"]).qemu(vmid).config.get()
@@ -190,6 +206,7 @@ def get_resource_config(vmid: int, resource_info: ResourceInfoDep):
 
 @router.post("/{vmid}/start")
 def start_resource(vmid: int, resource_info: ResourceInfoDep):
+    """Start a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -211,6 +228,7 @@ def start_resource(vmid: int, resource_info: ResourceInfoDep):
 
 @router.post("/{vmid}/stop")
 def stop_resource(vmid: int, resource_info: ResourceInfoDep):
+    """Stop a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -232,6 +250,7 @@ def stop_resource(vmid: int, resource_info: ResourceInfoDep):
 
 @router.post("/{vmid}/reboot")
 def reboot_resource(vmid: int, resource_info: ResourceInfoDep):
+    """Reboot a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -253,6 +272,7 @@ def reboot_resource(vmid: int, resource_info: ResourceInfoDep):
 
 @router.post("/{vmid}/shutdown")
 def shutdown_resource(vmid: int, resource_info: ResourceInfoDep):
+    """Shutdown a resource gracefully (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -274,6 +294,7 @@ def shutdown_resource(vmid: int, resource_info: ResourceInfoDep):
 
 @router.post("/{vmid}/reset")
 def reset_resource(vmid: int, resource_info: ResourceInfoDep):
+    """Reset a resource (hard reset, requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
