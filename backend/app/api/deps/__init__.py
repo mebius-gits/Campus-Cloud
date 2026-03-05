@@ -10,6 +10,7 @@ from app.api.deps.proxmox import (
     LxcInfoDep,
     ResourceInfoDep,
     VmInfoDep,
+    check_resource_ownership,
     get_lxc_info,
     get_resource_info,
     get_vm_info,
@@ -25,7 +26,8 @@ __all__ = [
     "get_current_user",
     "CurrentUser",
     "get_current_active_superuser",
-    # Proxmox
+    # Proxmox (with permission checks built-in)
+    "check_resource_ownership",
     "get_vm_info",
     "VmInfoDep",
     "get_lxc_info",

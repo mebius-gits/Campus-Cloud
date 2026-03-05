@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.api.deps import CurrentUser, SessionDep, VmInfoDep
 from app.core.config import settings
 from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
+from app.crud import audit_log as audit_log_crud
 from app.crud import resource as resource_crud
 from app.models import VMCreateResponse, VMCreateSchema, VMTemplateSchema, VNCInfoSchema
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/vm", tags=["vm"])
 
 @router.get("/{vmid}/console", response_model=VNCInfoSchema)
 def get_vm_console(vmid: int, vm_info: VmInfoDep):
+    """Get VNC console access for a VM (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         if vm_info["type"] != "qemu":
@@ -107,6 +109,15 @@ def create_vm(
             template_id=vm_data.template_id,
         )
 
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=new_vmid,
+            action="vm_create",
+            details=f"Created VM '{vm_data.hostname}' from template {vm_data.template_id}: {vm_data.cores} cores, {vm_data.memory}MB RAM, {vm_data.disk_size or 'default'} disk",
+        )
+
         logger.info(f"Created VM {new_vmid} from template {vm_data.template_id}")
 
         return {
@@ -122,8 +133,8 @@ def create_vm(
 
 
 @router.get("/templates", response_model=list[VMTemplateSchema])
-def get_vm_templates():
-    """Get available VM templates (VMs marked as templates)."""
+def get_vm_templates(current_user: CurrentUser):
+    """Get available VM templates (VMs marked as templates). Requires authentication."""
     try:
         proxmox = get_proxmox_api()
         all_vms = proxmox.cluster.resources.get(type="vm")

@@ -50,6 +50,7 @@
     "description": "説明",
     "noDescription": "説明なし",
     "categories": "カテゴリ",
+    "configLocation": "設定ファイルの場所",
     "webInterface": "Webインターフェース",
     "defaultUsername": "デフォルトユーザー名",
     "defaultPassword": "デフォルトパスワード",

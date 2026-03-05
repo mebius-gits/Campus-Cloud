@@ -1,9 +1,14 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import CurrentUser, ResourceInfoDep, SessionDep
+from app.api.deps import (
+    CurrentUser,
+    ResourceInfoDep,
+    SessionDep,
+)
 from app.core.proxmox import basic_blocking_task_status, get_proxmox_api
+from app.crud import audit_log as audit_log_crud
 from app.crud import resource as resource_crud
 from app.models import NodeSchema, ResourcePublic, VMSchema
 
@@ -12,7 +17,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 @router.get("/nodes", response_model=list[NodeSchema])
-def list_nodes():
+def list_nodes(current_user: CurrentUser):
+    """List all Proxmox nodes (requires authentication)."""
     try:
         proxmox = get_proxmox_api()
         nodes = proxmox.nodes.get()
@@ -62,8 +68,17 @@ def _get_vm_ip_address(proxmox, node: str, vmid: int, vm_type: str) -> str | Non
 @router.get("/", response_model=list[ResourcePublic])
 def list_resources(
     session: SessionDep,
+    current_user: CurrentUser,
     node: str | None = None,
 ):
+    """List all resources (admin only) or user's own resources."""
+    # Non-superusers can only see their own resources - redirect to /my
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied. Use /resources/my to view your own resources.",
+        )
+
     try:
         proxmox = get_proxmox_api()
         result = []
@@ -174,13 +189,22 @@ def list_my_resources(
 
 @router.get("/{vmid}", response_model=VMSchema)
 def get_resource(resource_info: ResourceInfoDep):
+    """Get resource details (requires ownership or admin)."""
     return resource_info
 
 @router.get("/{vmid}/config")
 def get_resource_config(vmid: int, resource_info: ResourceInfoDep):
+    """Get resource configuration (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
-        resource_config = proxmox.nodes(resource_info["node"]).qemu(vmid).config.get()
+        node = resource_info["node"]
+        resource_type = resource_info["type"]
+
+        if resource_type == "qemu":
+            resource_config = proxmox.nodes(node).qemu(vmid).config.get()
+        else:
+            resource_config = proxmox.nodes(node).lxc(vmid).config.get()
+
         return resource_config
     except HTTPException:
         raise
@@ -189,7 +213,10 @@ def get_resource_config(vmid: int, resource_info: ResourceInfoDep):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{vmid}/start")
-def start_resource(vmid: int, resource_info: ResourceInfoDep):
+def start_resource(
+    vmid: int, resource_info: ResourceInfoDep, session: SessionDep, current_user: CurrentUser
+):
+    """Start a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -199,6 +226,15 @@ def start_resource(vmid: int, resource_info: ResourceInfoDep):
             proxmox.nodes(node).qemu(vmid).status.start.post()
         else:
             proxmox.nodes(node).lxc(vmid).status.start.post()
+
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_start",
+            details=f"Started {resource_type} {resource_info.get('name', vmid)}",
+        )
 
         logger.info(f"Resource {vmid} started")
         return {"message": f"Resource {vmid} started"}
@@ -210,7 +246,10 @@ def start_resource(vmid: int, resource_info: ResourceInfoDep):
 
 
 @router.post("/{vmid}/stop")
-def stop_resource(vmid: int, resource_info: ResourceInfoDep):
+def stop_resource(
+    vmid: int, resource_info: ResourceInfoDep, session: SessionDep, current_user: CurrentUser
+):
+    """Stop a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -220,6 +259,15 @@ def stop_resource(vmid: int, resource_info: ResourceInfoDep):
             proxmox.nodes(node).qemu(vmid).status.stop.post()
         else:
             proxmox.nodes(node).lxc(vmid).status.stop.post()
+
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_stop",
+            details=f"Stopped {resource_type} {resource_info.get('name', vmid)}",
+        )
 
         logger.info(f"Resource {vmid} stopped")
         return {"message": f"Resource {vmid} stopped"}
@@ -231,7 +279,10 @@ def stop_resource(vmid: int, resource_info: ResourceInfoDep):
 
 
 @router.post("/{vmid}/reboot")
-def reboot_resource(vmid: int, resource_info: ResourceInfoDep):
+def reboot_resource(
+    vmid: int, resource_info: ResourceInfoDep, session: SessionDep, current_user: CurrentUser
+):
+    """Reboot a resource (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -241,6 +292,15 @@ def reboot_resource(vmid: int, resource_info: ResourceInfoDep):
             proxmox.nodes(node).qemu(vmid).status.reboot.post()
         else:
             proxmox.nodes(node).lxc(vmid).status.reboot.post()
+
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_reboot",
+            details=f"Rebooted {resource_type} {resource_info.get('name', vmid)}",
+        )
 
         logger.info(f"Resource {vmid} rebooted")
         return {"message": f"Resource {vmid} rebooted"}
@@ -252,7 +312,10 @@ def reboot_resource(vmid: int, resource_info: ResourceInfoDep):
 
 
 @router.post("/{vmid}/shutdown")
-def shutdown_resource(vmid: int, resource_info: ResourceInfoDep):
+def shutdown_resource(
+    vmid: int, resource_info: ResourceInfoDep, session: SessionDep, current_user: CurrentUser
+):
+    """Shutdown a resource gracefully (requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -262,6 +325,15 @@ def shutdown_resource(vmid: int, resource_info: ResourceInfoDep):
             proxmox.nodes(node).qemu(vmid).status.shutdown.post()
         else:
             proxmox.nodes(node).lxc(vmid).status.shutdown.post()
+
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_shutdown",
+            details=f"Shutdown {resource_type} {resource_info.get('name', vmid)}",
+        )
 
         logger.info(f"Resource {vmid} shutdown")
         return {"message": f"Resource {vmid} shutdown"}
@@ -273,7 +345,10 @@ def shutdown_resource(vmid: int, resource_info: ResourceInfoDep):
 
 
 @router.post("/{vmid}/reset")
-def reset_resource(vmid: int, resource_info: ResourceInfoDep):
+def reset_resource(
+    vmid: int, resource_info: ResourceInfoDep, session: SessionDep, current_user: CurrentUser
+):
+    """Reset a resource (hard reset, requires ownership or admin)."""
     try:
         proxmox = get_proxmox_api()
         node = resource_info["node"]
@@ -283,6 +358,15 @@ def reset_resource(vmid: int, resource_info: ResourceInfoDep):
             proxmox.nodes(node).qemu(vmid).status.reset.post()
         else:
             proxmox.nodes(node).lxc(vmid).status.reset.post()
+
+        # Record audit log
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_reset",
+            details=f"Reset {resource_type} {resource_info.get('name', vmid)}",
+        )
 
         logger.info(f"Resource {vmid} reset")
         return {"message": f"Resource {vmid} reset"}
@@ -297,6 +381,7 @@ def reset_resource(vmid: int, resource_info: ResourceInfoDep):
 def delete_resource(
     vmid: int,
     session: SessionDep,
+    current_user: CurrentUser,
     resource_info: ResourceInfoDep,
     purge: bool = True,
     force: bool = False,
@@ -326,6 +411,16 @@ def delete_resource(
                 stop_params = {"force": int(force)} if force else {}
                 stop_task = proxmox.nodes(node).lxc(vmid).status.stop.post(**stop_params)
             basic_blocking_task_status(node, stop_task)
+
+        # Record audit log BEFORE deleting (since vmid will be gone after)
+        resource_name = resource_info.get("name", str(vmid))
+        audit_log_crud.create_audit_log(
+            session=session,
+            user_id=current_user.id,
+            vmid=vmid,
+            action="resource_delete",
+            details=f"Deleted {resource_type} {resource_name} (VMID: {vmid})",
+        )
 
         # Delete the resource
         logger.info(f"Deleting {resource_type} {vmid} on node {node}")
