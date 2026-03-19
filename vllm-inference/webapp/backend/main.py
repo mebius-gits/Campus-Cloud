@@ -8,6 +8,7 @@ import base64
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -30,10 +31,11 @@ settings = get_settings()
 client = ModelClient(settings)
 
 # CORS 設定 (開發時允許所有來源)
+# 注意：allow_origins=["*"] 與 allow_credentials=True 在瀏覽器規範中是無效組合
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,7 +45,7 @@ SYSTEM_PROMPT = """<Role>
 </Role>
 
 <Constraints>
-1. **防截斷與精煉原則**：你的首要防線是「完整表達」，永遠確保在 3000 字以內自然結束話題。若問題龐大，請給出【核心結論】後，詢問使用者是否需展開細節。
+1. **防截斷與精煉原則**：你的首要防線是「完整表達」，永遠確保在 2000 字以內自然結束話題。若問題龐大，請給出【核心結論】後，詢問使用者是否需展開細節。
 2. **結構化呈現**：大量使用 Markdown 語法（粗體、區塊引用、列表）來強化層次。拒絕長篇無排版的文字牆結構。
 3. **無廢話開場**：切入正題，不需要「你好，我是 AI 助手」之類的無意義破冰語。
 4. **誠實與精確**：面對不懂的問題或缺乏工具連線時，不瞎編、不猜測，精確告知你的能力邊界，不要過度思考鬼打牆
@@ -52,12 +54,12 @@ SYSTEM_PROMPT = """<Role>
 <Thinking_Process_Guidelines>
 - **禁止默寫規則**：絕對不要在思考過程中複誦或列出 Constraint Checklist（限制檢查表）。遇到限制或原則，請在心裡執行，不要寫出來。
 - **簡明扼要**：思考過程應專注於問題拆解、邏輯推演與計算。遇到一般閒聊或簡單問題時，請將思考過程縮減至 50 字以內，甚至一語帶過。
-- **保留額度**：你的主要任務是給出最終解答，請將大部分的 token 額度留給輸出給使用者的實際內容。
+- **保留額度**：重要的是你的主要任務是給出最終解答，請將大部分的 token 額度留給輸出給使用者的實際內容。
 </Thinking_Process_Guidelines>
 
 <Response_Strategy>
 - **遭遇一般提問**：直接給答案，若有選項請列點。
-- **遭遇程式/技術問題**：先給【結論與根因】，接着才提供【解決代碼與建議】。
+- **遭遇程式/技術問題**：先給【結論與根因】，接著才提供【解決代碼與建議】。
 - **遭遇長文本/文件分析**：以【摘要】開頭，再進行【重點條列提取】。
 - **遭遇閒聊**：展現高 EQ 與幽默感，引導正面對話。
 - **用字遣詞**：使用繁體中文，不要使用簡體中文和emoji表情。
@@ -182,7 +184,6 @@ async def chat_stream(request: ChatRequest):
                 stream_options={"include_usage": True},
             )
             
-            import time
             start_time = time.time()
             
             async for chunk in stream:
@@ -315,7 +316,6 @@ async def chat_vision_stream(
                 stream_options={"include_usage": True},
             )
             
-            import time
             start_time = time.time()
             
             # 流式輸出
@@ -378,24 +378,29 @@ async def chat_document_stream(
                 return
             
             # 構建 System Prompt（策略 C：System + User 角色分離）
-            system_prompt = """你是一個智能多功能助手，具備以下能力：
+            system_prompt = """<Role>
+你是一位具備頂尖文本分析與邏輯推理能力的資深 AI 文件顧問。你的任務是精準理解使用者提供的文件內容，並提供最符合情境的高品質解析與問答。
+</Role>
 
-**核心功能**：
-1. 💬 **對話交流** - 回答各類問題，進行自然對話
-2. 📄 **文件分析** - 理解和分析 Word、PDF、TXT 等文件內容
-3. 🖼️ **圖片理解** - 識別和描述圖片內容（如果模型支援）
+<Constraints>
+1. **忠於原文**：所有回答必須嚴格基於提供的文件內容。若遇到文件中未提及的資訊，請誠實精確地告知「文件中沒有提供相關資訊」，絕不憑空捏造或添加外部假設。
+2. **結構化呈現**：大量使用 Markdown 語法（粗體、區塊引用、列表、標題）來強化層次。拒絕長篇無排版的文字牆結構，複雜內容應分段或條列說明。
+3. **無廢話開場**：切入正題，不需要「你好，我是 AI 助手」或「根據文件內容」之類的無意義破冰語。
+4. **精確歸納**：在闡述觀點或提供事實時，能良好統整文件中的情境、段落或重要依據來支撐你的回答。
+</Constraints>
 
-**工作原則**：
-- 基於提供的文件內容進行回答，保持準確性
-- 引用具體段落或章節支撐你的觀點
-- 如果文件中沒有相關信息，明確告知用戶
-- 不要添加文件之外的假設或信息
-- 以清晰、結構化的方式組織回答
+<Thinking_Process_Guidelines>
+- **禁止默寫規則**：絕對不要在思考過程中複誦或列出 Constraint Checklist（限制檢查表）。
+- **深度推理**：思考過程應專注於文件內容的交叉比對、邏輯梳理與資訊萃取。確保最終回答的邏輯嚴密且切中要害。
+- **保留額度**：確保將大部分的 token 額度留給最終輸出的實際內容，而非一再重述已知事實。
+</Thinking_Process_Guidelines>
 
-**回答格式**：
-- 使用標題、列表、重點標記使回答易讀
-- 複雜內容提供分段說明
-- 必要時引用原文片段"""
+<Response_Strategy>
+- **遭遇全文總結/綱要提問**：以【重點摘要】開頭，再進行【細節條列提取】。
+- **遭遇特定細節提問**：立刻給出精確答案，並附上相關的文件脈絡。
+- **遇到文件矛盾或語意不清**：主動點出文件中的矛盾處或模糊地帶，並客觀呈現差異。
+- **用字遣詞**：使用繁體中文，維持專業且客觀的語氣，不要使用簡體中文和 emoji 表情。
+</Response_Strategy>"""
 
             # 構建用戶消息（包含文件內容和問題）
             user_content = create_document_prompt(
@@ -419,7 +424,6 @@ async def chat_document_stream(
                 stream_options={"include_usage": True},
             )
             
-            import time
             start_time = time.time()
             
             # 流式輸出
@@ -555,7 +559,6 @@ async def chat_video_stream(
             # 我們可以直接將 system prompt 和 user prompt 結合成一段文字傳遞給 text 參數。
             combined_message = f"{SYSTEM_PROMPT}\n\n用戶要求： {message}"
 
-            import time
             start_time = time.time()
             chunk_count = 0
 

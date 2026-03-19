@@ -126,11 +126,12 @@ class ModelClient:
         if repetition_penalty is None:
             repetition_penalty = self.settings.default_repetition_penalty
 
+        # stream_options 必須先 pop，再 update extra_body，避免間接入 extra_body
+        stream_options = kwargs.pop("stream_options", None)
+
         # vLLM 擴展參數透過 extra_body 傳遞
         extra_body: dict = {"top_k": top_k, "min_p": min_p, "repetition_penalty": repetition_penalty}
         extra_body.update(kwargs)
-
-        stream_options = kwargs.pop("stream_options", None)
 
         response = self._sync_client.chat.completions.create(
             model=self.model_name,
@@ -625,11 +626,12 @@ class ModelClient:
         if repetition_penalty is None:
             repetition_penalty = self.settings.default_repetition_penalty
 
+        # stream_options 必須先 pop，再 update extra_body，避免間接入 extra_body
+        stream_options = kwargs.pop("stream_options", None)
+
         # vLLM 擴展參數透過 extra_body 傳遞
         extra_body: dict = {"top_k": top_k, "min_p": min_p, "repetition_penalty": repetition_penalty}
         extra_body.update(kwargs)
-
-        stream_options = kwargs.pop("stream_options", None)
 
         response = await self._async_client.chat.completions.create(
             model=self.model_name,
@@ -847,8 +849,8 @@ class ModelClient:
         frame_size = self.settings.max_video_frame_size
         quality    = self.settings.video_frame_quality
 
-        # 抽幀切分（同步 I/O，用 executor 穿越避免場術）
-        loop = asyncio.get_event_loop()
+        # 抽幀切分（同步 I/O，用 executor 避免阻塞 loop）
+        loop = asyncio.get_running_loop()
         chunks, info, plan = await loop.run_in_executor(
             None,
             lambda: self._load_video_chunks(video_path, _fps, chunk_size, frame_size, quality),

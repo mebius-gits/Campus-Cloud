@@ -21,6 +21,7 @@ class RecommendationRequest(BaseModel):
     preferred_type: str | None = Field(default=None)
     expected_users: int = Field(default=1, ge=1, le=100000)
     requires_gpu: bool = False
+    needs_windows: bool = False
     needs_public_web: bool = False
     needs_persistent_storage: bool = True
     needs_database: bool = False

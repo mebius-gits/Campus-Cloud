@@ -24,8 +24,9 @@ async def recommend(request: RecommendationRequest, http_request: Request):
         }
     )
 
-    ai_result = await generate_ai_plan(merged_request, merged_request.device_nodes, catalog)
+    ai_result, ai_metrics = await generate_ai_plan(merged_request, merged_request.device_nodes, catalog)
     result = normalize_ai_result(ai_result, merged_request, merged_request.device_nodes, catalog)
     result["live_device_nodes"] = [node.model_dump() for node in merged_request.device_nodes]
+    result["ai_metrics"] = ai_metrics
     return result
 

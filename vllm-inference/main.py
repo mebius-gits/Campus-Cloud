@@ -162,7 +162,8 @@ def main() -> None:
             if not args.no_wait:
                 engine.print_status()
                 logger.info("按 Ctrl+C 停止服務")
-                engine._process.wait() if engine._process else None
+                if engine._process:
+                    engine._process.wait()
         except KeyboardInterrupt:
             logger.info("收到中斷信號")
         finally:

@@ -4,6 +4,14 @@
 
 set -e
 
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
+else
+    PYTHON_BIN="$(command -v python3)"
+fi
+
 echo "==================================="
 echo "  vLLM Web UI - 優雅夢幻助手"
 echo "==================================="
@@ -22,8 +30,8 @@ echo ""
 
 # 安裝後端依賴
 echo "📦 安裝後端依賴..."
-if ! pip list | grep -q fastapi; then
-    pip install fastapi uvicorn[standard] python-multipart
+if ! "$PYTHON_BIN" -m pip show fastapi > /dev/null 2>&1; then
+    "$PYTHON_BIN" -m pip install fastapi uvicorn[standard] python-multipart
 fi
 echo "✅ 後端依賴已安裝"
 echo ""
@@ -60,7 +68,7 @@ echo "按 Ctrl+C 停止所有服務"
 echo ""
 
 # 啟動後端（前台）
-python webapp/backend/main.py
+"$PYTHON_BIN" webapp/backend/main.py
 
 # 清理：停止前端
 kill $FRONTEND_PID 2>/dev/null || true

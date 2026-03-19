@@ -95,6 +95,22 @@
         font-size: 0.92rem;
       }
 
+      .checkbox-group {
+        display: grid;
+        gap: 10px;
+      }
+
+      .checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+      }
+
+      .checkbox-item input[type="checkbox"] {
+        width: auto;
+      }
+
       input,
       select,
       textarea,
@@ -250,7 +266,7 @@
 
       .machine-metrics {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
       }
 
@@ -279,6 +295,29 @@
         border: 1px solid rgba(181, 71, 8, 0.14);
       }
 
+      .perf-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .perf-item {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .perf-item .label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin-bottom: 4px;
+      }
+
+      .perf-item .value {
+        font-weight: 700;
+      }
+
       @media (max-width: 1040px) {
         .layout {
           grid-template-columns: 1fr;
@@ -287,7 +326,8 @@
 
       @media (max-width: 640px) {
         .split,
-        .machine-metrics {
+        .machine-metrics,
+        .perf-grid {
           grid-template-columns: 1fr;
         }
 
@@ -341,6 +381,28 @@
               </select>
             </div>
 
+            <div class="field">
+              <label>額外需求</label>
+              <div class="checkbox-group">
+                <label class="checkbox-item">
+                  <input type="checkbox" id="needs_public_web" />
+                  <span>公開網頁</span>
+                </label>
+                <label class="checkbox-item">
+                  <input type="checkbox" id="needs_database" />
+                  <span>資料庫</span>
+                </label>
+                <label class="checkbox-item">
+                  <input type="checkbox" id="requires_gpu" />
+                  <span>顯卡需要</span>
+                </label>
+                <label class="checkbox-item">
+                  <input type="checkbox" id="needs_windows" />
+                  <span>Windows/圖形化介面</span>
+                </label>
+              </div>
+            </div>
+
             <div class="actions">
               <button class="primary" type="submit">開始推薦</button>
               <button class="ghost" type="button" id="fill-ai-training">AI 範例</button>
@@ -381,7 +443,7 @@
       function mapDeploymentType(value) {
         return {
           lxc: "LXC",
-          vm: "VM",
+          vm: "VM(無模板)",
         }[String(value || "").toLowerCase()] || value || "-";
       }
 
@@ -391,6 +453,10 @@
           role: document.getElementById("role").value,
           course_context: document.getElementById("course_context").value,
           budget_mode: document.getElementById("budget_mode").value,
+          needs_public_web: document.getElementById("needs_public_web").checked,
+          needs_database: document.getElementById("needs_database").checked,
+          requires_gpu: document.getElementById("requires_gpu").checked,
+          needs_windows: document.getElementById("needs_windows").checked,
           top_k: 5,
           device_nodes: [],
         };
@@ -444,16 +510,83 @@
                 <div class="label">磁碟</div>
                 <div class="value">${escapeHtml(machine.disk_gb)} GB</div>
               </div>
+              <div class="machine-metric">
+                <div class="label">顯卡</div>
+                <div class="value">${escapeHtml(machine.gpu ?? 0)}</div>
+              </div>
             </div>
           </div>
         `).join("");
       }
 
+      function formatNumber(value, maxFractionDigits = 2) {
+        const number = Number(value ?? 0);
+        if (!Number.isFinite(number)) {
+          return "0";
+        }
+        return number.toLocaleString("zh-TW", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: maxFractionDigits,
+        });
+      }
+
       function renderResponse(data) {
-        const recommendedTemplates = [
-          ...(data.final_plan?.recommended_templates || []),
-          ...(data.final_plan?.possible_needed_templates || []),
-        ].filter((item, index, array) => array.findIndex((candidate) => candidate.slug === item.slug) === index);
+        const coreTemplates = data.final_plan?.recommended_templates || [];
+        const possibleTemplates = data.final_plan?.possible_needed_templates || [];
+        const metrics = data.ai_metrics || {};
+
+        // In case there are duplicates across both arrays, you might want logic to handle it,
+        // but since AI is instructed to separate them, we will just render them directly.
+        // We will render sections conditionally if they are present.
+        
+        let templatesHtml = '';
+        
+        if (coreTemplates.length > 0) {
+          templatesHtml += `
+            <section class="result-card">
+              <h3 class="section-title">核心模板</h3>
+              <div class="template-list">${renderTemplateItems(coreTemplates)}</div>
+            </section>
+          `;
+        }
+
+        if (possibleTemplates.length > 0) {
+          templatesHtml += `
+            <section class="result-card">
+              <h3 class="section-title">可擴充 / 預期需求模板</h3>
+              <div class="template-list">${renderTemplateItems(possibleTemplates)}</div>
+            </section>
+          `;
+        }
+
+        if (coreTemplates.length === 0 && possibleTemplates.length === 0) {
+          templatesHtml += `
+            <section class="result-card">
+              <h3 class="section-title">推薦模板</h3>
+              <div class="template-list"><div class="template-item"><h4>目前沒有推薦模板</h4></div></div>
+            </section>
+          `;
+        }
+
+        const metricsHtml = `
+          <section class="result-card">
+            <h3 class="section-title">模型執行資訊</h3>
+            <div class="perf-grid">
+              <div class="perf-item">
+                <div class="label">tokens / s</div>
+                <div class="value">${escapeHtml(formatNumber(metrics.tokens_per_second, 2))}</div>
+              </div>
+              <div class="perf-item">
+                <div class="label">總 tokens</div>
+                <div class="value">${escapeHtml(formatNumber(metrics.total_tokens, 0))}</div>
+              </div>
+              <div class="perf-item">
+                <div class="label">總用時</div>
+                <div class="value">${escapeHtml(formatNumber(metrics.elapsed_seconds, 3))} 秒</div>
+              </div>
+            </div>
+          </section>
+        `;
 
         results.innerHTML = `
           <div class="result-stack">
@@ -462,15 +595,14 @@
               <div class="reason-box">${escapeHtml(data.summary || data.final_plan?.overall_config?.deployment_strategy || "")}</div>
             </section>
 
-            <section class="result-card">
-              <h3 class="section-title">推薦模板</h3>
-              <div class="template-list">${renderTemplateItems(recommendedTemplates)}</div>
-            </section>
+${templatesHtml}
 
             <section class="result-card">
               <h3 class="section-title">配置內容</h3>
               <div class="machine-list">${renderMachineItems(data.final_plan?.machines || [])}</div>
             </section>
+
+${metricsHtml}
           </div>
         `;
       }
@@ -516,6 +648,10 @@
         document.getElementById("role").value = "teacher";
         document.getElementById("course_context").value = "research";
         document.getElementById("budget_mode").value = "performance";
+        document.getElementById("needs_public_web").checked = true;
+        document.getElementById("needs_database").checked = false;
+        document.getElementById("requires_gpu").checked = true;
+        document.getElementById("needs_windows").checked = false;
       });
 
       loadUiConfig().finally(() => {

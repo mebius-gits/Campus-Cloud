@@ -12,6 +12,8 @@ python-multipart>=0.0.9
 
 # 視覺模型支援（圖片處理）
 pillow>=10.0
+python-docx
+python-pptx
 
 # Benchmark & 工具
 rich>=13.0

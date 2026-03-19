@@ -164,15 +164,8 @@ class VLLMEngine:
                     print("[Engine] 伺服器已強制停止")
                 except subprocess.TimeoutExpired:
                     print("[Engine] 警告: 無法停止進程，可能成為僵屍進程")
-            finally:
-                # 清理資源
-                try:
-                    if self._process.stdout:
-                        self._process.stdout.close()
-                    if self._process.stderr:
-                        self._process.stderr.close()
-                except Exception:
-                    pass
+            # 注意：stdout/stderr 指向 sys.stdout/sys.stderr，不需手動關閉
+
         else:
             print("[Engine] 伺服器未運行或已停止")
         

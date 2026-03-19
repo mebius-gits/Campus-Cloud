@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     templates_dir: str = Field(default="../frontend/src/json")
     frontend_api_base_url: str = Field(default="")
     use_internal_nodes_api: bool = Field(default=True)
-    backend_node_gpu_map: str = Field(default="{}")
+    backend_node_gpu_map: str = Field(default='{"pve": 1}')
     nodes_snapshot_json: str = Field(
         default='[{"node":"pve","status":"online","cpu":0.35,"maxcpu":16,"mem":30923764531,"maxmem":68719476736,"uptime":86400}]'
     )
@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     vllm_api_key: str = Field(default="vllm-secret-key-change-me")
     vllm_model_name: str = Field(default="")
     vllm_timeout: int = Field(default=30, ge=3, le=300)
+    vllm_temperature: float = Field(default=0.6, ge=0.0, le=2.0)
+    vllm_top_p: float = Field(default=0.95, ge=0.0, le=1.0)
+    vllm_top_k: int = Field(default=20, ge=0, le=200)
+    vllm_min_p: float = Field(default=0.0, ge=0.0, le=1.0)
+    vllm_presence_penalty: float = Field(default=0.0, ge=-2.0, le=2.0)
+    vllm_repetition_penalty: float = Field(default=1.0, ge=0.0, le=2.0)
 
     @property
     def resolved_templates_dir(self) -> Path:

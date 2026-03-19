@@ -188,10 +188,14 @@ class DocumentProcessor:
                 if text.strip():
                     content_parts.append(f"\n---\n**[第 {page_num} 頁]**\n\n{text}\n")
                 
-                # 統計圖片數量
-                if '/XObject' in page['/Resources']:
-                    xobject = page['/Resources']['/XObject'].get_object()
-                    images_in_page = sum(1 for obj in xobject if xobject[obj]['/Subtype'] == '/Image')
+                # 統計圖片數量（安全存取，避免缺少 Resources 時 KeyError）
+                resources = page.get('/Resources', {})
+                if '/XObject' in resources:
+                    xobject = resources['/XObject'].get_object()
+                    images_in_page = sum(
+                        1 for obj in xobject
+                        if xobject[obj].get('/Subtype') == '/Image'
+                    )
                     if images_in_page > 0:
                         content_parts.append(f"\n📷 *[此頁包含 {images_in_page} 張圖片]*\n")
                         total_images += images_in_page
