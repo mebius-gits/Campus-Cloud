@@ -83,8 +83,13 @@ def add_members_by_emails(
         ).all()
     )
 
+    # Use a single query to fetch all users whose emails are in the list,
+    # then do in-memory lookups to avoid N+1 queries.
+    users = list(session.exec(select(User).where(User.email.in_(emails))).all())
+    users_by_email = {u.email: u for u in users}
+
     for email in emails:
-        user = session.exec(select(User).where(User.email == email)).first()
+        user = users_by_email.get(email)
         if not user:
             not_found.append(email)
             continue
