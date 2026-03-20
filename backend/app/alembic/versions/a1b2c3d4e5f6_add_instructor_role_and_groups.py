@@ -22,12 +22,14 @@ def upgrade():
         sa.Column("is_instructor", sa.Boolean(), nullable=False, server_default="false"),
     )
 
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_create'")
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_delete'")
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_member_add'")
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_member_remove'")
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'batch_provision_vm'")
-    op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'batch_provision_lxc'")
+    ctx = op.get_context()
+    with ctx.autocommit_block():
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_create'")
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_delete'")
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_member_add'")
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'group_member_remove'")
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'batch_provision_vm'")
+        op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'batch_provision_lxc'")
 
     op.create_table(
         "group",
