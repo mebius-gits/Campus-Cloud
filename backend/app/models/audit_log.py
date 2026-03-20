@@ -47,6 +47,14 @@ class AuditAction(str, enum.Enum):
     user_update = "user_update"
     user_delete = "user_delete"
 
+    # 群組管理
+    group_create = "group_create"
+    group_delete = "group_delete"
+    group_member_add = "group_member_add"
+    group_member_remove = "group_member_remove"
+    batch_provision_vm = "batch_provision_vm"
+    batch_provision_lxc = "batch_provision_lxc"
+
 
 class AuditLog(SQLModel, table=True):
     """審計日誌表"""

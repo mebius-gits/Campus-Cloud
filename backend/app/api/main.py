@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     audit_logs,
+    groups,
     login,
     lxc,
     private,
@@ -26,6 +27,7 @@ api_router.include_router(lxc.router)
 api_router.include_router(vm_requests.router)
 api_router.include_router(spec_change_requests.router)
 api_router.include_router(audit_logs.router)
+api_router.include_router(groups.router)
 
 
 if settings.ENVIRONMENT == "local":

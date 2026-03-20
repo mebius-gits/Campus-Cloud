@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     is_active: bool = True
     is_superuser: bool = False
+    is_instructor: bool = False
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -34,6 +35,7 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
     is_active: bool | None = None
     is_superuser: bool | None = None
+    is_instructor: bool | None = None
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -63,6 +65,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     is_active: bool
     is_superuser: bool
+    is_instructor: bool = False
     full_name: str | None = None
     created_at: datetime | None = None
 

@@ -1,3 +1,4 @@
+from . import group
 from .audit_log import (
     create_audit_log,
     get_audit_logs,

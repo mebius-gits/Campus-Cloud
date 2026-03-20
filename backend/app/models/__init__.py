@@ -17,6 +17,8 @@ from .spec_change_request import (
     SpecChangeRequestStatus,
     SpecChangeType,
 )
+from .group import Group
+from .group_member import GroupMember
 
 __all__ = [
     # Base
@@ -37,4 +39,7 @@ __all__ = [
     "SpecChangeRequest",
     "SpecChangeRequestStatus",
     "SpecChangeType",
+    # Groups
+    "Group",
+    "GroupMember",
 ]

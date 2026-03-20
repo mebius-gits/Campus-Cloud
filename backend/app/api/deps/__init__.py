@@ -1,8 +1,10 @@
 from app.api.deps.auth import (
     AdminUser,
     CurrentUser,
+    InstructorUser,
     TokenDep,
     get_current_active_superuser,
+    get_current_instructor_or_admin,
     get_current_user,
     get_ws_current_user,
     reusable_oauth2,
@@ -29,6 +31,8 @@ __all__ = [
     "CurrentUser",
     "get_current_active_superuser",
     "AdminUser",
+    "get_current_instructor_or_admin",
+    "InstructorUser",
     "get_ws_current_user",
     # Proxmox (with permission checks built-in)
     "check_resource_ownership",

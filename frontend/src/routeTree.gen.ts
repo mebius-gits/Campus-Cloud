@@ -18,11 +18,13 @@ import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutResourcesRouteImport } from './routes/_layout/resources'
 import { Route as LayoutMyResourcesRouteImport } from './routes/_layout/my-resources'
+import { Route as LayoutGroupsRouteImport } from './routes/_layout/groups'
 import { Route as LayoutApprovalsRouteImport } from './routes/_layout/approvals'
 import { Route as LayoutApplicationsRouteImport } from './routes/_layout/applications'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutResourcesVmidRouteImport } from './routes/_layout/resources_.$vmid'
 import { Route as LayoutMyResourcesVmidRouteImport } from './routes/_layout/my-resources_.$vmid'
+import { Route as LayoutGroupsGroupIdRouteImport } from './routes/_layout/groups_.$groupId'
 import { Route as LayoutAdminAuditLogsRouteImport } from './routes/_layout/admin.audit-logs'
 
 const SignupRoute = SignupRouteImport.update({
@@ -69,6 +71,11 @@ const LayoutMyResourcesRoute = LayoutMyResourcesRouteImport.update({
   path: '/my-resources',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutGroupsRoute = LayoutGroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutApprovalsRoute = LayoutApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
@@ -94,6 +101,11 @@ const LayoutMyResourcesVmidRoute = LayoutMyResourcesVmidRouteImport.update({
   path: '/my-resources/$vmid',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutGroupsGroupIdRoute = LayoutGroupsGroupIdRouteImport.update({
+  id: '/groups_/$groupId',
+  path: '/groups/$groupId',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAdminAuditLogsRoute = LayoutAdminAuditLogsRouteImport.update({
   id: '/audit-logs',
   path: '/audit-logs',
@@ -109,10 +121,12 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRouteWithChildren
   '/applications': typeof LayoutApplicationsRoute
   '/approvals': typeof LayoutApprovalsRoute
+  '/groups': typeof LayoutGroupsRoute
   '/my-resources': typeof LayoutMyResourcesRoute
   '/resources': typeof LayoutResourcesRoute
   '/settings': typeof LayoutSettingsRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/groups/$groupId': typeof LayoutGroupsGroupIdRoute
   '/my-resources/$vmid': typeof LayoutMyResourcesVmidRoute
   '/resources/$vmid': typeof LayoutResourcesVmidRoute
 }
@@ -124,11 +138,13 @@ export interface FileRoutesByTo {
   '/admin': typeof LayoutAdminRouteWithChildren
   '/applications': typeof LayoutApplicationsRoute
   '/approvals': typeof LayoutApprovalsRoute
+  '/groups': typeof LayoutGroupsRoute
   '/my-resources': typeof LayoutMyResourcesRoute
   '/resources': typeof LayoutResourcesRoute
   '/settings': typeof LayoutSettingsRoute
   '/': typeof LayoutIndexRoute
   '/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/groups/$groupId': typeof LayoutGroupsGroupIdRoute
   '/my-resources/$vmid': typeof LayoutMyResourcesVmidRoute
   '/resources/$vmid': typeof LayoutResourcesVmidRoute
 }
@@ -142,11 +158,13 @@ export interface FileRoutesById {
   '/_layout/admin': typeof LayoutAdminRouteWithChildren
   '/_layout/applications': typeof LayoutApplicationsRoute
   '/_layout/approvals': typeof LayoutApprovalsRoute
+  '/_layout/groups': typeof LayoutGroupsRoute
   '/_layout/my-resources': typeof LayoutMyResourcesRoute
   '/_layout/resources': typeof LayoutResourcesRoute
   '/_layout/settings': typeof LayoutSettingsRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/admin/audit-logs': typeof LayoutAdminAuditLogsRoute
+  '/_layout/groups_/$groupId': typeof LayoutGroupsGroupIdRoute
   '/_layout/my-resources_/$vmid': typeof LayoutMyResourcesVmidRoute
   '/_layout/resources_/$vmid': typeof LayoutResourcesVmidRoute
 }
@@ -161,10 +179,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/applications'
     | '/approvals'
+    | '/groups'
     | '/my-resources'
     | '/resources'
     | '/settings'
     | '/admin/audit-logs'
+    | '/groups/$groupId'
     | '/my-resources/$vmid'
     | '/resources/$vmid'
   fileRoutesByTo: FileRoutesByTo
@@ -176,11 +196,13 @@ export interface FileRouteTypes {
     | '/admin'
     | '/applications'
     | '/approvals'
+    | '/groups'
     | '/my-resources'
     | '/resources'
     | '/settings'
     | '/'
     | '/admin/audit-logs'
+    | '/groups/$groupId'
     | '/my-resources/$vmid'
     | '/resources/$vmid'
   id:
@@ -193,11 +215,13 @@ export interface FileRouteTypes {
     | '/_layout/admin'
     | '/_layout/applications'
     | '/_layout/approvals'
+    | '/_layout/groups'
     | '/_layout/my-resources'
     | '/_layout/resources'
     | '/_layout/settings'
     | '/_layout/'
     | '/_layout/admin/audit-logs'
+    | '/_layout/groups_/$groupId'
     | '/_layout/my-resources_/$vmid'
     | '/_layout/resources_/$vmid'
   fileRoutesById: FileRoutesById
@@ -275,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutMyResourcesRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/groups': {
+      id: '/_layout/groups'
+      path: '/groups'
+      fullPath: '/groups'
+      preLoaderRoute: typeof LayoutGroupsRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/approvals': {
       id: '/_layout/approvals'
       path: '/approvals'
@@ -310,6 +341,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutMyResourcesVmidRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/groups_/$groupId': {
+      id: '/_layout/groups_/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/groups/$groupId'
+      preLoaderRoute: typeof LayoutGroupsGroupIdRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/admin/audit-logs': {
       id: '/_layout/admin/audit-logs'
       path: '/audit-logs'
@@ -336,10 +374,12 @@ interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRouteWithChildren
   LayoutApplicationsRoute: typeof LayoutApplicationsRoute
   LayoutApprovalsRoute: typeof LayoutApprovalsRoute
+  LayoutGroupsRoute: typeof LayoutGroupsRoute
   LayoutMyResourcesRoute: typeof LayoutMyResourcesRoute
   LayoutResourcesRoute: typeof LayoutResourcesRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutGroupsGroupIdRoute: typeof LayoutGroupsGroupIdRoute
   LayoutMyResourcesVmidRoute: typeof LayoutMyResourcesVmidRoute
   LayoutResourcesVmidRoute: typeof LayoutResourcesVmidRoute
 }
@@ -348,10 +388,12 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRouteWithChildren,
   LayoutApplicationsRoute: LayoutApplicationsRoute,
   LayoutApprovalsRoute: LayoutApprovalsRoute,
+  LayoutGroupsRoute: LayoutGroupsRoute,
   LayoutMyResourcesRoute: LayoutMyResourcesRoute,
   LayoutResourcesRoute: LayoutResourcesRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutGroupsGroupIdRoute: LayoutGroupsGroupIdRoute,
   LayoutMyResourcesVmidRoute: LayoutMyResourcesVmidRoute,
   LayoutResourcesVmidRoute: LayoutResourcesVmidRoute,
 }

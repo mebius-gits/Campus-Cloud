@@ -54,6 +54,14 @@ from .vm_request import (
     VMRequestReview,
     VMRequestsPublic,
 )
+from .group import (
+    GroupCreate,
+    GroupDetailPublic,
+    GroupMemberAdd,
+    GroupMemberPublic,
+    GroupPublic,
+    GroupsPublic,
+)
 
 __all__ = [
     # Common
@@ -102,4 +110,11 @@ __all__ = [
     "SpecChangeRequestReview",
     "SpecChangeRequestPublic",
     "SpecChangeRequestsPublic",
+    # Groups
+    "GroupCreate",
+    "GroupPublic",
+    "GroupsPublic",
+    "GroupDetailPublic",
+    "GroupMemberAdd",
+    "GroupMemberPublic",
 ]

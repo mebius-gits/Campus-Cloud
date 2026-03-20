@@ -4,6 +4,7 @@ import {
   Home,
   Monitor,
   ServerCog,
+  UsersRound,
   Users,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -31,15 +32,27 @@ export function AppSidebar() {
     { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
   ]
 
+  const instructorItems: Item[] = [
+    { icon: Home, title: t("sidebar.dashboard"), path: "/" },
+    { icon: ServerCog, title: t("sidebar.myResources"), path: "/my-resources" },
+    { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
+    { icon: UsersRound, title: "群組管理", path: "/groups" },
+  ]
+
   const adminItems: Item[] = [
     { icon: Home, title: t("sidebar.dashboard"), path: "/" },
     { icon: ServerCog, title: t("sidebar.myResources"), path: "/my-resources" },
     { icon: Monitor, title: t("sidebar.resources"), path: "/resources" },
     { icon: ClipboardCheck, title: t("sidebar.approvals"), path: "/approvals" },
+    { icon: UsersRound, title: "群組管理", path: "/groups" },
     { icon: Users, title: t("sidebar.admin"), path: "/admin" },
   ]
 
-  const items = currentUser?.is_superuser ? adminItems : baseItems
+  const items = currentUser?.is_superuser
+    ? adminItems
+    : currentUser?.is_instructor
+      ? instructorItems
+      : baseItems
 
   return (
     <Sidebar collapsible="icon">

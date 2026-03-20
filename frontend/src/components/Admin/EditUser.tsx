@@ -58,6 +58,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
             .or(z.literal("")),
           confirm_password: z.string().optional(),
           is_superuser: z.boolean().optional(),
+          is_instructor: z.boolean().optional(),
           is_active: z.boolean().optional(),
         })
         .refine(
@@ -80,6 +81,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
       email: user.email,
       full_name: user.full_name ?? undefined,
       is_superuser: user.is_superuser,
+      is_instructor: user.is_instructor ?? false,
       is_active: user.is_active,
     },
   })
@@ -223,6 +225,24 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                     </FormControl>
                     <FormLabel className="font-normal">
                       {t("settings:admin.userForm.isSuperuser")}
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="is_instructor"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      導師/助教
                     </FormLabel>
                   </FormItem>
                 )}

@@ -377,6 +377,7 @@ export type UserCreate = {
     password: string;
     is_active?: boolean;
     is_superuser?: boolean;
+    is_instructor?: boolean;
     full_name?: (string | null);
 };
 
@@ -388,6 +389,7 @@ export type UserPublic = {
     email: string;
     is_active: boolean;
     is_superuser: boolean;
+    is_instructor?: boolean;
     full_name?: (string | null);
     created_at?: (string | null);
 };
@@ -417,6 +419,7 @@ export type UserUpdate = {
     password?: (string | null);
     is_active?: (boolean | null);
     is_superuser?: (boolean | null);
+    is_instructor?: (boolean | null);
     full_name?: (string | null);
 };
 
@@ -894,3 +897,79 @@ export type VmRequestsReviewVmRequestData = {
 };
 
 export type VmRequestsReviewVmRequestResponse = (VMRequestPublic);
+// --- Group types (manually added) ---
+
+export type GroupCreate = {
+    name: string;
+    description?: (string | null);
+};
+
+export type GroupPublic = {
+    id: string;
+    name: string;
+    description?: (string | null);
+    owner_id: string;
+    created_at?: (string | null);
+    member_count?: number;
+};
+
+export type GroupsPublic = {
+    data: Array<GroupPublic>;
+    count: number;
+};
+
+export type GroupMemberPublic = {
+    user_id: string;
+    email: string;
+    full_name?: (string | null);
+    added_at?: (string | null);
+};
+
+export type GroupDetailPublic = {
+    id: string;
+    name: string;
+    description?: (string | null);
+    owner_id: string;
+    created_at?: (string | null);
+    members: Array<GroupMemberPublic>;
+};
+
+export type GroupMemberAdd = {
+    emails: Array<string>;
+};
+
+
+export type GroupsCreateGroupData = {
+    requestBody: GroupCreate;
+};
+
+export type GroupsCreateGroupResponse = (GroupPublic);
+
+export type GroupsListGroupsResponse = (GroupsPublic);
+
+export type GroupsGetGroupData = {
+    groupId: string;
+};
+
+export type GroupsGetGroupResponse = (GroupDetailPublic);
+
+export type GroupsDeleteGroupData = {
+    groupId: string;
+};
+
+export type GroupsDeleteGroupResponse = (Message);
+
+export type GroupsAddMembersData = {
+    groupId: string;
+    requestBody: GroupMemberAdd;
+};
+
+export type GroupsAddMembersResponse = (Message);
+
+export type GroupsRemoveMemberData = {
+    groupId: string;
+    userId: string;
+};
+
+export type GroupsRemoveMemberResponse = (Message);
+

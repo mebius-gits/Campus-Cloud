@@ -49,6 +49,15 @@ def get_current_active_superuser(current_user: CurrentUser) -> User:
 AdminUser = Annotated[User, Depends(get_current_active_superuser)]
 
 
+def get_current_instructor_or_admin(current_user: CurrentUser) -> User:
+    if not (current_user.is_instructor or current_user.is_superuser):
+        raise PermissionDeniedError("The user doesn't have enough privileges")
+    return current_user
+
+
+InstructorUser = Annotated[User, Depends(get_current_instructor_or_admin)]
+
+
 async def get_ws_current_user(
     websocket: WebSocket,
     token: str = Query(...),

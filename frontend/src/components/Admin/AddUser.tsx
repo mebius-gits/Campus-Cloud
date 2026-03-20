@@ -54,6 +54,7 @@ const AddUser = () => {
             .string()
             .min(1, { message: t("validation:password.confirmRequired") }),
           is_superuser: z.boolean(),
+          is_instructor: z.boolean(),
           is_active: z.boolean(),
         })
         .refine((data) => data.password === data.confirm_password, {
@@ -75,6 +76,7 @@ const AddUser = () => {
       password: "",
       confirm_password: "",
       is_superuser: false,
+      is_instructor: false,
       is_active: false,
     },
   })
@@ -216,6 +218,24 @@ const AddUser = () => {
                     </FormControl>
                     <FormLabel className="font-normal">
                       {t("settings:admin.userForm.isSuperuser")}
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="is_instructor"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormLabel className="font-normal">
+                      導師/助教
                     </FormLabel>
                   </FormItem>
                 )}
