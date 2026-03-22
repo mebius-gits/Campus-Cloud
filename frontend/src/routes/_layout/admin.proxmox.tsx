@@ -68,6 +68,8 @@ interface ProxmoxConfigPublic {
   api_timeout: number
   task_check_interval: number
   pool_name: string
+  gateway_ip: string | null
+  local_subnet: string | null
   updated_at: string | null
   is_configured: boolean
   has_ca_cert: boolean
@@ -85,6 +87,8 @@ interface ProxmoxConfigUpdate {
   task_check_interval: number
   pool_name: string
   ca_cert?: string | null
+  gateway_ip?: string | null
+  local_subnet?: string | null
 }
 
 interface ProxmoxNodePublic {
@@ -194,6 +198,8 @@ interface FormData {
   api_timeout: number
   task_check_interval: number
   pool_name: string
+  gateway_ip: string
+  local_subnet: string
 }
 
 // ---- Component ----
@@ -235,6 +241,8 @@ function AdminProxmoxPage() {
       api_timeout: 30,
       task_check_interval: 2,
       pool_name: "CampusCloud",
+      gateway_ip: "",
+      local_subnet: "",
     },
   })
 
@@ -250,6 +258,8 @@ function AdminProxmoxPage() {
         api_timeout: config.api_timeout,
         task_check_interval: config.task_check_interval,
         pool_name: config.pool_name,
+        gateway_ip: config.gateway_ip ?? "",
+        local_subnet: config.local_subnet ?? "",
       })
     }
   }, [config, form])
@@ -300,6 +310,8 @@ function AdminProxmoxPage() {
       task_check_interval: data.task_check_interval,
       pool_name: data.pool_name,
       ca_cert,
+      gateway_ip: data.gateway_ip || null,
+      local_subnet: data.local_subnet || null,
     }
   }
 
@@ -423,6 +435,12 @@ function AdminProxmoxPage() {
                     <Layers className="h-3.5 w-3.5 shrink-0" />
                     <span>集區: {config.pool_name}</span>
                   </div>
+                  {config.gateway_ip && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Wifi className="h-3.5 w-3.5 shrink-0" />
+                      <span>網關: {config.gateway_ip}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-muted-foreground">
                     {config.has_ca_cert ? (
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-green-500" />
@@ -654,6 +672,37 @@ function AdminProxmoxPage() {
                         </div>
                       </FormControl>
                       <FormDescription>僅顯示屬於此集區的 VM/LXC</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="gateway_ip"
+                  rules={{ required: "請輸入網關地址" }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>網關地址（Gateway IP）<span className="text-destructive"> *</span></FormLabel>
+                      <FormControl>
+                        <Input placeholder="192.168.1.1" {...field} />
+                      </FormControl>
+                      <FormDescription>防火牆拓撲中「Internet / 上網」節點所代表的網關 IP</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="local_subnet"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>本地網段（Local Subnet）</FormLabel>
+                      <FormControl>
+                        <Input placeholder="192.168.100.0/24" {...field} />
+                      </FormControl>
+                      <FormDescription>新建容器/VM 預設封鎖出站至此網段，防止同網段互連。留空則不限制。</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

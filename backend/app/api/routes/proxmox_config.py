@@ -53,6 +53,8 @@ def _to_public(config, *, is_configured: bool) -> ProxmoxConfigPublic:
         api_timeout=config.api_timeout,
         task_check_interval=config.task_check_interval,
         pool_name=config.pool_name,
+        gateway_ip=config.gateway_ip,
+        local_subnet=config.local_subnet,
         updated_at=config.updated_at,
         is_configured=is_configured,
         has_ca_cert=bool(config.ca_cert),
@@ -120,6 +122,7 @@ def get_proxmox_config(session: SessionDep, current_user: AdminUser) -> Any:
             api_timeout=30,
             task_check_interval=2,
             pool_name="CampusCloud",
+            gateway_ip=None,
             updated_at=None,
             is_configured=False,
             has_ca_cert=False,
@@ -157,6 +160,8 @@ def update_proxmox_config(
         task_check_interval=config_in.task_check_interval,
         pool_name=config_in.pool_name,
         ca_cert=config_in.ca_cert,
+        gateway_ip=config_in.gateway_ip,
+        local_subnet=config_in.local_subnet,
     )
 
     from app.core.proxmox import invalidate_proxmox_client

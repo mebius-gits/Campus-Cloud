@@ -33,6 +33,7 @@ class ProxmoxSettings:
     task_check_interval: int
     pool_name: str
     ca_cert: str | None = None  # PEM 格式 CA 憑證原文
+    local_subnet: str | None = None
 
 
 def _tcp_ping(host: str, port: int = 8006, timeout: float = _TCP_PING_TIMEOUT) -> bool:
@@ -96,6 +97,7 @@ def get_proxmox_settings() -> ProxmoxSettings:
                     task_check_interval=config.task_check_interval,
                     pool_name=config.pool_name,
                     ca_cert=config.ca_cert,
+                    local_subnet=config.local_subnet,
                 )
     except Exception as e:
         logger.warning(f"無法從資料庫載入 Proxmox 設定，使用環境變數：{e}")
@@ -333,8 +335,15 @@ def basic_blocking_task_status(
         logger.debug(f"Task {task_id} status: {status}, exitstatus: {exitstatus}")
 
         if status == "stopped":
-            if exitstatus == "OK":
-                logger.info(f"Task {task_id} completed successfully")
+            if exitstatus == "OK" or (
+                isinstance(exitstatus, str) and exitstatus.startswith("WARNINGS")
+            ):
+                if exitstatus != "OK":
+                    logger.warning(
+                        f"Task {task_id} completed with warnings: {exitstatus}"
+                    )
+                else:
+                    logger.info(f"Task {task_id} completed successfully")
                 return data
             else:
                 error_msg = f"Task {task_id} failed with exitstatus: {exitstatus}"

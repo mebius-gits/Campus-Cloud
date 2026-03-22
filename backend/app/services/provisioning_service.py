@@ -15,8 +15,7 @@ from app.schemas import (
     VMTemplateSchema,
 )
 from app.repositories import resource as resource_repo
-from app.services import audit_service
-from app.services import proxmox_service
+from app.services import audit_service, firewall_service, proxmox_service
 from app.services.proxmox_service import DEFAULT_NODE
 
 logger = logging.getLogger(__name__)
@@ -37,13 +36,16 @@ def create_lxc(
             "swap": 512,
             "rootfs": f"{get_proxmox_settings().data_storage}:{lxc_data.rootfs_size}",
             "password": lxc_data.password,
-            "net0": "name=eth0,bridge=vmbr0,ip=dhcp,firewall=0",
+            "net0": "name=eth0,bridge=vmbr0,ip=dhcp,firewall=1",
             "unprivileged": 1,
             "start": 1,
             "pool": get_proxmox_settings().pool_name,
         }
 
         result = proxmox_service.create_lxc(DEFAULT_NODE, **config)
+
+        # 設定防火牆預設規則
+        firewall_service.setup_default_rules(DEFAULT_NODE, vmid, "lxc")
 
         resource_repo.create_resource(
             session=session,
@@ -112,6 +114,9 @@ def create_vm(
                 DEFAULT_NODE, new_vmid, "qemu", "scsi0", vm_data.disk_size
             )
 
+        # 設定防火牆預設規則
+        firewall_service.setup_default_rules(DEFAULT_NODE, new_vmid, "qemu")
+
         if vm_data.start:
             proxmox_service.control(DEFAULT_NODE, new_vmid, "qemu", "start")
 
@@ -163,12 +168,15 @@ def provision_from_request(*, session: Session, db_request) -> int:
             "swap": 512,
             "rootfs": f"{get_proxmox_settings().data_storage}:{db_request.rootfs_size or 8}",
             "password": plain_password,
-            "net0": "name=eth0,bridge=vmbr0,ip=dhcp,firewall=0",
+            "net0": "name=eth0,bridge=vmbr0,ip=dhcp,firewall=1",
             "unprivileged": 1,
             "start": 1,
             "pool": get_proxmox_settings().pool_name,
         }
         proxmox_service.create_lxc(DEFAULT_NODE, **config)
+
+        # 設定防火牆預設規則
+        firewall_service.setup_default_rules(DEFAULT_NODE, new_vmid, "lxc")
 
         resource_repo.create_resource(
             session=session,
@@ -207,6 +215,9 @@ def provision_from_request(*, session: Session, db_request) -> int:
                 DEFAULT_NODE, new_vmid, "qemu",
                 "scsi0", f"{db_request.disk_size}G"
             )
+
+        # 設定防火牆預設規則
+        firewall_service.setup_default_rules(DEFAULT_NODE, new_vmid, "qemu")
 
         proxmox_service.control(DEFAULT_NODE, new_vmid, "qemu", "start")
 

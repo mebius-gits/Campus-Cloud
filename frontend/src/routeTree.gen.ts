@@ -19,6 +19,7 @@ import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutResourcesRouteImport } from './routes/_layout/resources'
 import { Route as LayoutMyResourcesRouteImport } from './routes/_layout/my-resources'
 import { Route as LayoutGroupsRouteImport } from './routes/_layout/groups'
+import { Route as LayoutFirewallRouteImport } from './routes/_layout/firewall'
 import { Route as LayoutApprovalsRouteImport } from './routes/_layout/approvals'
 import { Route as LayoutApplicationsRouteImport } from './routes/_layout/applications'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
@@ -78,6 +79,11 @@ const LayoutGroupsRoute = LayoutGroupsRouteImport.update({
   path: '/groups',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutFirewallRoute = LayoutFirewallRouteImport.update({
+  id: '/firewall',
+  path: '/firewall',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutApprovalsRoute = LayoutApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof LayoutAdminRouteWithChildren
   '/applications': typeof LayoutApplicationsRoute
   '/approvals': typeof LayoutApprovalsRoute
+  '/firewall': typeof LayoutFirewallRoute
   '/groups': typeof LayoutGroupsRoute
   '/my-resources': typeof LayoutMyResourcesRoute
   '/resources': typeof LayoutResourcesRoute
@@ -151,6 +158,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/applications': typeof LayoutApplicationsRoute
   '/approvals': typeof LayoutApprovalsRoute
+  '/firewall': typeof LayoutFirewallRoute
   '/groups': typeof LayoutGroupsRoute
   '/my-resources': typeof LayoutMyResourcesRoute
   '/resources': typeof LayoutResourcesRoute
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/_layout/admin': typeof LayoutAdminRouteWithChildren
   '/_layout/applications': typeof LayoutApplicationsRoute
   '/_layout/approvals': typeof LayoutApprovalsRoute
+  '/_layout/firewall': typeof LayoutFirewallRoute
   '/_layout/groups': typeof LayoutGroupsRoute
   '/_layout/my-resources': typeof LayoutMyResourcesRoute
   '/_layout/resources': typeof LayoutResourcesRoute
@@ -196,6 +205,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/applications'
     | '/approvals'
+    | '/firewall'
     | '/groups'
     | '/my-resources'
     | '/resources'
@@ -214,6 +224,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/applications'
     | '/approvals'
+    | '/firewall'
     | '/groups'
     | '/my-resources'
     | '/resources'
@@ -235,6 +246,7 @@ export interface FileRouteTypes {
     | '/_layout/admin'
     | '/_layout/applications'
     | '/_layout/approvals'
+    | '/_layout/firewall'
     | '/_layout/groups'
     | '/_layout/my-resources'
     | '/_layout/resources'
@@ -328,6 +340,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutGroupsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/firewall': {
+      id: '/_layout/firewall'
+      path: '/firewall'
+      fullPath: '/firewall'
+      preLoaderRoute: typeof LayoutFirewallRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/approvals': {
       id: '/_layout/approvals'
       path: '/approvals'
@@ -414,6 +433,7 @@ interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRouteWithChildren
   LayoutApplicationsRoute: typeof LayoutApplicationsRoute
   LayoutApprovalsRoute: typeof LayoutApprovalsRoute
+  LayoutFirewallRoute: typeof LayoutFirewallRoute
   LayoutGroupsRoute: typeof LayoutGroupsRoute
   LayoutMyResourcesRoute: typeof LayoutMyResourcesRoute
   LayoutResourcesRoute: typeof LayoutResourcesRoute
@@ -428,6 +448,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRouteWithChildren,
   LayoutApplicationsRoute: LayoutApplicationsRoute,
   LayoutApprovalsRoute: LayoutApprovalsRoute,
+  LayoutFirewallRoute: LayoutFirewallRoute,
   LayoutGroupsRoute: LayoutGroupsRoute,
   LayoutMyResourcesRoute: LayoutMyResourcesRoute,
   LayoutResourcesRoute: LayoutResourcesRoute,

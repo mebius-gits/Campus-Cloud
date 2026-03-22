@@ -16,6 +16,8 @@ class ProxmoxConfigPublic(BaseModel):
     api_timeout: int
     task_check_interval: int
     pool_name: str
+    gateway_ip: str | None = None  # 可能尚未設定（舊資料相容）
+    local_subnet: str | None = None
     updated_at: datetime | None = None
     is_configured: bool
     has_ca_cert: bool
@@ -35,6 +37,8 @@ class ProxmoxConfigUpdate(BaseModel):
     task_check_interval: int = Field(default=2, ge=1, le=60)
     pool_name: str = "CampusCloud"
     ca_cert: str | None = None  # None 表示不更新；空字串表示清除
+    gateway_ip: str  # 必填
+    local_subnet: str | None = None
 
 
 class CertParseResult(BaseModel):

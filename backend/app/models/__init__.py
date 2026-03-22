@@ -21,6 +21,7 @@ from .group import Group
 from .group_member import GroupMember
 from .proxmox_config import ProxmoxConfig
 from .proxmox_node import ProxmoxNode
+from .firewall_layout import FirewallLayout
 
 __all__ = [
     # Base
@@ -48,4 +49,6 @@ __all__ = [
     "ProxmoxConfig",
     # Proxmox Nodes
     "ProxmoxNode",
+    # Firewall Layout
+    "FirewallLayout",
 ]
