@@ -259,6 +259,7 @@ def build_ws_ssl_context(cfg: ProxmoxSettings) -> ssl.SSLContext:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False  # host 已由應用層確認
         ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.load_default_certs()
         return ctx
     else:
         # 不驗證（自簽憑證且未提供 CA cert）
