@@ -38,9 +38,9 @@ def get_topology(session: SessionDep, current_user: CurrentUser):
     """取得當前使用者有權限的 VM 防火牆拓撲（節點 + 連線）"""
     try:
         return firewall_service.get_topology(user=current_user, session=session)
-    except Exception as e:
-        logger.error(f"取得拓撲失敗: {e}")
-        raise HTTPException(status_code=500, detail=f"取得拓撲失敗: {e}")
+    except Exception:
+        logger.exception("取得拓撲失敗")
+        raise HTTPException(status_code=500, detail="取得拓撲失敗")
 
 
 # ─── 佈局管理 ──────────────────────────────────────────────────────────────────
