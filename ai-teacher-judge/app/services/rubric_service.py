@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from time import perf_counter
 from typing import Any
 
@@ -36,6 +37,74 @@ def _vllm_headers() -> dict[str, str]:
         "Authorization": f"Bearer {settings.vllm_api_key}",
         "Content-Type": "application/json",
     }
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            return float(text)
+        except ValueError:
+            match = re.search(r"-?\d+(?:\.\d+)?", text)
+            if match:
+                try:
+                    return float(match.group(0))
+                except ValueError:
+                    return default
+    return default
+
+
+def _normalize_rubric_items(raw_items: Any) -> list[RubricItem]:
+    """Best-effort normalization for AI-returned item payloads."""
+    if not isinstance(raw_items, list):
+        return []
+
+    normalized: list[RubricItem] = []
+    for i, raw in enumerate(raw_items):
+        if not isinstance(raw, dict):
+            continue
+
+        item_id = str(raw.get("id") or f"item-{i + 1}")
+        title = str(raw.get("title") or raw.get("name") or "").strip() or "未命名項目"
+        description = str(raw.get("description") or raw.get("desc") or "")
+        max_score = _to_float(raw.get("max_score", raw.get("score", 0.0)))
+
+        detectable = str(raw.get("detectable") or "manual").strip().lower()
+        if detectable not in {"auto", "partial", "manual"}:
+            detectable = "manual"
+
+        detection_method = raw.get("detection_method") or raw.get("detection")
+        fallback = raw.get("fallback") or raw.get("suggestion")
+
+        normalized.append(RubricItem(
+            id=item_id,
+            title=title,
+            description=description,
+            max_score=max_score,
+            detectable=detectable,
+            detection_method=str(detection_method) if detection_method is not None else None,
+            fallback=str(fallback) if fallback is not None else None,
+        ))
+
+    return normalized
+
+
+def normalize_items_for_export(raw_items: Any) -> list[RubricItem]:
+    """Public helper for robust export parsing."""
+    return _normalize_rubric_items(raw_items)
+
+
+def _extract_context_item_count(rubric_context: str) -> int:
+    try:
+        parsed = json.loads(rubric_context or "{}")
+    except json.JSONDecodeError:
+        return 0
+    items = parsed.get("items")
+    return len(items) if isinstance(items, list) else 0
 
 
 async def _call_vllm(payload: dict[str, Any], timeout: float = 60.0) -> tuple[str, dict]:
@@ -193,8 +262,8 @@ _CHAT_SYSTEM_TEMPLATE = """
 
 # 平台背景（內部知識）
 學生作業在 Proxmox VM / LXC 環境中執行（本地校園雲端，非公有雲）。
-系統可偵測：Port 監聽、服務狀態、CPU/記憶體/磁碟、檔案存在、HTTP 狀態碼。
-系統無法偵測：程式碼品質、DB 內容、設定檔、截圖、報告品質。
+系統可偵測：Port 監聽、服務狀態、CPU/記憶體/磁碟、HTTP 狀態碼、檔案是否存在。
+系統無法偵測：程式碼品質、DB 內容、設定檔內容、截圖、報告品質。
 
 # 可用資訊來源
 - 評分表結構（見下方 JSON）
@@ -203,40 +272,69 @@ _CHAT_SYSTEM_TEMPLATE = """
 # 目前評分表（JSON 格式）
 {rubric_context}
 
-# 任務
-老師可能會要求修改某個評分項目的說明或配分、調整可偵測性判斷、新增或刪除項目、或詢問特定評分點的建議偵測方式。
-若老師詢問的項目涉及無法自動偵測的內容，請主動說明并給出替代方案。
+# 目前評分項目總數
+{rubric_item_count}
+
+# 情境說明與任務
+{situation_instruction}
+
+# 輸出規則（不論任何情境一律遵守）
+- reply 必須用自然白話文繁體中文直接對老師說明，不得提到 id、detectable、detection_method、fallback 等內部欄位或程式變數名稱。
+- 不得在 reply 中重新列出所有項目，只說明變動的部分。
 
 # 輸出格式
-必須輸出合法 JSON，不要任何 markdown 包裟或自然語言。結構:
+只輸出合法 JSON，不要任何 markdown 包裹或自然語言。結構：
 {{
-  "reply": "你的回復文字（繁體中文，精簡說明修改內容或建議）",
+  "reply": "你的白話回覆",
   "updated_items": null
 }}
 
 IMPORTANT RULES:
 - 如果只是回答問題或給出建議、未變更評分表結構：updated_items 設為 null。
 - 如果有任何項目被新增、修改或刪除：updated_items 必須是「修改後的完整評分項目列表」（包含未修改的項目）。
-- 每個 item 需有: id, title, description, max_score, detectable, detection_method, fallback。
-- 不要在 reply 中重新列出所有項目，只說明變動的部分。
+- 每個 item 需有：id, title, description, max_score, detectable, detection_method, fallback。
+- 未被要求變更的項目，必須原樣保留，不得省略。
+""".strip()
+
+
+_SITUATION_NORMAL = """
+老師正在對話修改評分表。
+老師可能會要求修改某個項目的說明或配分、調整可偵測性判斷、新增或刪除項目、或詢問特定評分點的建議偵測方式。
+請依老師指令辦處。若老師詢問的項目涉及無法自動偵測的內容，請主動說明並給出替代方案。
+""".strip()
+
+_SITUATION_REFINE = """
+老師剛剛親手調整了評分表，現在請你進行「全表審核潤飾」。
+下列是你必須完成的工作：
+1. 審核每一個項目的可偵測性與其檢查方式是否一致，若不符請更正。
+2. 針對所有未填寫的「偵測方式」與「替代建議」欄位，依平台能力推斷並補齊內容。
+3. 潤飾所有項目的名稱與說明文字，使其明確清晰、語氣統一。
+4. 回覆請用文字清楚地告訴老師：潤飾了哪些項目、調整了哪些判斷，不需逐一重展所有內容。
 """.strip()
 
 
 async def chat_with_rubric(
     messages: list[ChatMessage],
     rubric_context: str,
+    is_refine: bool = False,
 ) -> tuple[str, list | None, dict]:
     """
     Multi-turn chat with rubric context injected into system prompt.
     Returns (reply_text, updated_items_or_None, metrics).
+    - is_refine: True 表示老師手動修改完表單後觸發的「全表潤飾」模式。
     - updated_items: complete list of RubricItem dicts when AI modified the rubric;
       None when AI only answered a question without changes.
     """
     if not settings.vllm_model_name:
         raise HTTPException(status_code=503, detail="VLLM_MODEL_NAME 未設定。")
 
-    system_prompt = _CHAT_SYSTEM_TEMPLATE.replace(
-        "{{rubric_context}}", rubric_context or "（尚未上傳評分表）"
+    context_item_count = _extract_context_item_count(rubric_context)
+    situation = _SITUATION_REFINE if is_refine else _SITUATION_NORMAL
+    system_prompt = (
+        _CHAT_SYSTEM_TEMPLATE
+        .replace("{rubric_context}", rubric_context or "（尚未上傳評分表）")
+        .replace("{rubric_item_count}", str(context_item_count))
+        .replace("{situation_instruction}", situation)
     )
 
     formatted = [{"role": "system", "content": system_prompt}]
@@ -256,17 +354,18 @@ async def chat_with_rubric(
 
     content, metrics = await _call_vllm(payload, timeout=float(settings.vllm_timeout))
 
-    # 解析結構化 JSON 回復
+    # 解析結構化 JSON 回覆
     reply_text = content  # fallback
     updated_items: list | None = None
     try:
         parsed = json.loads(content)
         reply_text = str(parsed.get("reply") or content)
         raw_updated = parsed.get("updated_items")
-        if isinstance(raw_updated, list) and len(raw_updated) > 0:
-            updated_items = raw_updated
+        normalized_updated = _normalize_rubric_items(raw_updated)
+        if normalized_updated:
+            updated_items = [item.model_dump() for item in normalized_updated]
     except (json.JSONDecodeError, TypeError):
-        pass  # AI 未輸出合法 JSON，直接用原始內容作為回復
+        pass  # AI 未輸出合法 JSON，直接用原始內容作為回覆
 
     return reply_text, updated_items, metrics
 

@@ -215,9 +215,11 @@
       .machine-specs {
         display: flex;
         gap: 12px;
-        font-size: 0.82rem;
+        font-size: 0.95rem;
         color: var(--muted);
         margin-bottom: 6px;
+        flex-wrap: wrap;
+        align-items: flex-start;
       }
 
       .machine-reason { font-size: 0.88rem; line-height: 1.5; color: #444; }
@@ -307,6 +309,90 @@
         border-left: 3px solid #ccc;
         margin-bottom: 10px;
       }
+
+      /* ── Editable form ── */
+      .editable-input, .editable-textarea {
+        width: 100%;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        font-family: inherit;
+        color: inherit;
+        transition: border-color 0.2s, background 0.2s;
+        padding: 4px 6px;
+        margin: -4px -6px;
+      }
+      .editable-input:hover, .editable-textarea:hover {
+        border-color: #ddd;
+        background: #fff;
+      }
+      .editable-input:focus, .editable-textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        background: #fff;
+      }
+      .editable-textarea {
+        resize: vertical;
+        min-height: 28px;
+        line-height: inherit;
+        display: block;
+        margin-top: 4px;
+        overflow: hidden;
+      }
+      .editable-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .btn-delete-node {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 1rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        transition: background 0.2s, color 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .btn-delete-node:hover {
+        background: #fddede;
+        color: #d32f2f;
+      }
+      .btn-add-wrapper {
+        text-align: center;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px dashed var(--line);
+      }
+      .btn-add-node {
+        background: #fafafa;
+        border: 1px dashed var(--muted);
+        color: var(--muted);
+        border-radius: var(--radius);
+        padding: 6px 16px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+      }
+      .btn-add-node:hover {
+        border-color: var(--accent);
+        color: var(--text);
+        background: #f0f0f0;
+      }
+      select.editable-input {
+        appearance: none;
+        cursor: pointer;
+        padding-right: 18px;
+        background: transparent url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M3 4l3 3 3-3'/%3E%3C/svg%3E") no-repeat right 4px center;
+        background-size: 10px;
+      }
+      select.editable-input:hover,
+      select.editable-input:focus {
+        background-color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -375,6 +461,7 @@
       let conversationHistory = [];
       let currentRubricItems  = [];   // RubricItem[]
       let currentRubricSummary = "";  // AI 整體說明
+      let currentEditableCardDiv = null; // 最新渲染、處於可編輯狀態的卡片 DOM
 
       // ── Config ──
       async function loadUiConfig() {
@@ -448,14 +535,17 @@
         return "❌ 需人工評閱";
       }
 
-      function renderRubricCard(analysis, title = "📋 評分表分析結果") {
+      function renderRubricCard(analysis, title = "📋 評分表分析結果", isEditable = false) {
         const { items, total_score, auto_count, partial_count, manual_count, summary } = analysis;
 
         let html = `<div class="plan-card">
           <div class="plan-header">
             <span>${escapeHtml(title)}</span>
-            <span style="font-size:0.82rem;font-weight:400;color:var(--muted);">
-              總分 ${total_score} ｜ 自動 ${auto_count} / 部分 ${partial_count} / 人工 ${manual_count}
+            <span style="font-size:0.82rem;font-weight:400;color:var(--muted);" class="header-metrics">
+              總分 <span class="score-total">${total_score}</span> ｜ 
+              自動 ${auto_count} / 
+              部分 ${partial_count} / 
+              人工 ${manual_count}
             </span>
           </div>
           <div class="plan-body">`;
@@ -467,25 +557,114 @@
         html += `<div class="plan-section">
           <div class="plan-section-title">評分項目</div>`;
 
-        items.forEach(item => {
+        items.forEach((item, index) => {
           const bc = badgeClass(item.detectable);
           const bl = badgeLabel(item.detectable);
           html += `<div class="machine-row">
             <div class="machine-top">
-              <span class="machine-title">${escapeHtml(item.title)}</span>
-              <span class="${bc}">${bl}</span>
+              ${isEditable ? 
+                `<input type="text" class="editable-input editable-title" data-index="${index}" data-field="title" value="${escapeHtml(item.title)}" oninput="updateRubricItem(this)" placeholder="評分標題">` 
+                : `<span class="machine-title">${escapeHtml(item.title)}</span>`
+              }
+              ${isEditable ? `
+                <select class="editable-input" style="width: auto; font-size: 0.9rem; margin: 0; padding: 2px 18px 2px 4px" data-index="${index}" data-field="detectable" onchange="updateRubricItem(this)">
+                  <option value="auto" ${item.detectable === 'auto' ? 'selected' : ''}>✅ 可自動偵測</option>
+                  <option value="partial" ${item.detectable === 'partial' ? 'selected' : ''}>⚠️ 部分可偵測</option>
+                  <option value="manual" ${item.detectable === 'manual' ? 'selected' : ''}>❌ 需人工評閱</option>
+                </select>
+                <button class="btn-delete-node" onclick="removeRubricItem(${index})" title="刪除節點">✖</button>
+              ` : `<span class="${bc}">${bl}</span>`}
             </div>
             <div class="machine-specs">
-              <span>配分：${item.max_score}</span>
-              ${item.detection_method ? `<span>偵測：${escapeHtml(item.detection_method)}</span>` : ""}
+              <span style="display: flex; align-items: center; white-space: nowrap;">配分：${isEditable ? `<input type="number" class="editable-input" style="width: 60px; font-size: 0.95rem; padding: 0" data-index="${index}" data-field="max_score" value="${item.max_score}" oninput="updateRubricItem(this)">` : item.max_score}</span>
+              ${(item.detection_method || isEditable) ? `<span style="flex: 1; display: flex; align-items: flex-start; min-width: 250px;">偵測：${isEditable ? `<textarea class="editable-textarea" style="flex: 1; margin: -2px 0 0 0; min-height: 24px; padding: 2px" data-index="${index}" data-field="detection_method" oninput="updateRubricItem(this); this.style.height = ''; this.style.height = this.scrollHeight + 'px'" placeholder="詳細偵測方式（可空白）">${escapeHtml(item.detection_method || "")}</textarea>` : escapeHtml(item.detection_method)}</span>` : ""}
             </div>
-            ${item.description ? `<div class="machine-reason">${escapeHtml(item.description)}</div>` : ""}
-            ${item.fallback ? `<div class="machine-reason" style="margin-top:4px;color:var(--muted);">💡 ${escapeHtml(item.fallback)}</div>` : ""}
+            ${(item.description || isEditable) ? (isEditable ? `<textarea class="editable-textarea" data-index="${index}" data-field="description" oninput="updateRubricItem(this)" placeholder="項目說明..." oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'">${escapeHtml(item.description || "")}</textarea>` : `<div class="machine-reason">${escapeHtml(item.description)}</div>`) : ""}
+            ${(item.fallback || isEditable) ? (isEditable ? `<textarea class="editable-textarea" style="color:var(--muted); min-height: 20px;" data-index="${index}" data-field="fallback" oninput="updateRubricItem(this)" placeholder="💡 備用人工評分提示..." oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'">${escapeHtml(item.fallback || "")}</textarea>` : `<div class="machine-reason" style="margin-top:4px;color:var(--muted);">💡 ${escapeHtml(item.fallback)}</div>`) : ""}
           </div>`;
         });
 
+        if (isEditable) {
+           html += `<div class="btn-add-wrapper"><button class="btn-add-node" onclick="addRubricItem()">+ 新增評分項目</button></div>`;
+        }
+
         html += `</div></div></div>`;
         return html;
+      }
+
+      function freezeOldCard() {
+        if (!currentEditableCardDiv) return;
+        const inputs = currentEditableCardDiv.querySelectorAll('input, select, textarea, button');
+        inputs.forEach(el => el.disabled = true);
+        const addWrapper = currentEditableCardDiv.querySelector('.btn-add-wrapper');
+        if (addWrapper) addWrapper.remove();
+        const delBtns = currentEditableCardDiv.querySelectorAll('.btn-delete-node');
+        delBtns.forEach(btn => btn.remove());
+        currentEditableCardDiv = null;
+      }
+
+      function updateRubricItem(el) {
+        const index = parseInt(el.getAttribute("data-index"), 10);
+        const field = el.getAttribute("data-field");
+        if (currentRubricItems[index]) {
+          let val = el.value;
+          if (field === "max_score") val = parseFloat(val) || 0;
+          currentRubricItems[index][field] = val;
+          
+          if (field === "max_score" || field === "detectable") {
+            const autoCount    = currentRubricItems.filter(i => i.detectable === "auto").length;
+            const partialCount = currentRubricItems.filter(i => i.detectable === "partial").length;
+            const manualCount  = currentRubricItems.filter(i => i.detectable === "manual").length;
+            const totalScore   = currentRubricItems.reduce((s, i) => s + (parseFloat(i.max_score) || 0), 0);
+            const header = el.closest('.plan-card').querySelector('.header-metrics');
+            if (header) {
+              header.innerHTML = `總分 <span class="score-total">${totalScore}</span> ｜ 自動 ${autoCount} / 部分 ${partialCount} / 人工 ${manualCount}`;
+            }
+          }
+        }
+      }
+
+      function removeRubricItem(index) {
+        if (!confirm('確定刪除這個評分項目嗎？')) return;
+        currentRubricItems.splice(index, 1);
+        reRenderCurrentCard();
+      }
+
+      function addRubricItem() {
+        const newId = "item-" + (Date.now() % 100000) + "-" + Math.floor(Math.random() * 1000);
+        currentRubricItems.push({
+           id: newId,
+           title: "新增評分項目（請修改標題）",
+           max_score: 5,
+           detectable: "manual",
+           detection_method: "",
+           description: "",
+           fallback: ""
+        });
+        reRenderCurrentCard();
+      }
+
+      function reRenderCurrentCard() {
+        if (!currentEditableCardDiv) return;
+        const autoCount    = currentRubricItems.filter(i => i.detectable === "auto").length;
+        const partialCount = currentRubricItems.filter(i => i.detectable === "partial").length;
+        const manualCount  = currentRubricItems.filter(i => i.detectable === "manual").length;
+        const totalScore   = currentRubricItems.reduce((s, i) => s + (parseFloat(i.max_score) || 0), 0);
+        
+        const analysis = {
+            items: currentRubricItems,
+            total_score: totalScore,
+            auto_count: autoCount,
+            partial_count: partialCount,
+            manual_count: manualCount,
+            summary: currentRubricSummary
+        };
+        const newHtml = renderRubricCard(analysis, "🔄 評分表（編輯中）", true);
+        currentEditableCardDiv.querySelector(".message-content").innerHTML = newHtml;
+      }
+
+      function buildSummaryText(items, totalScore, autoCount, partialCount, manualCount) {
+        return `本評分表總分為 ${totalScore} 分，共 ${items.length} 個項目；可完全自動偵測 ${autoCount} 項、部分可偵測 ${partialCount} 項、需人工評閱 ${manualCount} 項。`;
       }
 
       // ── Upload handling ──
@@ -538,7 +717,8 @@
           currentRubricItems   = analysis.items || [];
           currentRubricSummary = analysis.summary || "";
 
-          renderMessage("assistant", renderRubricCard(analysis));
+          freezeOldCard();
+          currentEditableCardDiv = renderMessage("assistant", renderRubricCard(analysis, "📋 評分表分析結果", true));
 
           // Update rubric context for future chat
           const rubricContext = JSON.stringify({ items: currentRubricItems, summary: currentRubricSummary });
@@ -561,16 +741,29 @@
 
       // ── Chat ──
       async function sendMessage() {
-        const text = userInput.value.trim();
-        if (!text || btnSend.disabled) return;
+        let text = userInput.value.trim();
+        if (!text && currentRubricItems.length === 0) return;
+        if (btnSend.disabled) return;
+
+        const isRefine = !text;  // 空白送出 = 請 AI 全表潤飾
 
         userInput.value = "";
         userInput.focus();
-        renderMessage("user", escapeHtml(text));
+
+        if (isRefine) {
+          // 僅在對話紀錄放一句簡短說明，不夾帶任何後端指令
+          text = "請幫我審核並潤飾目前的評分表。";
+          renderMessage("user", `<div style="font-style: italic; color: var(--muted);">[送出評分表，請 AI 進行全表審核潤飾...]</div>`);
+        } else {
+          renderMessage("user", escapeHtml(text));
+        }
+
         conversationHistory.push({ role: "user", content: text });
 
         typingIndicator.style.display = "block";
         btnSend.disabled = true;
+
+        freezeOldCard();
 
         try {
           const rubricContext = JSON.stringify({
@@ -584,6 +777,7 @@
             body: JSON.stringify({
               messages: conversationHistory,
               rubric_context: rubricContext,
+              is_refine: isRefine,
             }),
           });
 
@@ -606,8 +800,12 @@
             const manualCount  = updatedItems.filter(i => i.detectable === "manual").length;
             const totalScore   = updatedItems.reduce((s, i) => s + (parseFloat(i.max_score) || 0), 0);
 
+            // 強制使用前端計算的摘要，避免 AI 加減法算錯總分
+            const updatedSummary = buildSummaryText(updatedItems, totalScore, autoCount, partialCount, manualCount);
+            currentRubricSummary = updatedSummary;
+
             // 顯示 AI 說明訊息
-            renderMessage("assistant", escapeHtml(reply));
+            if (reply) renderMessage("assistant", escapeHtml(reply));
 
             // 在對話中插入更新後的評分表卡片
             const updatedAnalysis = {
@@ -616,13 +814,28 @@
               auto_count: autoCount,
               partial_count: partialCount,
               manual_count: manualCount,
-              summary: currentRubricSummary,
+              summary: updatedSummary,
             };
-            renderMessage("assistant", renderRubricCard(updatedAnalysis, "🔄 評分表已更新"));
+            currentEditableCardDiv = renderMessage("assistant", renderRubricCard(updatedAnalysis, "🔄 評分表已更新", true));
 
           } else {
             // 純問答，只顯示文字回覆
-            renderMessage("assistant", escapeHtml(reply));
+            if (reply) renderMessage("assistant", escapeHtml(reply));
+            
+            // 將原本被 freeze 的表單重新渲染為可編輯（因為我們沒有更新最新版本，所以仍然使用原本的）
+            const autoCount    = currentRubricItems.filter(i => i.detectable === "auto").length;
+            const partialCount = currentRubricItems.filter(i => i.detectable === "partial").length;
+            const manualCount  = currentRubricItems.filter(i => i.detectable === "manual").length;
+            const totalScore   = currentRubricItems.reduce((s, i) => s + (parseFloat(i.max_score) || 0), 0);
+            const refAnalysis = {
+              items: currentRubricItems,
+              total_score: totalScore,
+              auto_count: autoCount,
+              partial_count: partialCount,
+              manual_count: manualCount,
+              summary: currentRubricSummary,
+            };
+            currentEditableCardDiv = renderMessage("assistant", renderRubricCard(refAnalysis, "📋 評分表目前狀態", true));
           }
 
           conversationHistory.push({ role: "assistant", content: reply });

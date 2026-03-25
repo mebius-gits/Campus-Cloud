@@ -5,7 +5,12 @@ from fastapi.responses import Response
 
 from app.schemas.rubric import RubricChatRequest
 from app.services.rubric_parser import parse_document
-from app.services.rubric_service import analyze_rubric, chat_with_rubric, export_to_excel
+from app.services.rubric_service import (
+    analyze_rubric,
+    chat_with_rubric,
+    export_to_excel,
+    normalize_items_for_export,
+)
 
 router = APIRouter(tags=["rubric"])
 
@@ -46,7 +51,11 @@ async def upload_rubric(file: UploadFile = File(...)):
 @router.post("/api/v1/chat")
 async def chat(request: RubricChatRequest):
     """與 AI 對話，精煉評分表；rubric_context 帶入目前評分表的 JSON 字串。"""
-    reply, updated_items, metrics = await chat_with_rubric(request.messages, request.rubric_context)
+    reply, updated_items, metrics = await chat_with_rubric(
+        request.messages,
+        request.rubric_context,
+        is_refine=request.is_refine,
+    )
     return {
         "reply": reply,
         "updated_items": updated_items,  # None 或更新後的完整 item 列表
@@ -65,17 +74,10 @@ async def download_excel(payload: dict):
     接收 { items: [...RubricItem], summary: str }，
     產出並回傳 .xlsx 檔案。
     """
-    from app.schemas.rubric import RubricItem
-
     raw_items = payload.get("items") or []
     summary = str(payload.get("summary") or "")
 
-    items = []
-    for raw in raw_items:
-        try:
-            items.append(RubricItem(**raw))
-        except Exception:
-            continue  # 跳過無法解析的項目
+    items = normalize_items_for_export(raw_items)
 
     if not items:
         raise HTTPException(status_code=400, detail="沒有可匯出的評分項目。")

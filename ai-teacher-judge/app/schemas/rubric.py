@@ -40,3 +40,4 @@ class ChatMessage(BaseModel):
 class RubricChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1)
     rubric_context: str = Field(default="", description="目前評分表的 JSON 字串（作為背景知識）")
+    is_refine: bool = Field(default=False, description="True = 老師手動調整後觸發的全表潤飾模式")
