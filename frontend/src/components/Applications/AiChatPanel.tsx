@@ -15,9 +15,9 @@ import {
 } from "lucide-react"
 import {
   type KeyboardEvent,
+  type WheelEvent,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react"
@@ -198,20 +198,6 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
   const [metrics, setMetrics] = useState<AiMetrics | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const quickPrompts = useMemo(
-    () => [
-      t("aiChat.quickPrompt1", {
-        defaultValue: "我要 Windows GUI + 公網 + webhook",
-      }),
-      t("aiChat.quickPrompt2", {
-        defaultValue: "先給我最省資源、可快速上課的配置",
-      }),
-      t("aiChat.quickPrompt3", {
-        defaultValue: "預估 40 人同時使用，請重視穩定性",
-      }),
-    ],
-    [t],
-  )
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -332,7 +318,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
       if (planContext) {
         setPlanContextMessage({
           role: "assistant",
-          content: `AI 推薦配置摘要：\n${planContext}`,
+          content: `AI ???啾縑???雓??????雓?n${planContext}`,
         })
       }
     } catch (err) {
@@ -371,10 +357,6 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
     inputRef.current?.focus()
   }
 
-  const appendPrompt = (text: string) => {
-    setInput((prev) => (prev.trim() ? `${prev.trim()}\n${text}` : text))
-    inputRef.current?.focus()
-  }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -382,6 +364,24 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
       sendChat()
     }
   }
+
+  const handleMessagesWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const container = scrollRef.current
+    if (!container) return
+
+    const maxScrollTop = container.scrollHeight - container.clientHeight
+    if (maxScrollTop <= 0) return
+
+    const scrollingDown = event.deltaY > 0
+    const scrollingUp = event.deltaY < 0
+    const canScrollDown = container.scrollTop < maxScrollTop
+    const canScrollUp = container.scrollTop > 0
+
+    if ((scrollingDown && canScrollDown) || (scrollingUp && canScrollUp)) {
+      event.preventDefault()
+      container.scrollTop += event.deltaY * 0.45
+    }
+  }, [])
 
   const plan = latestPlan?.final_plan
   const formPrefill = plan?.form_prefill
@@ -401,7 +401,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
   const inputLength = input.length
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 pb-3">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -416,7 +416,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
               count: metrics.total_tokens || 0,
             })}
             {metrics.tokens_per_second
-              ? ` · ${metrics.tokens_per_second.toFixed(1)} tok/s`
+              ? ` ??${metrics.tokens_per_second.toFixed(1)} tok/s`
               : ""}
           </Badge>
         )}
@@ -425,9 +425,10 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
       {/* Chat messages */}
       <div
         ref={scrollRef}
-        className="flex-1 min-h-[28rem] rounded-2xl border bg-muted/20 p-2 overflow-y-auto hidden-scroll"
+        onWheel={handleMessagesWheel}
+        className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border/60 bg-background/40 p-2 hidden-scroll"
       >
-        <div className="flex flex-col gap-3 p-3">
+        <div className="flex flex-col gap-2.5 p-2.5">
           {/* System greeting */}
           {messages.length === 0 && (
             <div className="flex gap-2.5 animate-in fade-in duration-300">
@@ -435,7 +436,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                 <div className="shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
                   <Sparkles className="h-3 w-3 text-primary" />
                 </div>
-                  <div className="rounded-2xl rounded-tl-md px-3.5 py-2.5 bg-card border text-sm leading-relaxed shadow-sm">
+                  <div className="rounded-xl rounded-tl-sm border border-border/60 bg-card/80 px-3 py-2 text-sm leading-relaxed">
                     {t("aiChat.systemGreeting")}
                   </div>
               </div>
@@ -457,10 +458,10 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                   </div>
                 )}
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
+                  className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
                     isUser
-                      ? "bg-primary text-primary-foreground rounded-tr-md"
-                      : "bg-card border rounded-tl-md"
+                      ? "rounded-tr-sm bg-primary text-primary-foreground"
+                      : "rounded-tl-sm border border-border/60 bg-card/80"
                   }`}
                 >
                   {isUser ? (
@@ -490,7 +491,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
               <div className="shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
                 <Bot className="h-3 w-3 text-primary" />
               </div>
-              <div className="rounded-2xl rounded-tl-md px-3.5 py-2.5 bg-card border shadow-sm">
+              <div className="rounded-xl rounded-tl-sm border border-border/60 bg-card/80 px-3 py-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   {t("aiChat.loading")}
@@ -504,7 +505,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
               <div className="shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
                 <Bot className="h-3 w-3 text-primary" />
               </div>
-              <div className="max-w-[90%] min-w-0 overflow-hidden rounded-2xl rounded-tl-md border bg-card shadow-sm">
+              <div className="max-w-[90%] min-w-0 overflow-hidden rounded-xl rounded-tl-sm border border-border/60 bg-card/90">
                 <div className="border-b bg-primary/5 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
@@ -514,7 +515,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">{t("aiChat.planTitle")}</div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {plan.application_target?.service_name || "AI 推薦配置"}
+                          {plan.application_target?.service_name || "AI ???啾縑???雓??"}
                         </div>
                       </div>
                     </div>
@@ -526,18 +527,17 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
 
                 <div className="space-y-4 p-4">
                   <div
-                    className="rounded-2xl border border-primary/15 bg-primary/5 p-4"
+                    className="rounded-xl border border-primary/10 bg-primary/5 px-3.5 py-3"
                     // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled markdown
                     dangerouslySetInnerHTML={{
-                      __html: renderPlanMarkdown(latestPlan.summary || "AI 已產生推薦摘要。"),
+                      __html: renderPlanMarkdown(latestPlan.summary || "AI generated a recommendation summary."),
                     }}
                   />
 
                   <div className="space-y-2">
                     <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      服務與環境
-                    </div>
-                    <div className="rounded-2xl border bg-muted/20 p-4">
+                      ?????????                    </div>
+                    <div className="rounded-xl border border-border/60 bg-muted/10 px-3.5 py-3">
                       <div className="mb-2 flex items-center gap-2 flex-wrap">
                         <Badge variant="outline">
                           {plan.application_target?.execution_environment || resourceType.toUpperCase()}
@@ -554,7 +554,7 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                         dangerouslySetInnerHTML={{
                           __html: renderPlanMarkdown(
                             plan.application_target?.environment_reason ||
-                              "這是 AI 判斷的主要執行環境。",
+                              "This is the environment recommended by AI.",
                           ),
                         }}
                       />
@@ -563,19 +563,19 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
 
                   <div className="space-y-2">
                     <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      表單預填
+                      ??????????
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border bg-muted/20 p-3">
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
                         <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                           <Layers3 className="h-3.5 w-3.5" />
-                          資源類型
+                          ??????皜∪?
                         </div>
                         <div className="text-sm font-semibold uppercase">
                           {formPrefill?.resource_type || "-"}
                         </div>
                       </div>
-                      <div className="rounded-2xl border bg-muted/20 p-3">
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
                         <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                           <Globe className="h-3.5 w-3.5" />
                           Hostname
@@ -584,16 +584,16 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                           {formPrefill?.hostname || "-"}
                         </div>
                       </div>
-                      <div className="rounded-2xl border bg-muted/20 p-3">
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
                         <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                           <FileText className="h-3.5 w-3.5" />
-                          {resourceType === "vm" ? "作業系統" : "服務範本"}
+                          {resourceType === "vm" ? "VM Template" : "Service Template"}
                         </div>
                         <div className="text-sm font-semibold break-all">
                           {String(templateLabel)}
                         </div>
                       </div>
-                      <div className="rounded-2xl border bg-muted/20 p-3">
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
                         <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                           <Cpu className="h-3.5 w-3.5" />
                           CPU / RAM / Disk
@@ -619,13 +619,13 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
                   {plan.recommended_templates && plan.recommended_templates.length > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        使用模板
+                        ?????????∴???
                       </div>
                       <div className="space-y-3">
                         {plan.recommended_templates.slice(0, 3).map((template) => (
                           <div
                             key={template.slug}
-                            className="rounded-2xl border bg-muted/20 p-4"
+                            className="rounded-xl border border-border/60 bg-muted/10 px-3.5 py-3"
                           >
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <div className="text-sm font-semibold">{template.name}</div>
@@ -646,10 +646,10 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
 
                   <div className="space-y-2">
                     <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      申請原因
+                      ??????
                     </div>
                     <div
-                      className="rounded-2xl border bg-muted/20 p-4 text-sm text-muted-foreground [&_p]:mb-1.5 [&_p:last-child]:mb-0"
+                      className="rounded-xl border border-border/60 bg-muted/10 px-3.5 py-3 text-sm text-muted-foreground [&_p]:mb-1.5 [&_p:last-child]:mb-0"
                       // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled markdown
                       dangerouslySetInnerHTML={{
                         __html: renderPlanMarkdown(summaryReason),
@@ -686,66 +686,54 @@ export function AiChatPanel({ onImportPlan, onImportReason }: AiChatPanelProps) 
       </div>
 
       {/* Input area */}
-      <div className="shrink-0 space-y-2">
+      <div className="mb-1 shrink-0 rounded-xl border border-border/60 bg-background/70 p-3">
         <Textarea
           ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t("aiChat.placeholder")}
-          className="min-h-[96px] max-h-[220px] resize-none text-sm"
+          className="min-h-[88px] max-h-[220px] resize-none border-0 bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-0"
           disabled={isLoading}
         />
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>{t("aiChat.inputHint", { defaultValue: "Enter 送出，Shift + Enter 換行" })}</span>
-          <span>{inputLength} 字</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {quickPrompts.map((prompt) => (
+        <div className="flex items-center justify-between gap-3 border-t border-border/50 px-0 pt-2.5 pb-1">
+          <div className="flex min-w-0 items-center gap-2">
             <Button
-              key={prompt}
-              type="button"
               size="sm"
-              variant="outline"
-              className="h-7 px-2.5 text-[11px]"
-              onClick={() => appendPrompt(prompt)}
+              variant="ghost"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={clearChat}
               disabled={isLoading}
             >
-              {prompt}
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            className="flex-1 text-xs h-9"
-            onClick={sendChat}
-            disabled={isLoading || !input.trim()}
-          >
-            <Send className="mr-1.5 h-3 w-3" />
-            {t("aiChat.send")}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="text-xs h-9"
-            onClick={generatePlan}
-            disabled={isLoading || conversationHistory.length === 0}
-          >
-            <Sparkles className="mr-1.5 h-3 w-3" />
-            {t("aiChat.generatePlan")}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-xs h-9 px-2"
-            onClick={clearChat}
-            disabled={isLoading}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 rounded-full px-3 text-xs"
+              onClick={generatePlan}
+              disabled={isLoading || conversationHistory.length === 0}
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {t("aiChat.generatePlan")}
+            </Button>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              {inputLength}
+            </span>
+            <Button
+              size="icon"
+              className="h-8 w-8 rounded-full"
+              onClick={sendChat}
+              disabled={isLoading || !input.trim()}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
   )
 }
+

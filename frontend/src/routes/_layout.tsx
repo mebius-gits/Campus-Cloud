@@ -8,6 +8,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { isLoggedIn } from "@/hooks/useAuth"
+import { cn } from "@/lib/utils"
 
 // 這些路由會填滿整個內容區域，不套用 padding / max-width / footer
 const FULLSCREEN_ROUTES = ["/firewall"]
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/_layout")({
 function Layout() {
   const { location } = useRouterState()
   const isFullscreen = FULLSCREEN_ROUTES.includes(location.pathname)
+  const hasFixedFooter = location.pathname === "/applications-create"
 
   return (
     <SidebarProvider>
@@ -40,12 +42,24 @@ function Layout() {
           </main>
         ) : (
           <>
-            <main className="flex-1 p-6 md:p-8">
+            <main
+              className={cn(
+                "flex-1 p-6 md:p-8",
+                hasFixedFooter && "pb-28 md:pb-32",
+              )}
+            >
               <div className="mx-auto max-w-7xl">
                 <Outlet />
               </div>
             </main>
-            <Footer />
+            <Footer
+              data-app-footer={hasFixedFooter ? "fixed" : undefined}
+              className={
+                hasFixedFooter
+                  ? "sticky bottom-0 z-20 mt-auto bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+                  : undefined
+              }
+            />
           </>
         )}
       </SidebarInset>

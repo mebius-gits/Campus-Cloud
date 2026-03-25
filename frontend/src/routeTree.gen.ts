@@ -21,6 +21,7 @@ import { Route as LayoutMyResourcesRouteImport } from './routes/_layout/my-resou
 import { Route as LayoutGroupsRouteImport } from './routes/_layout/groups'
 import { Route as LayoutFirewallRouteImport } from './routes/_layout/firewall'
 import { Route as LayoutApprovalsRouteImport } from './routes/_layout/approvals'
+import { Route as LayoutApplicationsCreateRouteImport } from './routes/_layout/applications-create'
 import { Route as LayoutApplicationsRouteImport } from './routes/_layout/applications'
 import { Route as LayoutAdminRouteImport } from './routes/_layout/admin'
 import { Route as LayoutAdminIndexRouteImport } from './routes/_layout/admin.index'
@@ -89,6 +90,12 @@ const LayoutApprovalsRoute = LayoutApprovalsRouteImport.update({
   path: '/approvals',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutApplicationsCreateRoute =
+  LayoutApplicationsCreateRouteImport.update({
+    id: '/applications-create',
+    path: '/applications-create',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 const LayoutApplicationsRoute = LayoutApplicationsRouteImport.update({
   id: '/applications',
   path: '/applications',
@@ -138,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/admin': typeof LayoutAdminRouteWithChildren
   '/applications': typeof LayoutApplicationsRoute
+  '/applications-create': typeof LayoutApplicationsCreateRoute
   '/approvals': typeof LayoutApprovalsRoute
   '/firewall': typeof LayoutFirewallRoute
   '/groups': typeof LayoutGroupsRoute
@@ -157,6 +165,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/applications': typeof LayoutApplicationsRoute
+  '/applications-create': typeof LayoutApplicationsCreateRoute
   '/approvals': typeof LayoutApprovalsRoute
   '/firewall': typeof LayoutFirewallRoute
   '/groups': typeof LayoutGroupsRoute
@@ -180,6 +189,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/_layout/admin': typeof LayoutAdminRouteWithChildren
   '/_layout/applications': typeof LayoutApplicationsRoute
+  '/_layout/applications-create': typeof LayoutApplicationsCreateRoute
   '/_layout/approvals': typeof LayoutApprovalsRoute
   '/_layout/firewall': typeof LayoutFirewallRoute
   '/_layout/groups': typeof LayoutGroupsRoute
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/admin'
     | '/applications'
+    | '/applications-create'
     | '/approvals'
     | '/firewall'
     | '/groups'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/applications'
+    | '/applications-create'
     | '/approvals'
     | '/firewall'
     | '/groups'
@@ -245,6 +257,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/_layout/admin'
     | '/_layout/applications'
+    | '/_layout/applications-create'
     | '/_layout/approvals'
     | '/_layout/firewall'
     | '/_layout/groups'
@@ -354,6 +367,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutApprovalsRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/applications-create': {
+      id: '/_layout/applications-create'
+      path: '/applications-create'
+      fullPath: '/applications-create'
+      preLoaderRoute: typeof LayoutApplicationsCreateRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/applications': {
       id: '/_layout/applications'
       path: '/applications'
@@ -432,6 +452,7 @@ const LayoutAdminRouteWithChildren = LayoutAdminRoute._addFileChildren(
 interface LayoutRouteChildren {
   LayoutAdminRoute: typeof LayoutAdminRouteWithChildren
   LayoutApplicationsRoute: typeof LayoutApplicationsRoute
+  LayoutApplicationsCreateRoute: typeof LayoutApplicationsCreateRoute
   LayoutApprovalsRoute: typeof LayoutApprovalsRoute
   LayoutFirewallRoute: typeof LayoutFirewallRoute
   LayoutGroupsRoute: typeof LayoutGroupsRoute
@@ -447,6 +468,7 @@ interface LayoutRouteChildren {
 const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAdminRoute: LayoutAdminRouteWithChildren,
   LayoutApplicationsRoute: LayoutApplicationsRoute,
+  LayoutApplicationsCreateRoute: LayoutApplicationsCreateRoute,
   LayoutApprovalsRoute: LayoutApprovalsRoute,
   LayoutFirewallRoute: LayoutFirewallRoute,
   LayoutGroupsRoute: LayoutGroupsRoute,

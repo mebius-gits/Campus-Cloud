@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils"
 import { FaGithub, FaLinkedinIn } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6"
 
@@ -15,11 +16,14 @@ const socialLinks = [
   },
 ]
 
-export function Footer() {
+export function Footer({
+  className,
+  ...props
+}: React.ComponentProps<"footer">) {
   const currentYear = new Date().getFullYear()
 
   return (
-    <footer className="border-t py-4 px-6">
+    <footer className={cn("border-t px-6 py-4", className)} {...props}>
       <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
         <p className="text-muted-foreground text-sm">
           Campus Cloud - {currentYear}
