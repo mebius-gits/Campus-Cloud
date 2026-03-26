@@ -5,7 +5,10 @@ from app.models import User
 from app.schemas import UserCreate
 from app.repositories import user as user_repo
 
-engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+engine = create_engine(
+    str(settings.SQLALCHEMY_DATABASE_URI),
+    connect_args={"client_encoding": "utf8"},
+)
 
 
 # make sure all SQLModel models are imported (app.models) before initializing DB
