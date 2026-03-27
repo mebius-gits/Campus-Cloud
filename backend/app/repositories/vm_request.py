@@ -14,6 +14,7 @@ def create_vm_request(
     vm_request_in: VMRequestCreate,
     user_id: uuid.UUID,
     encrypted_password: str,
+    commit: bool = True,
 ) -> VMRequest:
     """Create VM request. Password should be pre-encrypted by the service layer."""
     db_request = VMRequest(
@@ -25,7 +26,7 @@ def create_vm_request(
         memory=vm_request_in.memory,
         password=encrypted_password,
         storage=vm_request_in.storage,
-        environment_type="自訂規格",
+        environment_type=vm_request_in.environment_type,
         os_info=vm_request_in.os_info,
         expiry_date=vm_request_in.expiry_date,
         ostemplate=vm_request_in.ostemplate,
@@ -37,7 +38,10 @@ def create_vm_request(
         created_at=datetime.now(timezone.utc),
     )
     session.add(db_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_request)
     return db_request
 
@@ -102,6 +106,7 @@ def update_vm_request_status(
     reviewer_id: uuid.UUID,
     review_comment: str | None = None,
     vmid: int | None = None,
+    commit: bool = True,
 ) -> VMRequest:
     db_request.status = status
     db_request.reviewer_id = reviewer_id
@@ -110,6 +115,9 @@ def update_vm_request_status(
     if vmid is not None:
         db_request.vmid = vmid
     session.add(db_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_request)
     return db_request

@@ -55,6 +55,7 @@ def reset_password(*, session: Session, token: str, new_password: str) -> None:
     user_repo.update_user(
         session=session, db_user=user, user_in=UserUpdate(password=new_password)
     )
+    session.commit()
 
 
 def get_password_recovery_html(

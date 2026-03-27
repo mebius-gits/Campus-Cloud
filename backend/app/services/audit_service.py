@@ -10,12 +10,13 @@ from app.repositories import audit_log as audit_repo
 def log_action(
     *,
     session: Session,
-    user_id: uuid.UUID,
+    user_id: uuid.UUID | None,
     vmid: int | None = None,
     action: AuditAction | str,
     details: str,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    commit: bool = True,
 ) -> AuditLog:
     return audit_repo.create_audit_log(
         session=session,
@@ -25,6 +26,7 @@ def log_action(
         details=details,
         ip_address=ip_address,
         user_agent=user_agent,
+        commit=commit,
     )
 
 

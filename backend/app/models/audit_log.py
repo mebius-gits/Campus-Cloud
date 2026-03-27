@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy import ForeignKey
 from sqlmodel import Column, DateTime, Enum, Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -62,7 +63,14 @@ class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_logs"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", description="操作者ID")
+    user_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("user.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        description="操作者ID",
+    )
     vmid: int | None = Field(default=None, description="操作的VM/CT ID")
     action: AuditAction = Field(
         sa_column=Column(Enum(AuditAction), nullable=False), description="操作類型"

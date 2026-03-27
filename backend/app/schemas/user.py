@@ -5,6 +5,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.models import UserRole
+
 
 # ===== Request Schemas =====
 
@@ -15,8 +17,8 @@ class UserCreate(BaseModel):
     email: EmailStr = Field(max_length=255)
     password: str = Field(min_length=8, max_length=128)
     is_active: bool = True
+    role: UserRole = UserRole.student
     is_superuser: bool = False
-    is_instructor: bool = False
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -34,8 +36,8 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     is_active: bool | None = None
+    role: UserRole | None = None
     is_superuser: bool | None = None
-    is_instructor: bool | None = None
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -64,8 +66,8 @@ class UserPublic(BaseModel):
     id: uuid.UUID
     email: EmailStr
     is_active: bool
+    role: UserRole
     is_superuser: bool
-    is_instructor: bool = False
     full_name: str | None = None
     created_at: datetime | None = None
 

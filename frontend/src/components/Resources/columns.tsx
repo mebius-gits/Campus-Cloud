@@ -1,4 +1,5 @@
-import type { ColumnDef, TFunction } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
+import type { TFunction } from "i18next"
 import { Container, InfinityIcon, Monitor } from "lucide-react"
 
 import type { ResourcePublic } from "@/client"
@@ -58,7 +59,6 @@ function TypeLabel({
 export const createColumns = (
   t: TFunction<string, string>,
   onOpenConsole: (vmid: number, name: string, type: string) => void,
-  onRowClick?: (vmid: number) => void,
 ): ColumnDef<ResourcePublic>[] => [
   {
     accessorKey: "name",
@@ -139,7 +139,6 @@ export const createColumns = (
   },
 ]
 
-export const columns: ColumnDef<ResourcePublic>[] = createColumns(
-  () => "",
-  () => {},
-)
+const noopT = ((key: string) => key) as TFunction
+
+export const columns: ColumnDef<ResourcePublic>[] = createColumns(noopT, () => {})

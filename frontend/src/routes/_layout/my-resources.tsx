@@ -47,8 +47,8 @@ function MyResourcesTableContent({
   )
 
   const columns = useMemo(
-    () => createColumns(t, onOpenConsole, handleRowClick),
-    [t, onOpenConsole, handleRowClick],
+    () => createColumns(t, onOpenConsole),
+    [t, onOpenConsole],
   )
 
   if (resources.length === 0) {

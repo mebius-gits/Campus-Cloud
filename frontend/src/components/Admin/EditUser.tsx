@@ -8,7 +8,6 @@ import { z } from "zod"
 
 import { type UserPublic, UsersService } from "@/client"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogClose,
@@ -29,6 +28,13 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
@@ -57,8 +63,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
             .optional()
             .or(z.literal("")),
           confirm_password: z.string().optional(),
-          is_superuser: z.boolean().optional(),
-          is_instructor: z.boolean().optional(),
+          role: z.enum(["student", "teacher", "admin"]),
           is_active: z.boolean().optional(),
         })
         .refine(
@@ -80,8 +85,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
     defaultValues: {
       email: user.email,
       full_name: user.full_name ?? undefined,
-      is_superuser: user.is_superuser,
-      is_instructor: user.is_instructor ?? false,
+      role: user.role ?? (user.is_superuser ? "admin" : "student"),
       is_active: user.is_active,
     },
   })
@@ -101,7 +105,6 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
   })
 
   const onSubmit = (data: FormData) => {
-    // exclude confirm_password from submission data and remove password if empty
     const { confirm_password: _, ...submitData } = data
     if (!submitData.password) {
       delete submitData.password
@@ -155,9 +158,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="full_name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {t("settings:admin.userForm.fullName")}
-                    </FormLabel>
+                    <FormLabel>{t("settings:admin.userForm.fullName")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder={t("settings:admin.userForm.fullName")}
@@ -175,9 +176,7 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {t("settings:admin.userForm.setPassword")}
-                    </FormLabel>
+                    <FormLabel>{t("settings:admin.userForm.setPassword")}</FormLabel>
                     <FormControl>
                       <Input
                         placeholder={t("settings:admin.userForm.setPassword")}
@@ -195,14 +194,10 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 name="confirm_password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {t("settings:admin.userForm.confirmPassword")}
-                    </FormLabel>
+                    <FormLabel>{t("settings:admin.userForm.confirmPassword")}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={t(
-                          "settings:admin.userForm.confirmPassword",
-                        )}
+                        placeholder={t("settings:admin.userForm.confirmPassword")}
                         type="password"
                         {...field}
                       />
@@ -214,36 +209,26 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
 
               <FormField
                 control={form.control}
-                name="is_superuser"
+                name="role"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      {t("settings:admin.userForm.isSuperuser")}
-                    </FormLabel>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="is_instructor"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      導師/助教
-                    </FormLabel>
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a role" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="student">Student</SelectItem>
+                        <SelectItem value="teacher">Teacher</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -252,16 +237,23 @@ const EditUser = ({ user, onSuccess }: EditUserProps) => {
                 control={form.control}
                 name="is_active"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      {t("settings:admin.userForm.isActive")}
-                    </FormLabel>
+                  <FormItem>
+                    <FormLabel>{t("settings:admin.userForm.isActive")}</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(value === "true")}
+                      defaultValue={field.value ? "true" : "false"}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="true">Active</SelectItem>
+                        <SelectItem value="false">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
                   </FormItem>
                 )}
               />

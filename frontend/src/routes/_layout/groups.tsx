@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_layout/groups")({
   component: GroupsPage,
   beforeLoad: async () => {
     const user = await UsersService.readUserMe()
-    if (!user.is_superuser && !user.is_instructor) {
+    if (!(user.role === "admin" || user.is_superuser)) {
       throw redirect({ to: "/" })
     }
   },

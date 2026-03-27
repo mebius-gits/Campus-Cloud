@@ -1,4 +1,5 @@
-import type { ColumnDef, TFunction } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
+import type { TFunction } from "i18next"
 
 import type { VMRequestPublic } from "@/client"
 import { Badge } from "@/components/ui/badge"
@@ -73,5 +74,7 @@ export const createAdminRequestColumns = (
   },
 ]
 
+const noopT = ((key: string) => key) as TFunction
+
 export const adminRequestColumns: ColumnDef<VMRequestPublic>[] =
-  createAdminRequestColumns(() => "")
+  createAdminRequestColumns(noopT)

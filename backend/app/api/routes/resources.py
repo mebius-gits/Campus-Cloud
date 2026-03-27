@@ -18,7 +18,7 @@ router = APIRouter(prefix="/resources", tags=["resources"])
 
 
 @router.get("/nodes", response_model=list[NodeSchema])
-def list_nodes(current_user: CurrentUser):
+def list_nodes(current_user: AdminUser):
     try:
         return proxmox_service.list_nodes()
     except Exception as e:

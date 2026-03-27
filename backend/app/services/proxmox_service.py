@@ -11,11 +11,9 @@ from typing import Literal
 import httpx
 
 from app.core.proxmox import basic_blocking_task_status, get_active_host, get_proxmox_api, get_proxmox_settings
-from app.exceptions import NotFoundError, ProxmoxError
+from app.exceptions import BadRequestError, NotFoundError, ProxmoxError
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_NODE = "pve"
 
 ResourceType = Literal["qemu", "lxc"]
 
@@ -58,6 +56,122 @@ def list_nodes() -> list[dict]:
     """Return all cluster nodes."""
     proxmox = get_proxmox_api()
     return proxmox.nodes.get()
+
+
+def get_available_nodes() -> list[dict]:
+    """Return online nodes first, or all nodes if status data is unavailable."""
+    nodes = list_nodes()
+    online_nodes = [node for node in nodes if node.get("status") == "online"]
+    return online_nodes or nodes
+
+
+def pick_target_node(preferred_node: str | None = None) -> str:
+    """Pick a usable target node, preferring an explicitly requested one."""
+    nodes = get_available_nodes()
+    if not nodes:
+        raise ProxmoxError("No Proxmox nodes are available")
+
+    if preferred_node:
+        for node in nodes:
+            node_name = node.get("node") or node.get("name")
+            if node_name == preferred_node:
+                return node_name
+
+    selected = nodes[0].get("node") or nodes[0].get("name")
+    if not selected:
+        raise ProxmoxError("No usable Proxmox node name was returned")
+    return selected
+
+
+def list_node_storages(node: str) -> list[dict]:
+    """Return storages visible on a node."""
+    proxmox = get_proxmox_api()
+    return proxmox.nodes(node).storage.get()
+
+
+def _storage_name(storage: dict) -> str | None:
+    return storage.get("storage") or storage.get("id")
+
+
+def _storage_is_enabled(storage: dict) -> bool:
+    enabled = storage.get("enabled")
+    if enabled is None:
+        return storage.get("disable") not in (1, "1", True, "true")
+    return enabled not in (0, "0", False, "false")
+
+
+def _storage_is_active(storage: dict) -> bool:
+    active = storage.get("active")
+    if active is None:
+        return storage.get("status") != "disabled"
+    return active not in (0, "0", False, "false")
+
+
+def _storage_supports_content(storage: dict, required_content: str) -> bool:
+    content = storage.get("content")
+    if not content:
+        return True
+    supported = {part.strip() for part in str(content).split(",") if part.strip()}
+    return required_content in supported
+
+
+def resolve_target_storage(
+    node: str,
+    requested_storage: str | None,
+    *,
+    required_content: Literal["images", "rootdir"],
+) -> str:
+    """Pick a usable storage on a node, falling back when the requested one is unavailable."""
+    storages = list_node_storages(node)
+    compatible = [
+        storage
+        for storage in storages
+        if _storage_is_enabled(storage)
+        and _storage_is_active(storage)
+        and _storage_supports_content(storage, required_content)
+    ]
+
+    if requested_storage:
+        for storage in compatible:
+            if _storage_name(storage) == requested_storage:
+                return requested_storage
+
+        logger.warning(
+            "Storage %s is unavailable on node %s for content %s; attempting fallback",
+            requested_storage,
+            node,
+            required_content,
+        )
+
+    if compatible:
+        fallback = _storage_name(compatible[0])
+        if fallback:
+            return fallback
+
+    available_names = [
+        name
+        for storage in storages
+        if (name := _storage_name(storage))
+    ]
+    raise BadRequestError(
+        "No enabled Proxmox storage is available on "
+        f"node '{node}' for content '{required_content}'. "
+        f"Configured/requested storage: '{requested_storage or get_proxmox_settings().data_storage}'. "
+        f"Node storages: {', '.join(available_names) if available_names else 'none'}."
+    )
+
+
+def find_vm_template(template_id: int) -> dict:
+    """Find a VM template by VMID in the configured pool."""
+    pool = get_proxmox_settings().pool_name
+    for vm in _raw_vms():
+        if (
+            vm["vmid"] == template_id
+            and vm.get("template") == 1
+            and vm.get("pool") == pool
+        ):
+            return vm
+    raise NotFoundError(f"VM template {template_id} not found")
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +391,13 @@ def get_lxc_templates(node: str) -> list[dict]:
 
 
 def get_vm_templates() -> list[dict]:
-    """Return all VM templates from the cluster (not filtered by pool)."""
-    return [vm for vm in _raw_vms() if vm.get("template") == 1]
+    """Return all VM templates in the configured pool."""
+    pool = get_proxmox_settings().pool_name
+    return [
+        vm
+        for vm in _raw_vms()
+        if vm.get("template") == 1 and vm.get("pool") == pool
+    ]
 
 
 # ---------------------------------------------------------------------------

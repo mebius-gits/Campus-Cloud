@@ -11,7 +11,7 @@ from app.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from app.models import User
+from app.models import AuditLog, SpecChangeRequest, User, VMRequest
 from app.schemas import (
     UserCreate,
     UserRegister,
@@ -19,6 +19,7 @@ from app.schemas import (
     UserUpdateMe,
     UsersPublic,
 )
+from app.repositories import resource as resource_repo
 from app.repositories import user as user_repo
 from app.services import audit_service
 from app.utils import generate_new_account_email, send_email
@@ -32,6 +33,52 @@ def list_users(*, session: Session, skip: int = 0, limit: int = 100) -> UsersPub
     return UsersPublic(data=users, count=count)
 
 
+def _commit_and_refresh(session: Session, user: User) -> User:
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def _prepare_user_delete(*, session: Session, user: User) -> None:
+    if resource_repo.get_resources_by_user(session=session, user_id=user.id):
+        raise BadRequestError(
+            "Cannot delete a user who still owns provisioned resources"
+        )
+
+    vm_requests = session.exec(
+        select(VMRequest).where(VMRequest.user_id == user.id)
+    ).all()
+    for request in vm_requests:
+        session.delete(request)
+
+    spec_change_requests = session.exec(
+        select(SpecChangeRequest).where(SpecChangeRequest.user_id == user.id)
+    ).all()
+    for request in spec_change_requests:
+        session.delete(request)
+
+    reviewed_vm_requests = session.exec(
+        select(VMRequest).where(VMRequest.reviewer_id == user.id)
+    ).all()
+    for request in reviewed_vm_requests:
+        request.reviewer_id = None
+        session.add(request)
+
+    reviewed_spec_requests = session.exec(
+        select(SpecChangeRequest).where(SpecChangeRequest.reviewer_id == user.id)
+    ).all()
+    for request in reviewed_spec_requests:
+        request.reviewer_id = None
+        session.add(request)
+
+    audit_logs = session.exec(
+        select(AuditLog).where(AuditLog.user_id == user.id)
+    ).all()
+    for log in audit_logs:
+        log.user_id = None
+        session.add(log)
+
+
 def create_user(
     *, session: Session, user_in: UserCreate, current_user_id: uuid.UUID
 ) -> User:
@@ -41,12 +88,18 @@ def create_user(
 
     user = user_repo.create_user(session=session, user_create=user_in)
 
-    audit_service.log_action(
-        session=session,
-        user_id=current_user_id,
-        action="user_create",
-        details=f"Created user: {user_in.email}, is_superuser: {user_in.is_superuser}",
-    )
+    try:
+        audit_service.log_action(
+            session=session,
+            user_id=current_user_id,
+            action="user_create",
+            details=f"Created user: {user_in.email}, role: {user.role.value}",
+            commit=False,
+        )
+        user = _commit_and_refresh(session, user)
+    except Exception:
+        session.rollback()
+        raise
 
     if settings.emails_enabled and user_in.email:
         email_data = generate_new_account_email(
@@ -65,7 +118,8 @@ def register_user(*, session: Session, user_in: UserRegister) -> User:
     if existing:
         raise ConflictError("The user with this email already exists in the system")
     user_create = UserCreate.model_validate(user_in.model_dump())
-    return user_repo.create_user(session=session, user_create=user_create)
+    user = user_repo.create_user(session=session, user_create=user_create)
+    return _commit_and_refresh(session, user)
 
 
 def get_user_by_id(
@@ -101,12 +155,18 @@ def update_user(
     changes = ", ".join(
         f"{k}={v}" for k, v in user_in.model_dump(exclude_unset=True).items()
     )
-    audit_service.log_action(
-        session=session,
-        user_id=current_user_id,
-        action="user_update",
-        details=f"Updated user {db_user.email}: {changes}",
-    )
+    try:
+        audit_service.log_action(
+            session=session,
+            user_id=current_user_id,
+            action="user_update",
+            details=f"Updated user {db_user.email}: {changes}",
+            commit=False,
+        )
+        db_user = _commit_and_refresh(session, db_user)
+    except Exception:
+        session.rollback()
+        raise
     return db_user
 
 
@@ -119,14 +179,20 @@ def delete_user(*, session: Session, user_id: uuid.UUID, current_user: User) -> 
             "Super users are not allowed to delete themselves"
         )
 
-    audit_service.log_action(
-        session=session,
-        user_id=current_user.id,
-        action="user_delete",
-        details=f"Deleted user: {user.email}",
-    )
-    session.delete(user)
-    session.commit()
+    try:
+        _prepare_user_delete(session=session, user=user)
+        audit_service.log_action(
+            session=session,
+            user_id=current_user.id,
+            action="user_delete",
+            details=f"Deleted user: {user.email}",
+            commit=False,
+        )
+        session.delete(user)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
 
 def update_me(*, session: Session, user_in: UserUpdateMe, current_user: User) -> User:
@@ -138,16 +204,20 @@ def update_me(*, session: Session, user_in: UserUpdateMe, current_user: User) ->
     user_data = user_in.model_dump(exclude_unset=True)
     current_user.sqlmodel_update(user_data)
     session.add(current_user)
-    session.commit()
-    session.refresh(current_user)
 
     changes = ", ".join(f"{k}={v}" for k, v in user_data.items())
-    audit_service.log_action(
-        session=session,
-        user_id=current_user.id,
-        action="user_update",
-        details=f"Updated own profile: {changes}",
-    )
+    try:
+        audit_service.log_action(
+            session=session,
+            user_id=current_user.id,
+            action="user_update",
+            details=f"Updated own profile: {changes}",
+            commit=False,
+        )
+        current_user = _commit_and_refresh(session, current_user)
+    except Exception:
+        session.rollback()
+        raise
     return current_user
 
 
@@ -172,11 +242,17 @@ def delete_me(*, session: Session, current_user: User) -> None:
             "Super users are not allowed to delete themselves"
         )
 
-    audit_service.log_action(
-        session=session,
-        user_id=current_user.id,
-        action="user_delete",
-        details=f"Deleted own account: {current_user.email}",
-    )
-    session.delete(current_user)
-    session.commit()
+    try:
+        _prepare_user_delete(session=session, user=current_user)
+        audit_service.log_action(
+            session=session,
+            user_id=None,
+            action="user_delete",
+            details=f"Deleted own account: {current_user.email}",
+            commit=False,
+        )
+        session.delete(current_user)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

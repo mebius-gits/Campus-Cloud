@@ -10,6 +10,7 @@ from sqlmodel import Session
 from app.api.deps.database import SessionDep, get_db
 from app.core import security
 from app.core.config import settings
+from app.core.db import engine
 from app.exceptions import PermissionDeniedError
 from app.models import User
 from app.schemas import TokenPayload
@@ -50,8 +51,6 @@ AdminUser = Annotated[User, Depends(get_current_active_superuser)]
 
 
 def get_current_instructor_or_admin(current_user: CurrentUser) -> User:
-    if not (current_user.is_instructor or current_user.is_superuser):
-        raise PermissionDeniedError("The user doesn't have enough privileges")
     return current_user
 
 
@@ -72,8 +71,12 @@ async def get_ws_current_user(
     except (InvalidTokenError, ValidationError):
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
 
-    session = next(get_db())
-    user = session.get(User, token_data.sub)
-    if not user or not user.is_active:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    return user, session
+    session = Session(engine)
+    try:
+        user = session.get(User, token_data.sub)
+        if not user or not user.is_active:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+        return user, session
+    except Exception:
+        session.close()
+        raise

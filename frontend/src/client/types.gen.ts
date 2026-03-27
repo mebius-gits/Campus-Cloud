@@ -10,7 +10,7 @@ export type AuditAction = 'spec_change_request' | 'spec_change_apply' | 'snapsho
  */
 export type AuditLogPublic = {
     id: string;
-    user_id: string;
+    user_id: (string | null);
     user_email?: (string | null);
     user_full_name?: (string | null);
     vmid: (number | null);
@@ -433,8 +433,8 @@ export type UserCreate = {
     email: string;
     password: string;
     is_active?: boolean;
+    role?: ('student' | 'teacher' | 'admin');
     is_superuser?: boolean;
-    is_instructor?: boolean;
     full_name?: (string | null);
 };
 
@@ -445,8 +445,8 @@ export type UserPublic = {
     id: string;
     email: string;
     is_active: boolean;
+    role: ('student' | 'teacher' | 'admin');
     is_superuser: boolean;
-    is_instructor?: boolean;
     full_name?: (string | null);
     created_at?: (string | null);
 };
@@ -475,8 +475,8 @@ export type UserUpdate = {
     email?: (string | null);
     password?: (string | null);
     is_active?: (boolean | null);
+    role?: ('student' | 'teacher' | 'admin' | null);
     is_superuser?: (boolean | null);
-    is_instructor?: (boolean | null);
     full_name?: (string | null);
 };
 

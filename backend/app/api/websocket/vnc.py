@@ -21,6 +21,7 @@ async def vnc_proxy(websocket: WebSocket, vmid: int, token: str):
     try:
         check_resource_ownership(vmid, user, session)
     except Exception:
+        session.close()
         await websocket.close(code=1008, reason="Permission denied")
         return
 
@@ -142,4 +143,5 @@ async def vnc_proxy(websocket: WebSocket, vmid: int, token: str):
     finally:
         if pve_websocket:
             await pve_websocket.close()
+        session.close()
         logger.info(f"VNC proxy disconnected for VM {vmid}")

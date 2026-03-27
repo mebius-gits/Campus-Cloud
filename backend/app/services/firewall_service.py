@@ -18,7 +18,6 @@ from app.core.proxmox import get_proxmox_api
 from app.exceptions import BadRequestError, NotFoundError, ProxmoxError
 from app.models.user import User
 from app.repositories import firewall_layout as layout_repo
-from app.repositories import group as group_repo
 from app.repositories import resource as resource_repo
 from app.schemas.firewall import (
     PortSpec,
@@ -169,8 +168,8 @@ def setup_default_rules(node: str, vmid: int, resource_type: ResourceType) -> No
         logger.info(f"VM {vmid}: 已新增預設出站規則（往網關）")
 
     except Exception as e:
-        # 防火牆設定失敗不應阻斷 VM 建立
         logger.error(f"VM {vmid}: 設定防火牆預設規則失敗: {e}")
+        raise ProxmoxError(f"Failed to configure default firewall rules for {vmid}: {e}")
 
 
 # ─── 連線管理（高階 API）─────────────────────────────────────────────────────
@@ -682,27 +681,12 @@ def get_topology(user: User, session: Session) -> TopologyResponse:
 
     權限邏輯：
     - superuser: 所有 VM
-    - instructor: 自己的 VM + 所屬群組學生的 VM
     - 一般使用者: 只看自己的 VM
     """
     # 取得有權限的 user_id 清單
     if user.is_superuser:
         all_resources = resource_repo.get_all_resources(session=session)
         target_vmids = [r.vmid for r in all_resources]
-    elif user.is_instructor:
-        own_resources = resource_repo.get_resources_by_user(
-            session=session, user_id=user.id
-        )
-        group_user_ids = group_repo.get_group_member_user_ids_for_instructor(
-            session=session, instructor_id=user.id
-        )
-        group_resources = []
-        for uid in group_user_ids:
-            group_resources.extend(
-                resource_repo.get_resources_by_user(session=session, user_id=uid)
-            )
-        all_res = list(own_resources) + group_resources
-        target_vmids = list({r.vmid for r in all_res})
     else:
         own_resources = resource_repo.get_resources_by_user(
             session=session, user_id=user.id

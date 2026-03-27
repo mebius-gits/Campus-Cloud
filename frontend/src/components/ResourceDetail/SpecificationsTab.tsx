@@ -26,7 +26,7 @@ export default function SpecificationsTab({ vmid }: SpecificationsTabProps) {
   const { t } = useTranslation("resourceDetail")
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const isAdmin = user?.is_superuser || false
+  const isAdmin = user?.role === "admin" || user?.is_superuser || false
 
   const { data: config } = useSuspenseQuery({
     queryKey: ["resourceConfig", vmid],

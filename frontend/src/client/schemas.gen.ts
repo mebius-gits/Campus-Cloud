@@ -15,8 +15,15 @@ export const AuditLogPublicSchema = {
             title: 'Id'
         },
         user_id: {
-            type: 'string',
-            format: 'uuid',
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'User Id'
         },
         user_email: {
@@ -1567,14 +1574,15 @@ export const UserCreateSchema = {
             title: 'Is Active',
             default: true
         },
+        role: {
+            type: 'string',
+            enum: ['student', 'teacher', 'admin'],
+            title: 'Role',
+            default: 'student'
+        },
         is_superuser: {
             type: 'boolean',
             title: 'Is Superuser',
-            default: false
-        },
-        is_instructor: {
-            type: 'boolean',
-            title: 'Is Instructor',
             default: false
         },
         full_name: {
@@ -1612,14 +1620,14 @@ export const UserPublicSchema = {
             type: 'boolean',
             title: 'Is Active'
         },
+        role: {
+            type: 'string',
+            enum: ['student', 'teacher', 'admin'],
+            title: 'Role'
+        },
         is_superuser: {
             type: 'boolean',
             title: 'Is Superuser'
-        },
-        is_instructor: {
-            type: 'boolean',
-            title: 'Is Instructor',
-            default: false
         },
         full_name: {
             anyOf: [
@@ -1646,7 +1654,7 @@ export const UserPublicSchema = {
         }
     },
     type: 'object',
-    required: ['id', 'email', 'is_active', 'is_superuser'],
+    required: ['id', 'email', 'is_active', 'role', 'is_superuser'],
     title: 'UserPublic',
     description: 'API 回傳的使用者資料'
 } as const;
@@ -1723,6 +1731,18 @@ export const UserUpdateSchema = {
             ],
             title: 'Is Active'
         },
+        role: {
+            anyOf: [
+                {
+                    type: 'string',
+                    enum: ['student', 'teacher', 'admin']
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Role'
+        },
         is_superuser: {
             anyOf: [
                 {
@@ -1733,17 +1753,6 @@ export const UserUpdateSchema = {
                 }
             ],
             title: 'Is Superuser'
-        },
-        is_instructor: {
-            anyOf: [
-                {
-                    type: 'boolean'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'Is Instructor'
         },
         full_name: {
             anyOf: [

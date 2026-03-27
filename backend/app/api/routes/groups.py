@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.deps import InstructorUser, SessionDep
+from app.api.deps import AdminUser, SessionDep
 from app.exceptions import PermissionDeniedError
 from app.repositories import group as group_repo
 from app.schemas.common import Message
@@ -31,7 +31,7 @@ def _check_group_access(current_user, db_group) -> None:
 def create_group(
     group_in: GroupCreate,
     session: SessionDep,
-    current_user: InstructorUser,
+    current_user: AdminUser,
 ):
     db_group = group_repo.create_group(
         session=session,
@@ -57,13 +57,16 @@ def create_group(
 
 
 @router.get("/", response_model=GroupsPublic)
-def list_groups(session: SessionDep, current_user: InstructorUser):
+def list_groups(session: SessionDep, current_user: AdminUser):
     if current_user.is_superuser:
         groups = group_repo.get_all_groups(session=session)
     else:
         groups = group_repo.get_groups_by_owner(
             session=session, owner_id=current_user.id
         )
+    member_counts = group_repo.get_member_counts(
+        session=session, group_ids=[g.id for g in groups]
+    )
     data = [
         GroupPublic(
             id=g.id,
@@ -71,7 +74,7 @@ def list_groups(session: SessionDep, current_user: InstructorUser):
             description=g.description,
             owner_id=g.owner_id,
             created_at=g.created_at,
-            member_count=group_repo.count_members(session=session, group_id=g.id),
+            member_count=member_counts.get(g.id, 0),
         )
         for g in groups
     ]
@@ -80,7 +83,7 @@ def list_groups(session: SessionDep, current_user: InstructorUser):
 
 @router.get("/{group_id}", response_model=GroupDetailPublic)
 def get_group(
-    group_id: uuid.UUID, session: SessionDep, current_user: InstructorUser
+    group_id: uuid.UUID, session: SessionDep, current_user: AdminUser
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -113,7 +116,7 @@ def get_group(
 
 @router.delete("/{group_id}", response_model=Message)
 def delete_group(
-    group_id: uuid.UUID, session: SessionDep, current_user: InstructorUser
+    group_id: uuid.UUID, session: SessionDep, current_user: AdminUser
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -135,7 +138,7 @@ def add_members(
     group_id: uuid.UUID,
     body: GroupMemberAdd,
     session: SessionDep,
-    current_user: InstructorUser,
+    current_user: AdminUser,
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -167,7 +170,7 @@ def remove_member(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
     session: SessionDep,
-    current_user: InstructorUser,
+    current_user: AdminUser,
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:

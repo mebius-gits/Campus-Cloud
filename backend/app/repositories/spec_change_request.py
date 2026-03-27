@@ -20,6 +20,7 @@ def create_spec_change_request(
     requested_cpu: int | None = None,
     requested_memory: int | None = None,
     requested_disk: int | None = None,
+    commit: bool = True,
 ) -> SpecChangeRequest:
     db_request = SpecChangeRequest(
         vmid=vmid,
@@ -36,7 +37,10 @@ def create_spec_change_request(
         created_at=datetime.now(timezone.utc),
     )
     session.add(db_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_request)
     return db_request
 
@@ -115,6 +119,7 @@ def update_spec_change_request_status(
     status: SpecChangeRequestStatus | str,
     reviewer_id: uuid.UUID,
     review_comment: str | None = None,
+    commit: bool = True,
 ) -> SpecChangeRequest:
     if isinstance(status, str):
         status = SpecChangeRequestStatus(status)
@@ -128,13 +133,16 @@ def update_spec_change_request_status(
     db_request.review_comment = review_comment
     db_request.reviewed_at = datetime.now(timezone.utc)
     session.add(db_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_request)
     return db_request
 
 
 def mark_spec_change_applied(
-    *, session: Session, request_id: uuid.UUID
+    *, session: Session, request_id: uuid.UUID, commit: bool = True
 ) -> SpecChangeRequest:
     db_request = get_spec_change_request_by_id(
         session=session, request_id=request_id, for_update=True
@@ -143,6 +151,9 @@ def mark_spec_change_applied(
         raise ValueError(f"Spec change request {request_id} not found")
     db_request.applied_at = datetime.now(timezone.utc)
     session.add(db_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_request)
     return db_request

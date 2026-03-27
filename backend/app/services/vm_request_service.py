@@ -70,6 +70,7 @@ def create(
         vm_request_in=request_in,
         user_id=user.id,
         encrypted_password=encrypt_value(request_in.password),
+        commit=False,
     )
 
     audit_service.log_action(
@@ -81,7 +82,9 @@ def create(
             f"{request_in.cores} cores, {request_in.memory}MB RAM. "
             f"Reason: {request_in.reason}"
         ),
+        commit=False,
     )
+    session.commit()
 
     logger.info(f"User {user.email} submitted VM request {db_request.id}")
     return _to_public(db_request, user_override=user)
@@ -156,6 +159,7 @@ def review(
             reviewer_id=reviewer.id,
             review_comment=review_data.review_comment,
             vmid=vmid,
+            commit=False,
         )
 
         action = (
@@ -175,7 +179,9 @@ def review(
             vmid=vmid,
             action="vm_request_review",
             details=details,
+            commit=False,
         )
+        session.commit()
 
         logger.info(
             f"Admin {reviewer.email} {action} VM request {request_id}"
@@ -184,29 +190,15 @@ def review(
         logger.exception(
             "Failed to process review for VM request %s", request_id
         )
+        session.rollback()
 
-        # Reset to pending on provisioning failure
-        if review_data.status == VMRequestStatus.approved:
-            error_comment = review_data.review_comment or ""
-            if error_comment:
-                error_comment += " | "
-            error_comment += (
-                "Automatic provisioning failed; please review and retry."
-            )
-
+        if review_data.status == VMRequestStatus.approved and vmid is not None:
             try:
-                vm_request_repo.update_vm_request_status(
-                    session=session,
-                    db_request=db_request,
-                    status=VMRequestStatus.pending,
-                    reviewer_id=reviewer.id,
-                    review_comment=error_comment,
-                    vmid=None,
-                )
+                provisioning_service.cleanup_provisioned_resource(vmid)
             except Exception:
                 logger.exception(
-                    "Failed to reset VM request %s back to pending",
-                    request_id,
+                    "Failed to clean up provisioned resource for request %s",
+                    request_id
                 )
 
         raise ProvisioningError(

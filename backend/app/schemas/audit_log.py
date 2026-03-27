@@ -12,7 +12,7 @@ class AuditLogPublic(BaseModel):
     """公開的審計日誌"""
 
     id: uuid.UUID
-    user_id: uuid.UUID
+    user_id: uuid.UUID | None
     user_email: str | None = None
     user_full_name: str | None = None
     vmid: int | None

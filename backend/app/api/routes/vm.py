@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser, SessionDep, VmInfoDep
+from app.api.deps import AdminUser, CurrentUser, SessionDep, VmInfoDep
 from app.exceptions import BadRequestError, ProxmoxError
 from app.schemas import VMCreateRequest, VMCreateResponse, VMTemplateSchema, VNCInfoSchema
 from app.services import provisioning_service, proxmox_service
@@ -37,7 +37,7 @@ def get_vm_console(vmid: int, vm_info: VmInfoDep):
 
 @router.post("/create", response_model=VMCreateResponse)
 def create_vm(
-    vm_data: VMCreateRequest, session: SessionDep, current_user: CurrentUser
+    vm_data: VMCreateRequest, session: SessionDep, current_user: AdminUser
 ):
     return provisioning_service.create_vm(
         session=session, vm_data=vm_data, user_id=current_user.id

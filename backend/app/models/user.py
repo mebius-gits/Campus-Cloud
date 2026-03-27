@@ -1,12 +1,13 @@
 """使用者相關模型"""
 
+import enum
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pydantic import EmailStr
 from sqlalchemy import DateTime
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Column, Enum, Field, Relationship, SQLModel
 
 from .base import get_datetime_utc
 
@@ -18,11 +19,21 @@ if TYPE_CHECKING:
 
 
 # Shared properties
+class UserRole(str, enum.Enum):
+    student = "student"
+    teacher = "teacher"
+    admin = "admin"
+
+
 class UserBase(SQLModel):
     """使用者基礎屬性"""
 
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     is_active: bool = True
+    role: UserRole = Field(
+        default=UserRole.student,
+        sa_column=Column(Enum(UserRole), nullable=False, default=UserRole.student),
+    )
     is_superuser: bool = False
     is_instructor: bool = False
     full_name: str | None = Field(default=None, max_length=255)
@@ -55,4 +66,5 @@ class User(UserBase, table=True):
 __all__ = [
     "UserBase",
     "User",
+    "UserRole",
 ]

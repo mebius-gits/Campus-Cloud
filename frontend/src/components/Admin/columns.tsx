@@ -1,4 +1,5 @@
-import type { ColumnDef, TFunction } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
+import type { TFunction } from "i18next"
 
 import type { UserPublic } from "@/client"
 import { Badge } from "@/components/ui/badge"
@@ -41,15 +42,22 @@ export const createColumns = (
     ),
   },
   {
-    accessorKey: "is_superuser",
+    accessorKey: "role",
     header: t("settings:table.role"),
-    cell: ({ row }) => (
-      <Badge variant={row.original.is_superuser ? "default" : "secondary"}>
-        {row.original.is_superuser
+    cell: ({ row }) => {
+      const role = row.original.role
+      const label =
+        role === "admin"
           ? t("settings:table.superuser")
-          : t("settings:table.user")}
-      </Badge>
-    ),
+          : role === "teacher"
+            ? "Teacher"
+            : t("settings:table.user")
+      return (
+        <Badge variant={role === "admin" ? "default" : "secondary"}>
+          {label}
+        </Badge>
+      )
+    },
   },
   {
     accessorKey: "is_active",
@@ -83,4 +91,6 @@ export const createColumns = (
   },
 ]
 
-export const columns: ColumnDef<UserTableData>[] = createColumns(() => "")
+const noopT = ((key: string) => key) as TFunction
+
+export const columns: ColumnDef<UserTableData>[] = createColumns(noopT)

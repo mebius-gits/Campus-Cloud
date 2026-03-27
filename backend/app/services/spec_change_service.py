@@ -125,6 +125,7 @@ def create(
         requested_cpu=request_in.requested_cpu,
         requested_memory=request_in.requested_memory,
         requested_disk=request_in.requested_disk,
+        commit=False,
     )
 
     audit_service.log_action(
@@ -139,7 +140,9 @@ def create(
             f"Disk={request_in.requested_disk}GB. "
             f"Reason: {request_in.reason}"
         ),
+        commit=False,
     )
+    session.commit()
 
     logger.info(
         f"User {user.email} created spec change request for VMID {vmid}"
@@ -182,7 +185,7 @@ def review(
     reviewer,
 ) -> SpecChangeRequestPublic:
     db_request = spec_request_repo.get_spec_change_request_by_id(
-        session=session, request_id=request_id
+        session=session, request_id=request_id, for_update=True
     )
     if not db_request:
         raise NotFoundError("Request not found")
@@ -191,38 +194,70 @@ def review(
             f"Request already {db_request.status.value}"
         )
 
-    db_request = spec_request_repo.update_spec_change_request_status(
-        session=session,
-        request_id=request_id,
-        status=review_data.status,
-        reviewer_id=reviewer.id,
-        review_comment=review_data.review_comment,
+    try:
+        if review_data.status == SpecChangeRequestStatus.approved:
+            changes = _apply_spec_changes(db_request=db_request)
+            db_request = spec_request_repo.update_spec_change_request_status(
+                session=session,
+                request_id=request_id,
+                status=review_data.status,
+                reviewer_id=reviewer.id,
+                review_comment=review_data.review_comment,
+                commit=False,
+            )
+            db_request = spec_request_repo.mark_spec_change_applied(
+                session=session, request_id=db_request.id, commit=False
+            )
+            audit_service.log_action(
+                session=session,
+                user_id=reviewer.id,
+                vmid=db_request.vmid,
+                action="spec_change_apply",
+                details=f"Applied approved spec changes: {', '.join(changes)}",
+                commit=False,
+            )
+            logger.info(
+                "Admin %s approved and applied spec change request %s",
+                reviewer.email,
+                request_id,
+            )
+        else:
+            db_request = spec_request_repo.update_spec_change_request_status(
+                session=session,
+                request_id=request_id,
+                status=review_data.status,
+                reviewer_id=reviewer.id,
+                review_comment=review_data.review_comment,
+                commit=False,
+            )
+            audit_service.log_action(
+                session=session,
+                user_id=reviewer.id,
+                vmid=db_request.vmid,
+                action="spec_change_request",
+                details=(
+                    f"Rejected spec change request {request_id}: "
+                    f"{review_data.review_comment or 'No comment'}"
+                ),
+                commit=False,
+            )
+            logger.info(
+                f"Admin {reviewer.email} rejected spec change request {request_id}"
+            )
+
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    refreshed = spec_request_repo.get_spec_change_request_by_id(
+        session=session, request_id=db_request.id
     )
-
-    if review_data.status == SpecChangeRequestStatus.approved:
-        _apply_spec_changes(
-            session=session, db_request=db_request, reviewer=reviewer
-        )
-    else:
-        audit_service.log_action(
-            session=session,
-            user_id=reviewer.id,
-            vmid=db_request.vmid,
-            action="spec_change_request",
-            details=(
-                f"Rejected spec change request {request_id}: "
-                f"{review_data.review_comment or 'No comment'}"
-            ),
-        )
-        logger.info(
-            f"Admin {reviewer.email} rejected spec change request {request_id}"
-        )
-
-    return _to_public(db_request)
+    return _to_public(refreshed)
 
 
-def _apply_spec_changes(*, session: Session, db_request, reviewer) -> None:
-    """Apply approved spec changes to the Proxmox resource."""
+def _apply_spec_changes(*, db_request) -> list[str]:
+    """Apply approved spec changes to the Proxmox resource and return summaries."""
     try:
         resource_info = proxmox_service.find_resource(db_request.vmid)
 
@@ -261,25 +296,11 @@ def _apply_spec_changes(*, session: Session, db_request, reviewer) -> None:
                 f"Disk: {db_request.current_disk} -> {db_request.requested_disk}GB"
             )
 
-        spec_request_repo.mark_spec_change_applied(
-            session=session, request_id=db_request.id
-        )
-
-        audit_service.log_action(
-            session=session,
-            user_id=reviewer.id,
-            vmid=db_request.vmid,
-            action="spec_change_apply",
-            details=f"Applied approved spec changes: {', '.join(changes)}",
-        )
-
-        logger.info(
-            f"Admin {reviewer.email} approved and applied spec change request {db_request.id}"
-        )
+        return changes
     except (ProxmoxError, NotFoundError):
         raise
     except Exception as e:
         logger.error(f"Failed to apply spec changes: {e}")
         raise ProxmoxError(
-            f"Request approved but failed to apply changes: {e}"
+            f"Failed to apply requested changes before approval persistence: {e}"
         )

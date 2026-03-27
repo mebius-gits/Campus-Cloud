@@ -10,12 +10,13 @@ from app.models import AuditAction, AuditLog
 def create_audit_log(
     *,
     session: Session,
-    user_id: uuid.UUID,
+    user_id: uuid.UUID | None,
     vmid: int | None,
     action: AuditAction | str,
     details: str,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    commit: bool = True,
 ) -> AuditLog:
     if isinstance(action, str):
         action = AuditAction(action)
@@ -29,7 +30,10 @@ def create_audit_log(
         created_at=datetime.now(timezone.utc),
     )
     session.add(db_log)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_log)
     return db_log
 

@@ -21,6 +21,7 @@ class VMRequestCreate(BaseModel):
     memory: int = 2048
     password: str = Field(min_length=8, max_length=128)
     storage: str = "local-lvm"
+    environment_type: str = "自訂規格"
     os_info: str | None = None
     expiry_date: date | None = None
 

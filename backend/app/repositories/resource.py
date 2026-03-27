@@ -16,6 +16,7 @@ def create_resource(
     os_info: str | None = None,
     expiry_date: date | None = None,
     template_id: int | None = None,
+    commit: bool = True,
 ) -> Resource:
     db_resource = Resource(
         vmid=vmid,
@@ -27,7 +28,10 @@ def create_resource(
         created_at=datetime.now(timezone.utc),
     )
     session.add(db_resource)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(db_resource)
     return db_resource
 
@@ -57,8 +61,11 @@ def update_resource(
     return db_resource
 
 
-def delete_resource(*, session: Session, vmid: int) -> None:
+def delete_resource(*, session: Session, vmid: int, commit: bool = True) -> None:
     resource = get_resource_by_vmid(session=session, vmid=vmid)
     if resource:
         session.delete(resource)
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()

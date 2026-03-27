@@ -221,7 +221,7 @@ def preview_cluster(
             success=False,
             is_cluster=False,
             nodes=[],
-            error=str(e),
+            error="Cluster preview failed",
         )
 
 
@@ -296,7 +296,8 @@ def parse_cert(
             not_after=cert.not_valid_after_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
         )
     except Exception as e:
-        return CertParseResult(valid=False, error=str(e))
+        logger.warning(f"Certificate parse failed: {e}")
+        return CertParseResult(valid=False, error="Invalid certificate")
 
 
 @router.post("/test", response_model=ProxmoxConnectionTestResult)
@@ -336,4 +337,4 @@ def test_proxmox_connection(
         )
     except Exception as e:
         logger.warning(f"Proxmox connection test failed: {e}")
-        return ProxmoxConnectionTestResult(success=False, message=f"連線失敗：{e}")
+        return ProxmoxConnectionTestResult(success=False, message="連線失敗，請檢查設定與憑證")

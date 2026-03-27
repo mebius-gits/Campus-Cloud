@@ -3,17 +3,48 @@ from typing import Any
 from sqlmodel import Session, select
 
 from app.core.security import get_password_hash, verify_password
-from app.models import User
+from app.models import User, UserRole
 from app.schemas import UserCreate, UserUpdate
 
 
+def _resolve_role_fields(
+    *,
+    role: UserRole | None,
+    is_superuser: bool,
+    is_instructor: bool,
+) -> tuple[UserRole, bool, bool]:
+    if role is None:
+        if is_superuser:
+            role = UserRole.admin
+        elif is_instructor:
+            role = UserRole.teacher
+        else:
+            role = UserRole.student
+
+    if role == UserRole.admin:
+        return role, True, False
+    if role == UserRole.teacher:
+        return role, False, False
+    return role, False, False
+
+
 def create_user(*, session: Session, user_create: UserCreate) -> User:
+    role, is_superuser, is_instructor = _resolve_role_fields(
+        role=user_create.role,
+        is_superuser=user_create.is_superuser,
+        is_instructor=False,
+    )
     db_obj = User.model_validate(
-        user_create, update={"hashed_password": get_password_hash(user_create.password)}
+        user_create,
+        update={
+            "role": role,
+            "is_superuser": is_superuser,
+            "is_instructor": is_instructor,
+            "hashed_password": get_password_hash(user_create.password),
+        },
     )
     session.add(db_obj)
-    session.commit()
-    session.refresh(db_obj)
+    session.flush()
     return db_obj
 
 
@@ -24,10 +55,17 @@ def update_user(*, session: Session, db_user: User, user_in: UserUpdate) -> Any:
         password = user_data["password"]
         hashed_password = get_password_hash(password)
         extra_data["hashed_password"] = hashed_password
+    role, is_superuser, is_instructor = _resolve_role_fields(
+        role=user_data.get("role", db_user.role),
+        is_superuser=user_data.get("is_superuser", db_user.is_superuser),
+        is_instructor=db_user.is_instructor,
+    )
+    extra_data["role"] = role
+    extra_data["is_superuser"] = is_superuser
+    extra_data["is_instructor"] = is_instructor
     db_user.sqlmodel_update(user_data, update=extra_data)
     session.add(db_user)
-    session.commit()
-    session.refresh(db_user)
+    session.flush()
     return db_user
 
 

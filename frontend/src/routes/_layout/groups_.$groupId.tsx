@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, redirect } from "@tanstack/react-router"
 import { ArrowLeft, Plus, UserMinus } from "lucide-react"
 import { Suspense, useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { GroupsService } from "@/client"
+import { GroupsService, UsersService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -31,6 +31,12 @@ import useCustomToast from "@/hooks/useCustomToast"
 
 export const Route = createFileRoute("/_layout/groups_/$groupId")({
   component: GroupDetailPage,
+  beforeLoad: async () => {
+    const user = await UsersService.readUserMe()
+    if (!(user.role === "admin" || user.is_superuser)) {
+      throw redirect({ to: "/" })
+    }
+  },
   head: () => ({
     meta: [{ title: "群組詳情 - Campus Cloud" }],
   }),
@@ -111,6 +117,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
     queryKey: ["group", groupId],
     queryFn: () => GroupsService.getGroup({ groupId }),
   })
+  const members = group.members ?? []
 
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
@@ -143,8 +150,8 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold mb-3">成員列表（{group.members.length} 人）</h2>
-        {group.members.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-3">成員列表（{members.length} 人）</h2>
+        {members.length === 0 ? (
           <p className="text-muted-foreground text-sm">尚無成員，點擊「加入成員」開始新增</p>
         ) : (
           <Table>
@@ -157,7 +164,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {group.members.map((member) => (
+              {members.map((member) => (
                 <TableRow key={member.user_id}>
                   <TableCell>{member.full_name ?? "-"}</TableCell>
                   <TableCell>{member.email}</TableCell>

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.models.group import Group
 from app.models.group_member import GroupMember
@@ -170,8 +170,21 @@ def is_user_in_any_owned_group(
 
 
 def count_members(*, session: Session, group_id: uuid.UUID) -> int:
-    return len(
-        session.exec(
-            select(GroupMember).where(GroupMember.group_id == group_id)
-        ).all()
-    )
+    return session.exec(
+        select(func.count())
+        .select_from(GroupMember)
+        .where(GroupMember.group_id == group_id)
+    ).one()
+
+
+def get_member_counts(
+    *, session: Session, group_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    if not group_ids:
+        return {}
+    rows = session.exec(
+        select(GroupMember.group_id, func.count())
+        .where(GroupMember.group_id.in_(group_ids))
+        .group_by(GroupMember.group_id)
+    ).all()
+    return {group_id: count for group_id, count in rows}

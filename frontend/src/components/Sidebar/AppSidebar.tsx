@@ -35,14 +35,6 @@ export function AppSidebar() {
     { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
   ]
 
-  const instructorItems: Item[] = [
-    { icon: Home, title: t("sidebar.dashboard"), path: "/" },
-    { icon: ServerCog, title: t("sidebar.myResources"), path: "/my-resources" },
-    { icon: Shield, title: "防火牆", path: "/firewall" },
-    { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
-    { icon: UsersRound, title: "群組管理", path: "/groups" },
-  ]
-
   const adminItems: Item[] = [
     { icon: Home, title: t("sidebar.dashboard"), path: "/" },
     { icon: ServerCog, title: t("sidebar.myResources"), path: "/my-resources" },
@@ -54,10 +46,9 @@ export function AppSidebar() {
     { icon: Settings2, title: "PVE 設定", path: "/admin/proxmox" },
   ]
 
-  const items = currentUser?.is_superuser
-    ? adminItems
-    : currentUser?.is_instructor
-      ? instructorItems
+  const items =
+    currentUser?.role === "admin" || currentUser?.is_superuser
+      ? adminItems
       : baseItems
 
   return (

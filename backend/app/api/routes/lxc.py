@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter
 
-from app.api.deps import CurrentUser, LxcInfoDep, SessionDep
+from app.api.deps import AdminUser, CurrentUser, LxcInfoDep, SessionDep
 from app.exceptions import ProxmoxError
 from app.schemas import (
     LXCCreateRequest,
@@ -44,7 +44,7 @@ def get_templates(current_user: CurrentUser):
 
 @router.post("/create", response_model=LXCCreateResponse)
 def create_lxc(
-    lxc_data: LXCCreateRequest, session: SessionDep, current_user: CurrentUser
+    lxc_data: LXCCreateRequest, session: SessionDep, current_user: AdminUser
 ):
     return provisioning_service.create_lxc(
         session=session, lxc_data=lxc_data, user_id=current_user.id

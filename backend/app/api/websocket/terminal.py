@@ -21,6 +21,7 @@ async def terminal_proxy(websocket: WebSocket, vmid: int, token: str):
     try:
         check_resource_ownership(vmid, user, session)
     except Exception:
+        session.close()
         await websocket.close(code=1008, reason="Permission denied")
         return
 
@@ -149,4 +150,5 @@ async def terminal_proxy(websocket: WebSocket, vmid: int, token: str):
     finally:
         if pve_websocket:
             await pve_websocket.close()
+        session.close()
         logger.info(f"Terminal proxy disconnected for LXC {vmid}")

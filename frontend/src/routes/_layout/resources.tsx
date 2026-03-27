@@ -1,9 +1,9 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
 import { Monitor, RefreshCw } from "lucide-react"
 import { Suspense, useCallback, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ResourcesService } from "@/client"
+import { ResourcesService, UsersService } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
 import PendingItems from "@/components/Pending/PendingItems"
 import CreateContainer from "@/components/Resources/CreateResources"
@@ -21,6 +21,12 @@ function getVMsQueryOptions() {
 
 export const Route = createFileRoute("/_layout/resources")({
   component: VirtualMachines,
+  beforeLoad: async () => {
+    const user = await UsersService.readUserMe()
+    if (!(user.role === "admin" || user.is_superuser)) {
+      throw redirect({ to: "/" })
+    }
+  },
   head: () => ({
     meta: [
       {
@@ -47,8 +53,8 @@ function VMsTableContent({
   )
 
   const columns = useMemo(
-    () => createColumns(t, onOpenConsole, handleRowClick),
-    [t, onOpenConsole, handleRowClick],
+    () => createColumns(t, onOpenConsole),
+    [t, onOpenConsole],
   )
 
   if (resources.length === 0) {
