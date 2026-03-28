@@ -69,7 +69,7 @@ export function ApplicationRequestPage() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const { user } = useAuth()
-  const needsApproval = user?.role === "student"
+  const needsApproval = user === undefined ? true : user.role === "student"
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
   const [resourceType, setResourceType] = useState<"lxc" | "vm">("lxc")
   const [serviceTemplateName, setServiceTemplateName] = useState("")
