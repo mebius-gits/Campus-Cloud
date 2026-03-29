@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+import httpx
 from sqlmodel import Session
 
 from app.core import security
@@ -19,6 +20,35 @@ def login(*, session: Session, email: str, password: str) -> Token:
     user = user_repo.authenticate(session=session, email=email, password=password)
     if not user:
         raise BadRequestError("Incorrect email or password")
+    if not user.is_active:
+        raise BadRequestError("Inactive user")
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return Token(
+        access_token=security.create_access_token(
+            user.id, expires_delta=access_token_expires
+        )
+    )
+
+
+def google_login(*, session: Session, id_token: str) -> Token:
+    with httpx.Client() as client:
+        r = client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": id_token},
+        )
+    if r.status_code != 200:
+        raise BadRequestError("Invalid Google token")
+    data = r.json()
+    if settings.GOOGLE_CLIENT_ID and data.get("aud") != settings.GOOGLE_CLIENT_ID:
+        raise BadRequestError("Invalid Google token audience")
+    if not data.get("email_verified"):
+        raise BadRequestError("Google email not verified")
+    email = data.get("email")
+    if not email:
+        raise BadRequestError("Could not retrieve email from Google token")
+    user = user_repo.get_user_by_email(session=session, email=email)
+    if not user:
+        raise NotFoundError("No account found for this Google account. Please contact your administrator.")
     if not user.is_active:
         raise BadRequestError("Inactive user")
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
