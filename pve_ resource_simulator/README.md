@@ -7,6 +7,7 @@ Standalone FastAPI prototype for testing PVE-style resource scheduling.
 - Define any number of servers with CPU, RAM, Disk, and GPU capacity.
 - Seed each server with existing used resources.
 - Add multiple VM templates with no fixed placement limit.
+- Set a `count` on a VM template to simulate many identical VMs in one request.
 - Auto-place workloads until no enabled VM template fits anywhere.
 - Pick the destination server using weighted dominant share plus contention penalties.
 - Allow CPU overcommit while keeping a RAM safety buffer.

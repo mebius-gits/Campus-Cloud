@@ -20,6 +20,7 @@ const elements = {
   cpu: document.querySelector("#vm-cpu"),
   ram: document.querySelector("#vm-ram"),
   disk: document.querySelector("#vm-disk"),
+  quantity: document.querySelector("#vm-quantity"),
   startHour: document.querySelector("#vm-start-hour"),
   endHour: document.querySelector("#vm-end-hour"),
   slotSummary: document.querySelector("#slot-summary"),
@@ -146,6 +147,7 @@ async function addVmFromForm() {
   const cpu = Number(elements.cpu?.value || 0);
   const ram = Number(elements.ram?.value || 0);
   const disk = Number(elements.disk?.value || 0);
+  const quantity = Number(elements.quantity?.value || 0);
   const { start, end } = state.selectedRange;
   const activeHours = expandRange(start, end);
   const defaultName = `vm-${String(state.vmList.length + 1).padStart(3, "0")}`;
@@ -161,6 +163,11 @@ async function addVmFromForm() {
     return;
   }
 
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    showError("Quantity must be a positive integer.");
+    return;
+  }
+
   state.vmList.push({
     id: `vm-${Date.now()}-${state.vmList.length + 1}`,
     name,
@@ -168,6 +175,7 @@ async function addVmFromForm() {
     memory_gb: ram,
     disk_gb: disk,
     gpu_count: 0,
+    count: quantity,
     active_hours: activeHours,
     enabled: true,
   });
@@ -176,6 +184,7 @@ async function addVmFromForm() {
   if (elements.cpu) elements.cpu.value = "2";
   if (elements.ram) elements.ram.value = "4";
   if (elements.disk) elements.disk.value = "40";
+  if (elements.quantity) elements.quantity.value = "1";
 
   state.result = null;
   state.currentStep = 0;
@@ -218,7 +227,8 @@ function resetAll() {
 
 function renderVmList() {
   if (elements.vmCount) {
-    elements.vmCount.textContent = `${state.vmList.length} 台`;
+    const totalVmCount = state.vmList.reduce((sum, vm) => sum + Number(vm.count || 1), 0);
+    elements.vmCount.textContent = `${totalVmCount} 台`;
   }
 
   if (!elements.vmList) return;
@@ -546,7 +556,9 @@ function getCurrentHourResult() {
 function buildHourCountsFromVmList() {
   const counts = {};
   for (let hour = 0; hour < HOURS_IN_DAY; hour += 1) {
-    counts[String(hour)] = state.vmList.filter((vm) => (vm.active_hours || []).includes(hour)).length;
+    counts[String(hour)] = state.vmList.reduce((sum, vm) => (
+      (vm.active_hours || []).includes(hour) ? sum + Number(vm.count || 1) : sum
+    ), 0);
   }
   return counts;
 }

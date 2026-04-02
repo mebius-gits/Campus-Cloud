@@ -34,6 +34,18 @@ def test_vm_template_defaults_to_all_day_hours() -> None:
     assert template.active_hours == list(range(24))
 
 
+def test_vm_template_defaults_count_to_one() -> None:
+    template = VMTemplate(
+        id="vm-1",
+        name="VM 1",
+        cpu_cores=2,
+        memory_gb=4,
+        disk_gb=20,
+    )
+
+    assert template.count == 1
+
+
 def test_vm_template_rejects_non_contiguous_hours() -> None:
     try:
         VMTemplate(
@@ -243,6 +255,65 @@ def test_simulate_endpoint_returns_hourly_timeline() -> None:
     assert len(payload["hours"]) == 24
     assert payload["hours"][13]["summary"]["requested_vm_count"] == 1
     assert payload["summary"]["active_hours"] == [13, 14]
+
+
+def test_simulate_endpoint_expands_quantity_for_identical_vms() -> None:
+    response = client.get("/api/v1/scenario/default")
+    scenario = response.json()
+    scenario["vm_templates"] = [
+        {
+            "id": "lab-vm",
+            "name": "Lab VM",
+            "cpu_cores": 2,
+            "memory_gb": 4,
+            "disk_gb": 20,
+            "gpu_count": 0,
+            "count": 3,
+            "active_hours": [13, 14],
+            "enabled": True,
+        }
+    ]
+
+    simulate_response = client.post(
+        "/api/v1/simulate",
+        json={
+            "servers": scenario["servers"],
+            "vm_templates": scenario["vm_templates"],
+        },
+    )
+
+    assert simulate_response.status_code == 200
+    payload = simulate_response.json()
+    assert payload["hours"][13]["summary"]["requested_vm_count"] == 3
+    assert payload["summary"]["reserved_vm_count"] == 3
+    assert payload["summary"]["reservations_by_hour"]["13"] == 3
+
+
+def test_count_expands_identical_vms_for_hourly_placement() -> None:
+    request = SimulationRequest(
+        servers=[
+            ServerInput(name="pve-a", cpu_cores=8, memory_gb=16, disk_gb=200),
+        ],
+        vm_templates=[
+            VMTemplate(
+                id="lab-vm",
+                name="Lab VM",
+                cpu_cores=2,
+                memory_gb=4,
+                disk_gb=20,
+                count=3,
+                active_hours=[9],
+            )
+        ],
+    )
+
+    result = run_simulation(request)
+
+    assert result.hours[9].summary.requested_vm_count == 3
+    assert result.hours[9].summary.total_placements == 3
+    assert result.summary.reserved_vm_count == 3
+    assert result.summary.reservation_slot_count == 3
+    assert result.summary.reservations_by_hour["9"] == 3
 
 
 def test_historical_profile_reduces_effective_cpu_and_memory_when_available() -> None:

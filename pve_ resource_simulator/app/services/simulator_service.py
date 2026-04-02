@@ -211,13 +211,17 @@ def _run_hour_simulation(
             selected_vm_template_id=request.selected_vm_template_id,
             enabled_templates=hour_templates,
         )
+    expanded_requested_templates = _expand_templates(
+        templates=requested_templates,
+        max_instances=request.max_steps,
+    )
     effective_template_results = [
         _effective_template_for_hour(
             template=template,
             hour=hour,
             historical_profiles=request.historical_profiles,
         )
-        for template in requested_templates
+        for template in expanded_requested_templates
     ]
     effective_requested_templates = [item["template"] for item in effective_template_results]
     calculations = [
@@ -252,21 +256,21 @@ def _run_hour_simulation(
         )
     ]
 
-    if not requested_templates:
+    if not expanded_requested_templates:
         final_servers = _snapshot_servers(servers)
         summary = _build_summary(
             final_servers=final_servers,
             placements=[],
             stop_reason=f"No reservations in {_hour_label(hour)}.",
             enabled_templates=requested_templates,
-            requested_templates=requested_templates,
+            requested_templates=expanded_requested_templates,
             failed_templates=[],
         )
         return HourlySimulation(
             hour=hour,
             label=_hour_label(hour),
             active_vm_names=[],
-            reserved_vm_names=[template.name for template in enabled_templates],
+            reserved_vm_names=_template_names_with_count(enabled_templates),
             calculations=[],
             placements=[],
             states=states,
@@ -368,7 +372,7 @@ def _run_hour_simulation(
         hour=hour,
         label=_hour_label(hour),
         active_vm_names=[template.name for template in effective_requested_templates],
-        reserved_vm_names=[template.name for template in enabled_templates],
+        reserved_vm_names=_template_names_with_count(enabled_templates),
         calculations=calculations,
         placements=placements,
         states=states,
@@ -381,7 +385,7 @@ def _build_daily_summary(
     hourly_results: list[HourlySimulation],
 ) -> DailySimulationSummary:
     reservations_by_hour = {
-        str(hour): sum(1 for template in enabled_templates if hour in template.active_hours)
+        str(hour): sum(template.count for template in enabled_templates if hour in template.active_hours)
         for hour in range(HOURS_IN_DAY)
     }
     active_hours = [hour for hour in range(HOURS_IN_DAY) if reservations_by_hour[str(hour)] > 0]
@@ -392,8 +396,8 @@ def _build_daily_summary(
     )
     peak_count = reservations_by_hour[str(peak_hour)] if enabled_templates else 0
     return DailySimulationSummary(
-        reserved_vm_count=len(enabled_templates),
-        reservation_slot_count=sum(len(template.active_hours) for template in enabled_templates),
+        reserved_vm_count=sum(template.count for template in enabled_templates),
+        reservation_slot_count=sum(len(template.active_hours) * template.count for template in enabled_templates),
         active_hours=active_hours,
         reservations_by_hour=reservations_by_hour,
         peak_hour=peak_hour if enabled_templates else None,
@@ -472,6 +476,39 @@ def _resolve_requested_templates(
         if template.id == selected_vm_template_id:
             return [template]
     raise ValueError(f"Selected VM template '{selected_vm_template_id}' is not enabled.")
+
+
+def _expand_templates(
+    *,
+    templates: list[VMTemplate],
+    max_instances: int,
+) -> list[VMTemplate]:
+    expanded: list[VMTemplate] = []
+    for template in templates:
+        if template.count == 1:
+            expanded.append(template.model_copy(update={"count": 1}, deep=True))
+            continue
+
+        for index in range(template.count):
+            expanded.append(
+                template.model_copy(
+                    update={
+                        "id": f"{template.id}__instance_{index + 1}",
+                        "count": 1,
+                    },
+                    deep=True,
+                )
+            )
+
+    if len(expanded) > max_instances:
+        raise ValueError(
+            f"Requested {len(expanded)} VM instances, which exceeds max_steps={max_instances}."
+        )
+    return expanded
+
+
+def _template_names_with_count(templates: list[VMTemplate]) -> list[str]:
+    return [template.name for template in templates for _ in range(template.count)]
 
 
 def _effective_template_for_hour(

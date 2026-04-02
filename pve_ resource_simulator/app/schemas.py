@@ -63,6 +63,7 @@ class VMTemplate(BaseModel):
     memory_gb: float = Field(gt=0.0, le=4096.0)
     disk_gb: float = Field(gt=0.0, le=65536.0)
     gpu_count: float = Field(default=0.0, ge=0.0, le=16.0)
+    count: int = Field(default=1, ge=1, le=512)
     active_hours: list[int] = Field(default_factory=lambda: list(range(HOURS_IN_DAY)))
     enabled: bool = True
 
