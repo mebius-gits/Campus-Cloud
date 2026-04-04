@@ -23,6 +23,7 @@ from .group import Group
 from .group_member import GroupMember
 from .proxmox_config import ProxmoxConfig
 from .proxmox_node import ProxmoxNode
+from .proxmox_storage import ProxmoxStorage
 from .firewall_layout import FirewallLayout
 
 __all__ = [
@@ -55,6 +56,8 @@ __all__ = [
     "ProxmoxConfig",
     # Proxmox Nodes
     "ProxmoxNode",
+    # Proxmox Storages
+    "ProxmoxStorage",
     # Firewall Layout
     "FirewallLayout",
 ]
