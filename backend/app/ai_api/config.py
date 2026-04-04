@@ -25,6 +25,9 @@ class AIAPIEnvSettings(BaseSettings):
     ai_api_rate_limit_per_minute: int = 20
     ai_api_rate_limit_window_seconds: int = 60
 
+    # Redis 配置
+    redis_url: str = "redis://localhost:6379/0"
+
     # 公共 API 地址（用户访问，内网环境可以使用 localhost）
     ai_api_public_base_url: str = "http://localhost:5000"
 

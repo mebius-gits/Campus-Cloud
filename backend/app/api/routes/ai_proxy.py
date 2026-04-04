@@ -10,7 +10,9 @@ import httpx
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
+from app.ai_api.config import settings as ai_api_settings
 from app.api.deps import AIAPIUserDep, SessionDep
+from app.core.redis import get_redis
 from app.schemas.ai_proxy import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -20,6 +22,7 @@ from app.schemas.ai_proxy import (
     UsageStatsResponse,
 )
 from app.services import ai_api_service
+from app.services.redis_rate_limiter import check_rate_limit_sliding_window
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,34 @@ async def chat_completions(
     支持流式响应（stream=true）和非流式响应（stream=false）
     """
     user, credential = user_and_credential
+
+    # === 檢查 Redis 速率限制 ===
+    # 使用 credential 的 rate_limit，如果為 None 則使用預設值
+    rate_limit = (
+        credential.rate_limit
+        if credential.rate_limit is not None
+        else ai_api_settings.ai_api_rate_limit_per_minute
+    )
+
+    redis = await get_redis()
+    allowed, rate_info = await check_rate_limit_sliding_window(
+        redis=redis,
+        user_id=str(user.id),
+        limit=rate_limit,
+        window_seconds=ai_api_settings.ai_api_rate_limit_window_seconds,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": f"Rate limit exceeded. Limit: {rate_info['limit']} requests per {rate_info['window_seconds']} seconds.",
+                "limit": rate_info["limit"],
+                "current": rate_info["current"],
+                "reset_at": rate_info["reset_at"].isoformat(),
+            },
+        )
 
     # 转换为 dict（用于代理）
     request_data = request.model_dump(exclude_none=True)
@@ -191,32 +222,39 @@ async def get_rate_limit_status(
     """
     查看速率限制状态
 
-    返回当前分钟的请求配额使用情况
+    返回当前时间窗口的请求配额使用情况
     """
     user, credential = user_and_credential
 
-    from app.ai_api.config import settings as ai_api_settings
-    from app.models import AIAPIRateLimit, get_datetime_utc
+    # 使用 credential 的 rate_limit，如果為 None 則使用預設值
+    limit = (
+        credential.rate_limit
+        if credential.rate_limit is not None
+        else ai_api_settings.ai_api_rate_limit_per_minute
+    )
 
-    # 获取当前分钟的 key
-    now = get_datetime_utc()
-    minute_key = now.strftime("%Y-%m-%d-%H-%M")
+    # 從 Redis 獲取當前速率限制狀態
+    redis = await get_redis()
 
-    # 查询当前计数
-    from sqlmodel import select
+    # 獲取當前窗口的請求數（不實際消耗配額）
+    key = f"rate_limit:user:{user.id}"
+    now_ms = int(time.time() * 1000)
+    window_seconds = ai_api_settings.ai_api_rate_limit_window_seconds
+    window_start_ms = now_ms - (window_seconds * 1000)
 
-    record = session.exec(
-        select(AIAPIRateLimit)
-        .where(AIAPIRateLimit.user_id == user.id)
-        .where(AIAPIRateLimit.minute_key == minute_key)
-    ).first()
+    # 移除過期請求並計數
+    await redis.zremrangebyscore(key, "-inf", window_start_ms)
+    current_usage = await redis.zcard(key)
 
-    limit = ai_api_settings.ai_api_rate_limit_per_minute
-    current_usage = record.request_count if record else 0
+    from datetime import timezone
+
+    reset_at = datetime.fromtimestamp(
+        (now_ms + window_seconds * 1000) / 1000, tz=timezone.utc
+    )
 
     return RateLimitStatusResponse(
         limit_per_minute=limit,
         current_usage=current_usage,
         remaining=max(0, limit - current_usage),
-        reset_at=(now + timedelta(minutes=1)).replace(second=0, microsecond=0),
+        reset_at=reset_at,
     )

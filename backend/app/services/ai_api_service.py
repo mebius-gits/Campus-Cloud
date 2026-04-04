@@ -14,7 +14,6 @@ from app.core.security import decrypt_value, encrypt_value
 from app.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.models import (
     AIAPICredential,
-    AIAPIRateLimit,
     AIAPIRequest,
     AIAPIRequestStatus,
     AIAPIUsage,
@@ -33,6 +32,8 @@ from app.schemas import (
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_REQUEST_RATE_LIMIT = 20
 
 
 def _generate_user_api_key() -> str:
@@ -63,6 +64,8 @@ def _to_request_public(req: AIAPIRequest) -> AIAPIRequestPublic:
         user_full_name=req.user.full_name if req.user else None,
         purpose=req.purpose,
         api_key_name=req.api_key_name,
+        duration=req.duration,
+        rate_limit=req.rate_limit,
         status=req.status,
         reviewer_id=req.reviewer_id,
         reviewer_email=req.reviewer.email if req.reviewer else None,
@@ -80,6 +83,7 @@ def _to_credential_public(credential: AIAPICredential) -> AIAPICredentialPublic:
         api_key=decrypt_value(credential.api_key_encrypted),
         api_key_prefix=credential.api_key_prefix,
         api_key_name=credential.api_key_name,
+        rate_limit=credential.rate_limit,
         expires_at=credential.expires_at,
         revoked_at=credential.revoked_at,
         created_at=credential.created_at,
@@ -94,6 +98,7 @@ def create_request(
         purpose=request_in.purpose.strip(),
         api_key_name=request_in.api_key_name.strip(),
         duration=request_in.duration,
+        rate_limit=DEFAULT_REQUEST_RATE_LIMIT,
     )
     session.add(db_request)
     audit_service.log_action(
@@ -196,7 +201,7 @@ def review_request(
             expires_at = now + timedelta(days=7)
         elif duration_str == "30d":
             expires_at = now + timedelta(days=30)
-            
+
         session.add(
             AIAPICredential(
                 user_id=db_request.user_id,
@@ -205,6 +210,7 @@ def review_request(
                 api_key_encrypted=encrypt_value(api_key),
                 api_key_prefix=_credential_prefix(api_key),
                 api_key_name=db_request.api_key_name,
+                rate_limit=db_request.rate_limit,  # 繼承申請的 rate_limit
                 expires_at=expires_at,
             )
         )
@@ -268,6 +274,7 @@ def rotate_credential(
         api_key_encrypted=encrypt_value(new_api_key),
         api_key_prefix=_credential_prefix(new_api_key),
         api_key_name=credential.api_key_name,
+        rate_limit=credential.rate_limit,
         expires_at=credential.expires_at,
     )
     session.add(new_credential)
@@ -325,71 +332,6 @@ def update_credential_name(
     session.commit()
     session.refresh(credential)
     return _to_credential_public(credential)
-
-# ===== 新增：速率限制功能 =====
-
-
-def check_rate_limit(
-    *, session: Session, user_id: uuid.UUID, limit_per_minute: int | None = None
-) -> tuple[bool, dict]:
-    """
-    检查用户是否超过速率限制
-
-    Args:
-        session: 数据库会话
-        user_id: 用户 ID
-        limit_per_minute: 每分钟限制次数（默认从配置读取）
-
-    Returns:
-        tuple[bool, dict]: (是否允许, 状态信息)
-    """
-    if limit_per_minute is None:
-        limit_per_minute = ai_api_settings.ai_api_rate_limit_per_minute
-
-    # 获取当前分钟的 key（格式: "2026-04-01-10-30"）
-    now = get_datetime_utc()
-    minute_key = now.strftime("%Y-%m-%d-%H-%M")
-
-    # 查询当前计数
-    record = session.exec(
-        select(AIAPIRateLimit)
-        .where(AIAPIRateLimit.user_id == user_id)
-        .where(AIAPIRateLimit.minute_key == minute_key)
-    ).first()
-
-    if not record:
-        # 第一次请求，创建记录
-        record = AIAPIRateLimit(
-            user_id=user_id, minute_key=minute_key, request_count=1
-        )
-        session.add(record)
-        session.commit()
-
-        return True, {
-            "limit": limit_per_minute,
-            "remaining": limit_per_minute - 1,
-            "reset_at": (now + timedelta(minutes=1)).replace(second=0, microsecond=0),
-        }
-
-    # 检查是否超限
-    if record.request_count >= limit_per_minute:
-        return False, {
-            "limit": limit_per_minute,
-            "remaining": 0,
-            "reset_at": (now + timedelta(minutes=1)).replace(second=0, microsecond=0),
-        }
-
-    # 递增计数
-    record.request_count += 1
-    record.updated_at = now
-    session.add(record)
-    session.commit()
-
-    return True, {
-        "limit": limit_per_minute,
-        "remaining": limit_per_minute - record.request_count,
-        "reset_at": (now + timedelta(minutes=1)).replace(second=0, microsecond=0),
-    }
 
 
 # ===== 新增：使用量记录功能 =====
@@ -471,9 +413,7 @@ async def proxy_to_vllm_chat_completion(
     model_name = request_data.get("model", "unknown")
 
     try:
-        async with httpx.AsyncClient(
-            timeout=ai_api_settings.ai_api_timeout
-        ) as client:
+        async with httpx.AsyncClient(timeout=ai_api_settings.ai_api_timeout) as client:
             response = await client.post(url, json=request_data, headers=headers)
             response.raise_for_status()
             result = response.json()
@@ -531,9 +471,7 @@ async def proxy_to_vllm_chat_completion_stream(
     model_name = request_data.get("model", "unknown")
 
     try:
-        async with httpx.AsyncClient(
-            timeout=ai_api_settings.ai_api_timeout
-        ) as client:
+        async with httpx.AsyncClient(timeout=ai_api_settings.ai_api_timeout) as client:
             async with client.stream(
                 "POST", url, json=request_data, headers=headers
             ) as response:

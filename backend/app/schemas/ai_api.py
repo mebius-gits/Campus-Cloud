@@ -24,6 +24,8 @@ class AIAPIRequestPublic(BaseModel):
     user_full_name: str | None = None
     purpose: str
     api_key_name: str
+    duration: str
+    rate_limit: int | None = None
     status: AIAPIRequestStatus
     reviewer_id: uuid.UUID | None = None
     reviewer_email: str | None = None
@@ -44,6 +46,7 @@ class AIAPICredentialPublic(BaseModel):
     api_key: str
     api_key_prefix: str
     api_key_name: str
+    rate_limit: int | None = None
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
     created_at: datetime
