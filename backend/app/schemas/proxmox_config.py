@@ -38,7 +38,7 @@ class ProxmoxConfigUpdate(BaseModel):
     task_check_interval: int = Field(default=2, ge=1, le=60)
     pool_name: str = "CampusCloud"
     ca_cert: str | None = None  # None 表示不更新；空字串表示清除
-    gateway_ip: str  # 必填
+    gateway_ip: str | None = None
     local_subnet: str | None = None
     default_node: str | None = None
 
@@ -72,6 +72,15 @@ class ProxmoxNodePublic(BaseModel):
     is_primary: bool
     is_online: bool
     last_checked: datetime | None = None
+    priority: int = 5
+
+
+class ProxmoxNodeUpdate(BaseModel):
+    """更新單一節點設定的請求 schema"""
+
+    host: str
+    port: int = Field(default=8006, ge=1, le=65535)
+    priority: int = Field(default=5, ge=1, le=10)
 
 
 class ClusterPreviewResult(BaseModel):
@@ -83,6 +92,44 @@ class ClusterPreviewResult(BaseModel):
     error: str | None = None
 
 
+class ProxmoxStoragePublic(BaseModel):
+    """回傳給前端的 Storage 資訊"""
+
+    id: int
+    node_name: str
+    storage: str
+    storage_type: str | None = None
+    total_gb: float
+    used_gb: float
+    avail_gb: float
+    can_vm: bool
+    can_lxc: bool
+    can_iso: bool
+    can_backup: bool
+    is_shared: bool
+    active: bool
+    enabled: bool
+    speed_tier: str   # "nvme"|"ssd"|"hdd"|"unknown"
+    user_priority: int
+
+
+class ProxmoxStorageUpdate(BaseModel):
+    """更新 Storage 使用者設定的請求 schema"""
+
+    enabled: bool
+    speed_tier: str = Field(pattern=r"^(nvme|ssd|hdd|unknown)$")
+    user_priority: int = Field(ge=1, le=10)
+
+
+class SyncNowResult(BaseModel):
+    """同步節點與 Storage 結果"""
+
+    success: bool
+    nodes: list[ProxmoxNodePublic]
+    storage_count: int
+    error: str | None = None
+
+
 __all__ = [
     "ProxmoxConfigPublic",
     "ProxmoxConfigUpdate",
@@ -90,4 +137,8 @@ __all__ = [
     "CertParseResult",
     "ProxmoxNodePublic",
     "ClusterPreviewResult",
+    "ProxmoxNodeUpdate",
+    "ProxmoxStoragePublic",
+    "ProxmoxStorageUpdate",
+    "SyncNowResult",
 ]
