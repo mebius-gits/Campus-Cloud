@@ -263,7 +263,10 @@ function CredentialRow({
                   size="sm"
                   variant="ghost"
                   className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => setEditingName(true)}
+                  onClick={() => {
+                    setNameInput(item.api_key_name)
+                    setEditingName(true)
+                  }}
                 >
                   <Pencil className="h-3 w-3" />
                 </Button>
