@@ -61,6 +61,15 @@ def update_resource(
     return db_resource
 
 
+def update_ip_address(*, session: Session, vmid: int, ip_address: str) -> None:
+    """更新 VM 的快取 IP 位址（不存在則忽略）"""
+    resource = get_resource_by_vmid(session=session, vmid=vmid)
+    if resource and resource.ip_address != ip_address:
+        resource.ip_address = ip_address
+        session.add(resource)
+        session.commit()
+
+
 def delete_resource(*, session: Session, vmid: int, commit: bool = True) -> None:
     resource = get_resource_by_vmid(session=session, vmid=vmid)
     if resource:

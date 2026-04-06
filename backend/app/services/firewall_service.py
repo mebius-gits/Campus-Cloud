@@ -176,15 +176,43 @@ def setup_default_rules(node: str, vmid: int, resource_type: ResourceType) -> No
 # ─── 連線管理（高階 API）─────────────────────────────────────────────────────
 
 
-def _get_vm_ip(vmid: int) -> str | None:
-    """取得 VM 的 IP 位址"""
+def _get_vm_ip(vmid: int, session: object = None) -> str | None:
+    """取得 VM 的 IP 位址。
+    優先從 Proxmox 即時查詢；若 VM 離線則回退到 DB 快取。
+    查詢成功時自動更新 DB 快取。
+    """
+    from app.repositories import resource as resource_repo  # noqa: PLC0415
+
+    ip: str | None = None
     try:
         resource = proxmox_service.find_resource(vmid)
         node = resource["node"]
         resource_type = resource["type"]
-        return proxmox_service.get_ip_address(node, vmid, resource_type)
+        ip = proxmox_service.get_ip_address(node, vmid, resource_type)
     except Exception:
-        return None
+        pass
+
+    if ip and session is not None:
+        # 更新 DB 快取（fire-and-forget，忽略失敗）
+        try:
+            resource_repo.update_ip_address(session=session, vmid=vmid, ip_address=ip)  # type: ignore[arg-type]
+        except Exception as e:
+            logger.debug(f"VM {vmid} IP 快取寫入失敗: {e}")
+        return ip
+
+    if ip:
+        return ip
+
+    # Proxmox 取不到 IP → 嘗試 DB 快取
+    if session is not None:
+        try:
+            cached = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)  # type: ignore[arg-type]
+            if cached and cached.ip_address:
+                logger.debug(f"VM {vmid} 使用 DB 快取 IP: {cached.ip_address}")
+                return cached.ip_address
+        except Exception as e:
+            logger.debug(f"VM {vmid} DB 快取讀取失敗: {e}")
+    return None
 
 
 def _parse_connection_comment(comment: str) -> dict | None:
@@ -336,7 +364,7 @@ def create_connection(
 
         # 取得 VM IP（NAT / 反向代理規則需要）——在建立任何規則前先驗證
         if needs_gateway:
-            tgt_ip = proxmox_service.get_ip_address(tgt_node, target_vmid, tgt_type)
+            tgt_ip = _get_vm_ip(target_vmid, session)
             if tgt_ip is None:
                 raise BadRequestError(
                     f"目標 VM {target_vmid} 沒有 IP 位址，無法建立外部存取規則"
@@ -451,7 +479,7 @@ def create_connection(
         return
 
     # ── VM → VM ─────────────────────────────────────────────────────────────
-    src_ip = _get_vm_ip(source_vmid)
+    src_ip = _get_vm_ip(source_vmid, session)
     if not src_ip:
         raise BadRequestError(
             f"來源 VM {source_vmid} 沒有 IP 位址，請確認 VM 已啟動"
@@ -465,7 +493,7 @@ def create_connection(
     tgt_node = tgt_resource["node"]
     tgt_type = tgt_resource["type"]
 
-    tgt_ip = _get_vm_ip(target_vmid)
+    tgt_ip = _get_vm_ip(target_vmid, session)
     if not tgt_ip:
         raise BadRequestError(
             f"目標 VM {target_vmid} 沒有 IP 位址，請確認 VM 已啟動"
@@ -872,6 +900,15 @@ def get_topology(user: User, session: Session) -> TopologyResponse:
             ip_address = proxmox_service.get_ip_address(
                 resource["node"], vmid, resource["type"]
             )
+            if ip_address:
+                resource_repo.update_ip_address(
+                    session=session, vmid=vmid, ip_address=ip_address
+                )
+            else:
+                # VM 離線時回退 DB 快取
+                cached = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
+                if cached and cached.ip_address:
+                    ip_address = cached.ip_address
         except Exception:
             pass
 
