@@ -342,3 +342,105 @@ pytest backend/tests/test_backend_workflows.py -k "vm_request or process_due_req
 - [frontend/README.md](frontend/README.md)
 - [development.md](development.md)
 - [deployment.md](deployment.md)
+
+## 上線前清單
+
+### 目前完整度評估
+
+- 產品流程完整度：約 `88%`
+- 分配與重排演算法完整度：約 `82%`
+- 營運與可觀測性完整度：約 `72%`
+- 與 `pve simulator` 的流程相似度：約 `85%`
+- 與 `pve simulator` 的演算法細緻度：約 `78%`
+
+目前已經具備：
+
+- 使用者選配置與時段
+- 系統提供可申請時段，且後端再次驗證
+- 管理員審核時查看同時段申請、在線資源、preview cohort 預測結果
+- 核准後建立 reservation 與 `desired_node`
+- 到 `start_at` 進行 active cohort 重排
+- 必要時建立 migration job 並自動搬移
+- 到 `end_at` 自動關機
+
+### 上線前還差什麼
+
+- 將新的 rebalance / migration tuning 參數完整接到系統管理員設定 UI
+- 補 migration queue 的監看畫面，至少能看到 `pending / running / failed / blocked`
+- 補 scheduler / migration / provisioning 的告警與失敗通知
+- 做真實 Proxmox cluster 的長時間壓力驗證，確認搬移、重排、關機不會互相打架
+- 定義人工介入流程，包含 job 卡住、搬移失敗、PVE 節點異常時的處理方式
+- 檢查並清理前端既有型別錯誤，避免正式 build 或 typecheck 被其他頁面卡住
+
+### 哪些是必做
+
+這些建議視為正式上線前必做：
+
+- 完整驗證 migration queue 在真實叢集上的行為
+  - 包含 `claim / timeout / backoff / retry limit`
+  - 確認不會重複搬移、無限重試或 claim 過期後重入異常
+- 補營運可見性
+  - 至少要能看到哪一筆 request 正在等待搬移、失敗原因是什麼、下一次何時重試
+- 補錯誤告警
+  - scheduler 失敗
+  - migration 失敗
+  - provision 失敗
+  - auto-shutdown 失敗
+- 做真實叢集 smoke test
+  - 一般 VM 建立與啟動
+  - active window 重排
+  - VM migration
+  - end_at 自動關機
+- 確認系統設定預設值
+  - `migration_enabled`
+  - `migration_max_per_rebalance`
+  - `migration_min_interval_minutes`
+  - `migration_worker_concurrency`
+  - `migration_job_claim_timeout_seconds`
+  - `migration_retry_backoff_seconds`
+  - `rebalance_migration_cost`
+  - `rebalance_loadavg_*`
+  - `rebalance_peak_*`
+  - `rebalance_disk_*`
+- 確認審核頁與後端行為一致
+  - 管理員看到的 preview cohort 說明要能對應實際 `start_at` 時的重排行為
+
+### 哪些可以第二階段再補
+
+這些不會阻止第一版上線，但會明顯提升系統成熟度：
+
+- migration queue 的完整營運面板
+  - 篩選
+  - 手動重試
+  - 手動取消
+  - job 歷史查詢
+- 更細的 workload profile 搬移政策
+  - 例如 GPU、考試機、特殊課程機、不可中斷工作負載
+- 更細的 resource policy 設定
+  - `migration_allowed_resource_profiles`
+  - `rebalance_require_shared_storage_for_live_migration`
+  - `rebalance_resource_weights`
+- 更完整的 explainability
+  - 在審核頁直接顯示每台 node 的分數差異
+  - 顯示 peak / loadavg / disk contention 對決策的影響
+- 更完整的自動化觀測
+  - queue 指標
+  - migration 成功率
+  - 平均搬移耗時
+  - 每個時段的 rebalance 次數
+- 與 `pve simulator` 更進一步對齊
+  - 更細的 scoring 係數調優
+  - 更多 relocation search 策略
+  - 更細的 storage / contention 模型校正
+
+### 建議的上線判準
+
+若要判斷「這版是否可以正式上線」，至少應符合以下條件：
+
+- 管理員可在 UI 中完成必要的 migration 與 rebalance 參數設定
+- 一整輪申請 -> 審核 -> 到點重排 -> 搬移 -> 開機 -> 到點關機可在真實叢集穩定成功
+- migration job 失敗時，管理員能知道原因並追蹤狀態
+- scheduler 異常時，不會默默失敗而無人察覺
+- preview cohort 顯示的推薦節點與實際 `start_at` 行為大致一致
+
+若以上條件已達成，這版可以視為「第一版可正式上線」；若尚未達成，則仍建議維持在內部試跑或有限範圍上線。
