@@ -255,6 +255,7 @@ def create_lxc(
             "unprivileged": int(lxc_data.unprivileged),
             "start": int(lxc_data.start),
             "pool": get_proxmox_settings().pool_name,
+            "features": "nesting=1",
         }
 
         result = proxmox_service.create_lxc(target_node, **config)
@@ -434,6 +435,7 @@ def provision_from_request(*, session: Session, db_request) -> tuple[int, str | 
                 "unprivileged": int(db_request.unprivileged),
                 "start": int(start_immediately),
                 "pool": get_proxmox_settings().pool_name,
+                "features": "nesting=1",
             }
             proxmox_service.create_lxc(target_node, **config)
             created = True
