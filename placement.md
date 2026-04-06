@@ -90,6 +90,31 @@ Relevant files:
 - [backend/app/models/vm_request.py](backend/app/models/vm_request.py)
 - [backend/app/alembic/versions/t2u3v4w5x6y7_add_rebalance_fields_to_vm_requests.py](backend/app/alembic/versions/t2u3v4w5x6y7_add_rebalance_fields_to_vm_requests.py)
 
+### Placement inputs
+
+The scheduler now uses two admin-managed configuration sources during placement:
+
+- `Proxmox node priority`
+  - lower number means higher priority
+  - this is the primary node tie-break, matching the PVE simulator behavior
+- `Proxmox storage settings`
+  - `enabled`: disabled pools do not participate in VM/LXC placement
+  - `speed_tier`: `nvme` is preferred over `ssd`, then `hdd`, then `unknown`
+  - `user_priority`: lower number means more preferred within the same speed tier
+
+Storage configuration affects both:
+
+- placement feasibility
+  - a node is not treated as a valid disk target if it has no enabled compatible storage pool for the request
+- provisioning target storage
+  - actual create/clone operations now prefer the best admin-managed storage pool on the selected node, rather than relying only on the request payload default
+
+Relevant files:
+
+- [backend/app/services/vm_request_placement_service.py](backend/app/services/vm_request_placement_service.py)
+- [backend/app/services/provisioning_service.py](backend/app/services/provisioning_service.py)
+- [backend/app/models/proxmox_storage.py](backend/app/models/proxmox_storage.py)
+
 ## Local Development
 
 ### Backend

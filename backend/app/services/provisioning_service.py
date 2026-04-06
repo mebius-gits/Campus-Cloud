@@ -191,6 +191,33 @@ def _get_vm_target_node(template_id: int) -> str:
     return template["node"]
 
 
+def _resolve_managed_storage(
+    *,
+    session: Session,
+    node: str,
+    resource_type: str,
+    requested_storage: str | None,
+    disk_gb: int,
+    required_content: str,
+) -> str:
+    preferred_storage = vm_request_placement_service.select_best_storage_name(
+        session=session,
+        node_name=node,
+        resource_type=resource_type,
+        disk_gb=disk_gb,
+        fallback_storage=requested_storage,
+    )
+    if preferred_storage is None:
+        raise ProxmoxError(
+            f"No enabled managed storage is available on node {node} for {resource_type}"
+        )
+    return proxmox_service.resolve_target_storage(
+        node,
+        preferred_storage,
+        required_content=required_content,
+    )
+
+
 def _dedupe_templates(templates: Iterable[dict]) -> list[dict]:
     unique: dict[str, dict] = {}
     for template in templates:
@@ -205,9 +232,12 @@ def create_lxc(
 ) -> LXCCreateResponse:
     vmid = proxmox_service.next_vmid()
     target_node = _get_lxc_target_node()
-    target_storage = proxmox_service.resolve_target_storage(
-        target_node,
-        lxc_data.storage,
+    target_storage = _resolve_managed_storage(
+        session=session,
+        node=target_node,
+        resource_type="lxc",
+        requested_storage=lxc_data.storage,
+        disk_gb=int(lxc_data.rootfs_size or 8),
         required_content="rootdir",
     )
     created = False
@@ -275,9 +305,12 @@ def create_vm(
 ) -> VMCreateResponse:
     new_vmid = proxmox_service.next_vmid()
     target_node = _get_vm_target_node(vm_data.template_id)
-    target_storage = proxmox_service.resolve_target_storage(
-        target_node,
-        vm_data.storage,
+    target_storage = _resolve_managed_storage(
+        session=session,
+        node=target_node,
+        resource_type="vm",
+        requested_storage=vm_data.storage,
+        disk_gb=int(vm_data.disk_size or 20),
         required_content="images",
     )
     created = False
@@ -380,9 +413,12 @@ def provision_from_request(*, session: Session, db_request) -> tuple[int, str | 
 
     try:
         if db_request.resource_type == "lxc":
-            target_storage = proxmox_service.resolve_target_storage(
-                target_node,
-                db_request.storage,
+            target_storage = _resolve_managed_storage(
+                session=session,
+                node=target_node,
+                resource_type="lxc",
+                requested_storage=db_request.storage,
+                disk_gb=int(db_request.rootfs_size or 8),
                 required_content="rootdir",
             )
             config = {
@@ -417,9 +453,12 @@ def provision_from_request(*, session: Session, db_request) -> tuple[int, str | 
             template = proxmox_service.find_vm_template(db_request.template_id)
             template_node = template["node"]
             clone_target_node = target_node
-            target_storage = proxmox_service.resolve_target_storage(
-                clone_target_node,
-                db_request.storage,
+            target_storage = _resolve_managed_storage(
+                session=session,
+                node=clone_target_node,
+                resource_type="vm",
+                requested_storage=db_request.storage,
+                disk_gb=int(db_request.disk_size or 20),
                 required_content="images",
             )
             clone_config = {
@@ -447,9 +486,12 @@ def provision_from_request(*, session: Session, db_request) -> tuple[int, str | 
                     template_node,
                 )
                 actual_node = template_node
-                fallback_storage = proxmox_service.resolve_target_storage(
-                    actual_node,
-                    db_request.storage,
+                fallback_storage = _resolve_managed_storage(
+                    session=session,
+                    node=actual_node,
+                    resource_type="vm",
+                    requested_storage=db_request.storage,
+                    disk_gb=int(db_request.disk_size or 20),
                     required_content="images",
                 )
                 proxmox_service.clone_vm(

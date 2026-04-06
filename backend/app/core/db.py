@@ -7,7 +7,17 @@ from app.repositories import user as user_repo
 
 engine = create_engine(
     str(settings.SQLALCHEMY_DATABASE_URI),
-    connect_args={"client_encoding": "utf8"},
+    connect_args={
+        "client_encoding": "utf8",
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    },
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    pool_use_lifo=True,
 )
 
 

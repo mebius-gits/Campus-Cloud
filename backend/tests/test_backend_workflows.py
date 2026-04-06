@@ -6,8 +6,12 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.security import encrypt_value
+from app.ai.pve_advisor.schemas import NodeCapacity
 from app.exceptions import BadRequestError, ProxmoxError, ProvisioningError
 from app.models import (
+    ProxmoxConfig,
+    ProxmoxNode,
+    ProxmoxStorage,
     Resource,
     SpecChangeRequest,
     SpecChangeRequestStatus,
@@ -66,6 +70,39 @@ def _create_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+def _seed_managed_storage(
+    session: Session,
+    *,
+    node_name: str,
+    storage: str,
+    speed_tier: str,
+    user_priority: int,
+    can_vm: bool = True,
+    can_lxc: bool = True,
+    avail_gb: float = 200.0,
+    total_gb: float = 400.0,
+) -> None:
+    session.add(
+        ProxmoxStorage(
+            node_name=node_name,
+            storage=storage,
+            storage_type="dir",
+            total_gb=total_gb,
+            used_gb=max(total_gb - avail_gb, 0.0),
+            avail_gb=avail_gb,
+            can_vm=can_vm,
+            can_lxc=can_lxc,
+            can_iso=False,
+            can_backup=False,
+            is_shared=False,
+            active=True,
+            enabled=True,
+            speed_tier=speed_tier,
+            user_priority=user_priority,
+        )
+    )
 
 
 def test_vm_request_create_preserves_environment_type(
@@ -575,6 +612,223 @@ def test_select_request_placement_falls_back_when_reserved_node_is_unavailable(
     assert placement.node == "pve-b"
     assert placement.strategy == "priority_dominant_share"
     assert placement.plan.feasible is True
+
+
+def test_reserved_target_node_prefers_admin_storage_profile(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _create_user(db)
+    now = datetime.now(timezone.utc)
+    db.add(
+        ProxmoxNode(
+            name="pve-a",
+            host="10.0.0.1",
+            port=8006,
+            is_primary=True,
+            is_online=True,
+            priority=5,
+        )
+    )
+    db.add(
+        ProxmoxNode(
+            name="pve-b",
+            host="10.0.0.2",
+            port=8006,
+            is_primary=False,
+            is_online=True,
+            priority=5,
+        )
+    )
+    db.add(
+        ProxmoxConfig(
+            id=1,
+            host="pve.local",
+            user="root@pam",
+            encrypted_password="encrypted",
+            verify_ssl=False,
+            iso_storage="local",
+            data_storage="local-lvm",
+            pool_name="CampusCloud",
+            placement_strategy="priority_dominant_share",
+            cpu_overcommit_ratio=2.0,
+            disk_overcommit_ratio=1.0,
+        )
+    )
+    _seed_managed_storage(
+        db,
+        node_name="pve-a",
+        storage="data-hdd",
+        speed_tier="hdd",
+        user_priority=8,
+    )
+    _seed_managed_storage(
+        db,
+        node_name="pve-b",
+        storage="data-nvme",
+        speed_tier="nvme",
+        user_priority=1,
+    )
+    db.commit()
+
+    request = VMRequest(
+        user_id=user.id,
+        reason="Need a VM with managed storage placement.",
+        resource_type="vm",
+        hostname="storage-aware",
+        cores=2,
+        memory=2048,
+        password=encrypt_value("strongpass123"),
+        storage="local-lvm",
+        environment_type="Storage Aware",
+        template_id=100,
+        disk_size=40,
+        username="student",
+        status=VMRequestStatus.approved,
+        start_at=now + timedelta(hours=1),
+        end_at=now + timedelta(hours=2),
+        created_at=now,
+    )
+
+    monkeypatch.setattr(
+        "app.services.vm_request_placement_service.advisor_service._load_cluster_state",
+        lambda: ([], []),
+    )
+    monkeypatch.setattr(
+        "app.services.vm_request_placement_service.advisor_service._build_node_capacities",
+        lambda **kwargs: [
+            NodeCapacity(
+                node="pve-a",
+                status="online",
+                total_cpu_cores=16,
+                allocatable_cpu_cores=16,
+                cpu_ratio=0.0,
+                total_memory_bytes=64 * 1024**3,
+                allocatable_memory_bytes=64 * 1024**3,
+                memory_ratio=0.0,
+                total_disk_bytes=400 * 1024**3,
+                allocatable_disk_bytes=400 * 1024**3,
+                disk_ratio=0.0,
+                gpu_count=0,
+                running_resources=0,
+                guest_soft_limit=32,
+                guest_pressure_ratio=0.0,
+                candidate=True,
+            ),
+            NodeCapacity(
+                node="pve-b",
+                status="online",
+                total_cpu_cores=16,
+                allocatable_cpu_cores=16,
+                cpu_ratio=0.0,
+                total_memory_bytes=64 * 1024**3,
+                allocatable_memory_bytes=64 * 1024**3,
+                memory_ratio=0.0,
+                total_disk_bytes=400 * 1024**3,
+                allocatable_disk_bytes=400 * 1024**3,
+                disk_ratio=0.0,
+                gpu_count=0,
+                running_resources=0,
+                guest_soft_limit=32,
+                guest_pressure_ratio=0.0,
+                candidate=True,
+            ),
+        ],
+    )
+
+    selection = vm_request_placement_service.select_reserved_target_node(
+        session=db,
+        db_request=request,
+        reserved_requests=[],
+    )
+
+    assert selection.node == "pve-b"
+    assert selection.plan.feasible is True
+
+
+def test_create_vm_prefers_admin_selected_storage(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _create_user(db)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.next_vmid",
+        lambda: 902,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.find_vm_template",
+        lambda template_id: {"vmid": template_id, "node": "node-d"},
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.vm_request_placement_service.select_best_storage_name",
+        lambda **kwargs: "data-nvme",
+    )
+
+    def _resolve_target_storage(node, requested_storage, required_content):
+        captured["resolved"] = (node, requested_storage, required_content)
+        return requested_storage
+
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.resolve_target_storage",
+        _resolve_target_storage,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.clone_vm",
+        lambda node, template_id, **clone_config: (
+            captured.setdefault("clone", (node, template_id, clone_config)),
+            "UPID:clone",
+        )[1],
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.update_config",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.resize_disk",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.proxmox_service.control",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.firewall_service.setup_default_rules",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.provisioning_service.audit_service.log_action",
+        lambda *args, **kwargs: None,
+    )
+
+    provisioning_service.create_vm(
+        session=db,
+        user_id=user.id,
+        vm_data=VMCreateRequest(
+            hostname="admin-storage-choice",
+            template_id=779,
+            username="student",
+            password="strongpass123",
+            cores=2,
+            memory=2048,
+            disk_size=20,
+            storage="user-picked-storage",
+            environment_type="Managed Storage",
+            start=True,
+        ),
+    )
+
+    assert captured["resolved"] == ("node-d", "data-nvme", "images")
+    assert captured["clone"] == (
+        "node-d",
+        779,
+        {
+            "newid": 902,
+            "name": "admin-storage-choice",
+            "full": 1,
+            "storage": "data-nvme",
+            "pool": "CampusCloud",
+        },
+    )
 
 
 def test_process_due_request_starts_rebalances_active_window_and_migrates(

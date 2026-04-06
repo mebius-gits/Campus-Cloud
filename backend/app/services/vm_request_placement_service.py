@@ -17,9 +17,11 @@ from app.ai.pve_advisor.schemas import (
 from app.models import VMRequest
 from app.repositories import proxmox_config as proxmox_config_repo
 from app.repositories import proxmox_node as proxmox_node_repo
+from app.repositories import proxmox_storage as proxmox_storage_repo
 from app.repositories import vm_request as vm_request_repo
 
 GIB = 1024**3
+_STORAGE_SPEED_RANK = {"nvme": 0, "ssd": 1, "hdd": 2, "unknown": 3}
 
 
 @dataclass
@@ -27,6 +29,30 @@ class CurrentPlacementSelection:
     node: str | None
     strategy: str
     plan: PlacementPlan
+
+
+@dataclass
+class _WorkingStoragePool:
+    storage: str
+    total_gb: float
+    avail_gb: float
+    active: bool
+    enabled: bool
+    can_vm: bool
+    can_lxc: bool
+    is_shared: bool
+    speed_tier: str
+    user_priority: int
+    placed_count: int = 0
+    overcommit_placed_count: int = 0
+
+
+@dataclass
+class _StorageSelection:
+    pool: _WorkingStoragePool
+    projected_share: float
+    speed_rank: int
+    user_priority: int
 
 
 def _utc_now() -> datetime:
@@ -56,6 +82,164 @@ def _request_capacity_tuple(db_request: VMRequest) -> tuple[float, int, int]:
     if disk_gb <= 0:
         disk_gb = 20 if db_request.resource_type == "vm" else 8
     return cpu_cores, memory_bytes, disk_gb * GIB
+
+
+def _build_storage_pool_state(
+    *,
+    session: Session,
+    node_names: list[str],
+) -> tuple[dict[str, list[_WorkingStoragePool]], bool]:
+    storages = proxmox_storage_repo.get_all_storages(session)
+    if not storages:
+        return {node_name: [] for node_name in node_names}, False
+
+    shared_registry: dict[str, _WorkingStoragePool] = {}
+    by_node: dict[str, list[_WorkingStoragePool]] = {node_name: [] for node_name in node_names}
+    node_set = set(node_names)
+
+    for storage in storages:
+        node_name = str(storage.node_name or "")
+        if node_name not in node_set:
+            continue
+
+        if storage.is_shared:
+            pool = shared_registry.get(storage.storage)
+            if pool is None:
+                pool = _WorkingStoragePool(
+                    storage=storage.storage,
+                    total_gb=float(storage.total_gb or 0.0),
+                    avail_gb=float(storage.avail_gb or 0.0),
+                    active=bool(storage.active),
+                    enabled=bool(storage.enabled),
+                    can_vm=bool(storage.can_vm),
+                    can_lxc=bool(storage.can_lxc),
+                    is_shared=bool(storage.is_shared),
+                    speed_tier=str(storage.speed_tier or "unknown"),
+                    user_priority=int(storage.user_priority or 5),
+                )
+                shared_registry[storage.storage] = pool
+            by_node[node_name].append(pool)
+            continue
+
+        by_node[node_name].append(
+            _WorkingStoragePool(
+                storage=storage.storage,
+                total_gb=float(storage.total_gb or 0.0),
+                avail_gb=float(storage.avail_gb or 0.0),
+                active=bool(storage.active),
+                enabled=bool(storage.enabled),
+                can_vm=bool(storage.can_vm),
+                can_lxc=bool(storage.can_lxc),
+                is_shared=bool(storage.is_shared),
+                speed_tier=str(storage.speed_tier or "unknown"),
+                user_priority=int(storage.user_priority or 5),
+            )
+        )
+
+    has_managed_storage = any(pools for pools in by_node.values())
+    return by_node, has_managed_storage
+
+
+def _select_best_storage_for_request(
+    *,
+    storage_pools: list[_WorkingStoragePool],
+    resource_type: ResourceType,
+    disk_gb: int,
+    disk_overcommit_ratio: float,
+) -> _StorageSelection | None:
+    if disk_gb <= 0:
+        return None
+
+    capable = [
+        pool
+        for pool in storage_pools
+        if pool.active
+        and pool.enabled
+        and ((resource_type == "lxc" and pool.can_lxc) or (resource_type == "vm" and pool.can_vm))
+    ]
+    if not capable:
+        return None
+
+    normal = [pool for pool in capable if pool.avail_gb + 1e-9 >= float(disk_gb)]
+    if normal:
+        chosen = min(
+            normal,
+            key=lambda pool: (
+                _STORAGE_SPEED_RANK.get(pool.speed_tier, 3),
+                int(pool.user_priority or 5),
+                pool.placed_count,
+                -float(pool.avail_gb),
+                pool.storage,
+            ),
+        )
+        return _StorageSelection(
+            pool=chosen,
+            projected_share=_projected_share(
+                used=max(chosen.total_gb - chosen.avail_gb, 0.0) + float(disk_gb),
+                total=max(chosen.total_gb, 1.0),
+            ),
+            speed_rank=_STORAGE_SPEED_RANK.get(chosen.speed_tier, 3),
+            user_priority=int(chosen.user_priority or 5),
+        )
+
+    overcommit = [
+        pool
+        for pool in capable
+        if (max(float(pool.total_gb) * max(disk_overcommit_ratio, 1.0) - (pool.total_gb - pool.avail_gb), 0.0) + 1e-9)
+        >= float(disk_gb)
+    ]
+    if not overcommit:
+        return None
+
+    chosen = min(
+        overcommit,
+        key=lambda pool: (
+            pool.overcommit_placed_count,
+            _STORAGE_SPEED_RANK.get(pool.speed_tier, 3),
+            int(pool.user_priority or 5),
+            -max(
+                float(pool.total_gb) * max(disk_overcommit_ratio, 1.0) - (pool.total_gb - pool.avail_gb),
+                0.0,
+            ),
+            pool.storage,
+        ),
+    )
+    effective_total = max(float(chosen.total_gb) * max(disk_overcommit_ratio, 1.0), 1.0)
+    current_used = max(chosen.total_gb - chosen.avail_gb, 0.0)
+    return _StorageSelection(
+        pool=chosen,
+        projected_share=_projected_share(
+            used=current_used + float(disk_gb),
+            total=effective_total,
+        ),
+        speed_rank=_STORAGE_SPEED_RANK.get(chosen.speed_tier, 3),
+        user_priority=int(chosen.user_priority or 5),
+    )
+
+
+def _reserve_storage_pool(
+    *,
+    selection: _StorageSelection,
+    disk_gb: int,
+    disk_overcommit_ratio: float,
+) -> None:
+    pool = selection.pool
+    remaining_physical = max(float(pool.avail_gb), 0.0)
+    requested = float(max(disk_gb, 0))
+    if remaining_physical + 1e-9 >= requested:
+        pool.avail_gb = max(remaining_physical - requested, 0.0)
+        pool.placed_count += 1
+        return
+
+    current_used = max(pool.total_gb - remaining_physical, 0.0)
+    effective_total = max(float(pool.total_gb) * max(disk_overcommit_ratio, 1.0), float(pool.total_gb))
+    remaining_effective = max(effective_total - current_used, 0.0)
+    if remaining_effective + 1e-9 >= requested:
+        pool.avail_gb = max(remaining_physical - requested, 0.0)
+        pool.overcommit_placed_count += 1
+        return
+
+    raise ValueError(f"Storage pool {pool.storage} does not have enough capacity")
 
 
 def _refresh_node_candidate(node: NodeCapacity) -> None:
@@ -187,6 +371,11 @@ def build_plan(
     strategy = _normalize_strategy(placement_strategy or get_placement_strategy(session))
     priorities = node_priorities or get_node_priorities(session)
     working_nodes = [item.model_copy(deep=True) for item in node_capacities]
+    storage_pools_by_node, has_managed_storage = _build_storage_pool_state(
+        session=session,
+        node_names=[item.node for item in working_nodes],
+    )
+    _, disk_overcommit_ratio = get_overcommit_ratios(session)
     required_cpu = advisor_service._effective_cpu_cores(request, effective_resource_type)
     required_memory = advisor_service._effective_memory_bytes(request, effective_resource_type)
     required_disk = request.disk_gb * GIB
@@ -194,31 +383,43 @@ def build_plan(
     remaining = request.instance_count
 
     while remaining > 0:
-        candidates = [
-            item
-            for item in working_nodes
-            if item.candidate
-            and advisor_service._can_fit(
+        candidates: list[tuple[NodeCapacity, _StorageSelection | None]] = []
+        for item in working_nodes:
+            if not item.candidate or not advisor_service._can_fit(
                 item,
                 cores=required_cpu,
                 memory_bytes=required_memory,
                 disk_bytes=required_disk,
                 gpu_required=request.gpu_required,
-            )
-        ]
+            ):
+                continue
+
+            storage_selection: _StorageSelection | None = None
+            if has_managed_storage:
+                storage_selection = _select_best_storage_for_request(
+                    storage_pools=storage_pools_by_node.get(item.node, []),
+                    resource_type=str(request.resource_type),
+                    disk_gb=int(request.disk_gb),
+                    disk_overcommit_ratio=disk_overcommit_ratio,
+                )
+                if storage_selection is None:
+                    continue
+
+            candidates.append((item, storage_selection))
         if not candidates:
             break
 
-        chosen = min(
+        chosen, chosen_storage = min(
             candidates,
-            key=lambda item: _placement_sort_key(
-                item,
+            key=lambda candidate: _placement_sort_key(
+                candidate[0],
                 placements=placements,
                 priorities=priorities,
                 strategy=strategy,
                 cores=required_cpu,
                 memory_bytes=required_memory,
                 disk_bytes=required_disk,
+                storage_selection=candidate[1],
             ),
         )
         placements[chosen.node] += 1
@@ -250,6 +451,12 @@ def build_plan(
             and chosen.allocatable_disk_bytes > 0
             and not chosen.guest_overloaded
         )
+        if chosen_storage is not None:
+            _reserve_storage_pool(
+                selection=chosen_storage,
+                disk_gb=int(request.disk_gb),
+                disk_overcommit_ratio=disk_overcommit_ratio,
+            )
         remaining -= 1
 
     assigned = request.instance_count - remaining
@@ -592,6 +799,33 @@ def get_node_priorities(session: Session) -> dict[str, int]:
     return {item.name: int(item.priority) for item in proxmox_node_repo.get_all_nodes(session)}
 
 
+def select_best_storage_name(
+    *,
+    session: Session,
+    node_name: str,
+    resource_type: str,
+    disk_gb: int,
+    fallback_storage: str | None = None,
+) -> str | None:
+    storage_pools_by_node, has_managed_storage = _build_storage_pool_state(
+        session=session,
+        node_names=[node_name],
+    )
+    if not has_managed_storage:
+        return fallback_storage
+
+    _, disk_overcommit_ratio = get_overcommit_ratios(session)
+    selection = _select_best_storage_for_request(
+        storage_pools=storage_pools_by_node.get(node_name, []),
+        resource_type=resource_type,
+        disk_gb=disk_gb,
+        disk_overcommit_ratio=disk_overcommit_ratio,
+    )
+    if selection is None:
+        return None
+    return selection.pool.storage
+
+
 def _placement_sort_key(
     node: NodeCapacity,
     *,
@@ -601,6 +835,7 @@ def _placement_sort_key(
     cores: float,
     memory_bytes: int,
     disk_bytes: int,
+    storage_selection: _StorageSelection | None = None,
 ) -> tuple:
     projected_cpu_share = _projected_share(
         used=max(node.total_cpu_cores - node.allocatable_cpu_cores, 0.0) + cores,
@@ -619,6 +854,15 @@ def _placement_sort_key(
         projected_cpu_share + projected_memory_share + projected_disk_share
     ) / 3.0
     placement_count = placements.get(node.node, 0)
+    storage_speed_rank = (
+        storage_selection.speed_rank if storage_selection is not None else 99
+    )
+    storage_user_priority = (
+        storage_selection.user_priority if storage_selection is not None else 99
+    )
+    storage_projected_share = (
+        storage_selection.projected_share if storage_selection is not None else 1.0
+    )
 
     return (
         priorities.get(node.node, 5),
@@ -626,6 +870,9 @@ def _placement_sort_key(
         dominant_share,
         average_share,
         projected_cpu_share,
+        storage_speed_rank,
+        storage_user_priority,
+        storage_projected_share,
         node.node,
     )
 
