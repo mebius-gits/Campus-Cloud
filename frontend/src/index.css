@@ -132,6 +132,81 @@
   .hidden-scroll::-webkit-scrollbar {
     display: none;
   }
+
+  /* Light mode — soft daylight sky */
+  .auth-background {
+    background:
+      radial-gradient(
+        ellipse 70% 40% at 50% 60%,
+        rgba(255, 210, 140, 0.40) 0%,
+        transparent 60%
+      ),
+      linear-gradient(
+        180deg,
+        #96bad8 0%,
+        #aecce8 18%,
+        #c8dff5 32%,
+        #d8e8f5 46%,
+        #d4b890 60%,
+        #dfc48a 72%,
+        #b8cede 86%,
+        #94b2c8 100%
+      );
+  }
+
+  /* Dark mode — night mountain scene */
+  .dark .auth-background {
+    background:
+      radial-gradient(
+        ellipse 80% 45% at 50% 72%,
+        rgba(210, 105, 40, 0.22) 0%,
+        transparent 65%
+      ),
+      linear-gradient(
+        180deg,
+        #050c1e 0%,
+        #0c1830 14%,
+        #14233e 27%,
+        #1c2d56 40%,
+        #263668 50%,
+        #352b52 60%,
+        #3c261c 70%,
+        #281e2a 82%,
+        #121826 100%
+      );
+  }
+
+  /* Light mode glass card — dark text on frosted white */
+  .glass-card {
+    --foreground: oklch(0.18 0 0);
+    --card-foreground: oklch(0.18 0 0);
+    --muted-foreground: oklch(0.40 0 0 / 85%);
+    --border: oklch(0 0 0 / 12%);
+    --input: oklch(0 0 0 / 6%);
+    --background: oklch(1 0 0 / 55%);
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  /* Dark mode glass card — light text on frosted dark */
+  .dark .glass-card {
+    --foreground: oklch(0.97 0 0);
+    --card-foreground: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.82 0 0 / 80%);
+    --border: oklch(1 0 0 / 18%);
+    --input: oklch(1 0 0 / 12%);
+    --background: oklch(1 0 0 / 8%);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
 }
 
 @keyframes page-loading {

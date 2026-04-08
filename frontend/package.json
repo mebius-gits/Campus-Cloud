@@ -35,6 +35,7 @@
     "@tanstack/react-router": "^1.157.3",
     "@tanstack/react-router-devtools": "^1.156.0",
     "@tanstack/react-table": "^8.21.3",
+    "@types/three": "^0.183.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
@@ -63,6 +64,8 @@
     "tailwindcss": "^4.1.17",
     "zod": "^4.3.6",
     "@monaco-editor/react": "^4.7.0"
+    "three": "^0.183.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.12",
