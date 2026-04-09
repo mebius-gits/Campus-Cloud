@@ -24,6 +24,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import useAuth from "@/hooks/useAuth"
 import { type Item, Main } from "./Main"
@@ -32,6 +33,7 @@ import { User } from "./User"
 export function AppSidebar() {
   const { user: currentUser } = useAuth()
   const { t } = useTranslation("navigation")
+  const { setOpen } = useSidebar()
 
   const overviewItems: Item[] = [
     { icon: Home, title: t("sidebar.dashboard"), path: "/" },
@@ -44,7 +46,7 @@ export function AppSidebar() {
 
   const aiItems: Item[] = [{ icon: Bot, title: "AI API", path: "/ai-api" }]
 
-  const commonItems: Item[] = [...overviewItems, ...resourceItems, ...aiItems]
+  const teacherItems: Item[] = [...overviewItems, ...resourceItems, ...aiItems]
 
   const studentItems: Item[] = [
     ...overviewItems,
@@ -73,18 +75,27 @@ export function AppSidebar() {
     { icon: ScrollText, title: "稽核日誌", path: "/admin/audit-logs" },
   ]
 
-  const items =
-    currentUser?.role === "student"
+  // currentUser 為 undefined 時（初次載入 / token refresh 中）不要 fallback 到
+  // 任何角色的選單，避免 admin 使用者在 refresh 期間被暫時降級成 teacher 選單。
+  const items: Item[] = !currentUser
+    ? []
+    : currentUser.role === "student"
       ? studentItems
-      : currentUser?.role === "admin" || currentUser?.is_superuser
+      : currentUser.role === "admin" || currentUser.is_superuser
         ? adminItems
-        : commonItems
+        : teacherItems
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="px-4 py-6 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:items-center">
+    <Sidebar
+      collapsible="icon"
+      variant="floating"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <SidebarHeader className="px-4 py-3.75 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:items-center">
         <Logo variant="responsive" />
       </SidebarHeader>
+      <hr style={{ borderColor: "rgba(13, 66, 195, 0.5)", margin: "0 8px 10px" }} />
       <SidebarContent>
         <Main items={items} />
       </SidebarContent>
