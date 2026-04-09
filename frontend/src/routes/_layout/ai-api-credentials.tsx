@@ -1,8 +1,19 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, redirect } from "@tanstack/react-router"
 import { useMemo, useState } from "react"
+import { Trash2 } from "lucide-react"
 
 import { UsersService } from "@/client"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,6 +44,8 @@ import {
   type AiApiCredentialAdminStatus,
   AiApiService,
 } from "@/services/aiApi"
+import useCustomToast from "@/hooks/useCustomToast"
+import { handleError } from "@/utils"
 
 const PAGE_SIZE = 50
 
@@ -73,9 +86,12 @@ function StatusBadge({ item }: { item: AiApiCredentialAdminPublic }) {
 }
 
 function AiApiCredentialsAdminPage() {
+  const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
   const [statusFilter, setStatusFilter] = useState<"all" | AiApiCredentialAdminStatus>("all")
   const [userEmail, setUserEmail] = useState("")
   const [page, setPage] = useState(0)
+  const [deletingItem, setDeletingItem] = useState<AiApiCredentialAdminPublic | null>(null)
 
   const queryInput = useMemo(
     () => ({
@@ -107,6 +123,21 @@ function AiApiCredentialsAdminPage() {
     queryKey: ["ai-api", "admin-credentials", "count", "inactive"],
     queryFn: () =>
       AiApiService.listAllCredentials({ status: "inactive", skip: 0, limit: 1 }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (credentialId: string) =>
+      AiApiService.deleteCredential({
+        credentialId,
+      }),
+    onSuccess: () => {
+      showSuccessToast("金鑰已刪除")
+      setDeletingItem(null)
+      queryClient.invalidateQueries({ queryKey: ["ai-api", "admin-credentials"] })
+    },
+    onError: handleError.bind((message: string) =>
+      showErrorToast(`刪除失敗：${message}`),
+    ),
   })
 
   const rows = listQuery.data?.data ?? []
@@ -204,6 +235,7 @@ function AiApiCredentialsAdminPage() {
                   <TableHead>建立時間</TableHead>
                   <TableHead>過期時間</TableHead>
                   <TableHead>撤銷時間</TableHead>
+                  <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -223,6 +255,17 @@ function AiApiCredentialsAdminPage() {
                     <TableCell>{formatTime(item.created_at)}</TableCell>
                     <TableCell>{formatTime(item.expires_at)}</TableCell>
                     <TableCell>{formatTime(item.revoked_at)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setDeletingItem(item)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="mr-1.5 h-4 w-4" />
+                        刪除
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -260,6 +303,40 @@ function AiApiCredentialsAdminPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={Boolean(deletingItem)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) {
+            setDeletingItem(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確認刪除這把金鑰？</AlertDialogTitle>
+            <AlertDialogDescription>
+              你即將刪除
+              {deletingItem ? `「${deletingItem.api_key_name}」` : "這筆資料"}。
+              這個動作無法復原。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleteMutation.isPending || !deletingItem}
+              onClick={(event) => {
+                event.preventDefault()
+                if (!deletingItem) return
+                deleteMutation.mutate(deletingItem.id)
+              }}
+            >
+              {deleteMutation.isPending ? "刪除中..." : "確認刪除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
