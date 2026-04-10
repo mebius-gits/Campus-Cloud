@@ -16,7 +16,7 @@ from app.schemas import (
     AIAPICredentialUpdate,
     Message,
 )
-from app.services import ai_api_service
+from app.services.llm_gateway import ai_gateway_service
 
 router = APIRouter(prefix="/ai-api", tags=["ai-api"])
 
@@ -27,7 +27,7 @@ def create_ai_api_request(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    return ai_api_service.create_request(
+    return ai_gateway_service.create_request(
         session=session, request_in=request_in, user=current_user
     )
 
@@ -39,7 +39,7 @@ def list_my_ai_api_requests(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
-    return ai_api_service.list_requests_by_user(
+    return ai_gateway_service.list_requests_by_user(
         session=session, user_id=current_user.id, skip=skip, limit=limit
     )
 
@@ -52,7 +52,7 @@ def list_all_ai_api_requests(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
-    return ai_api_service.list_all_requests(
+    return ai_gateway_service.list_all_requests(
         session=session, status=status, skip=skip, limit=limit
     )
 
@@ -63,7 +63,7 @@ def get_ai_api_request(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    return ai_api_service.get_request(
+    return ai_gateway_service.get_request(
         session=session, request_id=request_id, current_user=current_user
     )
 
@@ -75,7 +75,7 @@ def review_ai_api_request(
     session: SessionDep,
     current_user: AdminUser,
 ) -> Any:
-    return ai_api_service.review_request(
+    return ai_gateway_service.review_request(
         session=session,
         request_id=request_id,
         review_data=review,
@@ -90,7 +90,7 @@ def list_my_ai_api_credentials(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
-    return ai_api_service.list_credentials_by_user(
+    return ai_gateway_service.list_credentials_by_user(
         session=session, user_id=current_user.id, skip=skip, limit=limit
     )
 
@@ -104,7 +104,7 @@ def list_all_ai_api_credentials(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
 ) -> Any:
-    return ai_api_service.list_all_credentials(
+    return ai_gateway_service.list_all_credentials(
         session=session,
         status=status,
         user_email=user_email,
@@ -119,7 +119,7 @@ def rotate_my_ai_api_credential(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    return ai_api_service.rotate_credential(
+    return ai_gateway_service.rotate_credential(
         session=session, credential_id=credential_id, current_user=current_user
     )
 
@@ -129,7 +129,7 @@ def delete_my_ai_api_credential(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    return ai_api_service.delete_credential(
+    return ai_gateway_service.delete_credential(
         session=session, credential_id=credential_id, current_user=current_user
     )
 
@@ -141,7 +141,7 @@ def update_my_ai_api_credential(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    return ai_api_service.update_credential_name(
+    return ai_gateway_service.update_credential_name(
         session=session,
         credential_id=credential_id,
         name=update_data.api_key_name,
