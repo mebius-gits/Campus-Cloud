@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
+from app.domain.pve_placement.constants import DEFAULT_PLACEMENT_STRATEGY
 from app.domain.pve_placement.models import (
     DEFAULT_CPU_PEAK_HIGH_SHARE,
     DEFAULT_CPU_PEAK_WARN_SHARE,
@@ -11,8 +12,6 @@ from app.domain.pve_placement.models import (
 )
 from app.repositories import proxmox_config as proxmox_config_repo
 from app.repositories import proxmox_node as proxmox_node_repo
-
-DEFAULT_PLACEMENT_STRATEGY = "priority_dominant_share"
 
 
 def get_placement_tuning(*, session: Session) -> PlacementTuning:

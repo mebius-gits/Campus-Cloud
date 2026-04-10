@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.serialization import Encoding
 from fastapi import APIRouter, Body, HTTPException
 
 from app.api.deps import AdminUser, SessionDep
-from app.domain.pve_placement.policy import DEFAULT_PLACEMENT_STRATEGY
+from app.domain.placement.constants import DEFAULT_PLACEMENT_STRATEGY
 from app.exceptions import BadRequestError
 from app.infrastructure.proxmox import (
     DEFAULT_PROXMOX_POOL_NAME,

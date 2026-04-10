@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import asyncio
 
 from proxmoxer import ProxmoxAPI
 
@@ -141,3 +142,16 @@ def basic_blocking_task_status(
             raise ProxmoxError(error_msg)
 
         time.sleep(check_interval)
+
+
+async def wait_for_task_status(
+    node_name: str,
+    task_id: str,
+    check_interval: int | None = None,
+) -> dict:
+    return await asyncio.to_thread(
+        basic_blocking_task_status,
+        node_name,
+        task_id,
+        check_interval,
+    )

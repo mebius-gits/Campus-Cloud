@@ -26,8 +26,8 @@ class GoogleLoginRequest(BaseModel):
 
 
 @router.post("/login/google")
-def login_google(session: SessionDep, body: GoogleLoginRequest) -> Token:
-    return auth_service.google_login(session=session, id_token=body.id_token)
+async def login_google(session: SessionDep, body: GoogleLoginRequest) -> Token:
+    return await auth_service.google_login(session=session, id_token=body.id_token)
 
 
 class RefreshTokenRequest(BaseModel):

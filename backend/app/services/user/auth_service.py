@@ -60,7 +60,7 @@ def login(*, session: Session, email: str, password: str) -> Token:
     return _create_token_pair(user)
 
 
-def google_login(*, session: Session, id_token: str) -> Token:
+async def google_login(*, session: Session, id_token: str) -> Token:
     def _fail(reason: str, email: str | None = None, user_id=None) -> None:
         audit_service.log_action(
             session=session,
@@ -71,8 +71,8 @@ def google_login(*, session: Session, id_token: str) -> Token:
         )
 
     try:
-        with httpx.Client(timeout=5.0) as client:
-            r = client.get(
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
                 "https://oauth2.googleapis.com/tokeninfo",
                 params={"id_token": id_token},
             )

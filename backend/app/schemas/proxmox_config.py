@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domain.pve_placement.policy import DEFAULT_PLACEMENT_STRATEGY
+from app.domain.placement.constants import DEFAULT_PLACEMENT_STRATEGY
 from app.infrastructure.proxmox import DEFAULT_PROXMOX_POOL_NAME
 
 

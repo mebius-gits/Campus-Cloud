@@ -57,7 +57,7 @@ async def vnc_proxy(
 
         # Find VM in cluster resources
         try:
-            vm_info = proxmox_service.find_resource(vmid)
+            vm_info = await asyncio.to_thread(proxmox_service.find_resource, vmid)
         except NotFoundError:
             logger.error(f"VM {vmid} not found in cluster")
             await websocket.close(code=1008, reason="VM not found")
@@ -68,7 +68,11 @@ async def vnc_proxy(
         # Re-use the ticket/port from the REST endpoint when available,
         # so the noVNC client authenticates with the same ticket.
         if not (vnc_ticket and vnc_port):
-            console_data = proxmox_service.get_vnc_ticket(node, vmid)
+            console_data = await asyncio.to_thread(
+                proxmox_service.get_vnc_ticket,
+                node,
+                vmid,
+            )
             vnc_port = console_data["port"]
             vnc_ticket = console_data["ticket"]
 

@@ -15,6 +15,7 @@ from app.infrastructure.proxmox import (
     get_active_host,
     get_proxmox_api,
     get_proxmox_settings,
+    wait_for_task_status,
 )
 from app.exceptions import BadRequestError, NotFoundError, ProxmoxError
 
@@ -493,6 +494,14 @@ async def get_session_ticket() -> tuple[str, str]:
             )
         data = resp.json()["data"]
         return data["ticket"], data.get("CSRFPreventionToken", "")
+
+
+async def wait_task(task_id: str, node: str, check_interval: int | None = None) -> dict:
+    return await wait_for_task_status(
+        node_name=node,
+        task_id=task_id,
+        check_interval=check_interval,
+    )
 
 
 # ---------------------------------------------------------------------------

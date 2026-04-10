@@ -4,6 +4,7 @@ from .client import (
     get_active_host,
     get_proxmox_api,
     invalidate_proxmox_client,
+    wait_for_task_status,
 )
 from .router import fetch_cluster_nodes
 from .settings import DEFAULT_PROXMOX_POOL_NAME, ProxmoxSettings, get_proxmox_settings
@@ -22,4 +23,5 @@ __all__ = [
     "get_proxmox_api",
     "get_proxmox_settings",
     "invalidate_proxmox_client",
+    "wait_for_task_status",
 ]
