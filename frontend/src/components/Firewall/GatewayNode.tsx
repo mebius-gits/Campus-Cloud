@@ -12,7 +12,7 @@ export function GatewayNode({ selected }: NodeProps<GatewayNodeType>) {
     <div
       className={`
         relative flex items-center gap-3 px-4 py-3
-        bg-card border border-dashed rounded-xl cursor-default
+        bg-white border border-dashed rounded-xl cursor-default
         transition-all duration-200 min-w-[160px]
         ${
           selected

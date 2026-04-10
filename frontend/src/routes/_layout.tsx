@@ -41,18 +41,18 @@ function Layout() {
       <AppSidebar />
       <SidebarInset>
         {isFullscreen ? (
-          <main className="flex-1 overflow-hidden">
+          <main className="flex-1 overflow-hidden py-7.5 px-20">
             <Outlet />
           </main>
         ) : (
           <>
             <main
               className={cn(
-                "flex-1 p-6 md:p-8",
+                "flex-1 py-7.5 px-20",
                 hasFixedFooter && "pb-28 md:pb-32",
               )}
             >
-              <div className="max-w-7xl">
+              <div className="w-full">
                 <Outlet />
               </div>
             </main>

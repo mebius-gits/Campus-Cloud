@@ -487,7 +487,7 @@ function FirewallTopologyInner() {
   }
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full firewall-canvas rounded-xl overflow-hidden" style={{ background: "rgba(15,103,217,0.15)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.6)" }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -522,11 +522,11 @@ function FirewallTopologyInner() {
         />
 
         {/* 控制工具列 */}
-        <Controls className="!bg-card !border-border" />
+        <Controls className="bg-white! border-border!" />
 
         {/* 頂部工具列 */}
         <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-          <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 py-2">
             <Shield className="w-4 h-4 text-emerald-400" />
             <span className="text-sm font-medium text-foreground/90">
               防火牆管理
@@ -536,7 +536,7 @@ function FirewallTopologyInner() {
             size="sm"
             variant="ghost"
             onClick={() => refetch()}
-            className="bg-card border border-border text-muted-foreground hover:text-foreground h-8"
+            className="bg-white border border-border text-muted-foreground hover:text-foreground h-8"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
             重新整理
@@ -545,7 +545,7 @@ function FirewallTopologyInner() {
             size="sm"
             variant="ghost"
             onClick={autoArrange}
-            className="bg-card border border-border text-muted-foreground hover:text-foreground h-8"
+            className="bg-white border border-border text-muted-foreground hover:text-foreground h-8"
           >
             <LayoutGrid className="w-3.5 h-3.5 mr-1.5" />
             自動排列
@@ -557,7 +557,7 @@ function FirewallTopologyInner() {
             className={`border h-8 ${
               showLabels
                 ? "bg-emerald-900/30 border-emerald-700 text-emerald-400 hover:text-emerald-300"
-                : "bg-card border-border text-muted-foreground hover:text-foreground"
+                : "bg-white border-border text-muted-foreground hover:text-foreground"
             }`}
           >
             {showLabels ? (
@@ -570,7 +570,7 @@ function FirewallTopologyInner() {
         </div>
 
         {/* 使用說明 */}
-        <div className="absolute bottom-4 left-4 z-10 text-xs text-muted-foreground/50 bg-card/80 rounded-md px-3 py-2 border border-border/50">
+        <div className="absolute bottom-4 left-16 z-10 text-xs text-muted-foreground/50 bg-white/80 rounded-md px-3 py-2 border border-border/50">
           拖拉節點移動位置 · 從節點右側拖拉到另一個節點建立連線 · 點擊節點聚焦 ·
           再次點擊或點空白處取消
         </div>

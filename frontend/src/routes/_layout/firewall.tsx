@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_layout/firewall")({
 
 function FirewallPage() {
   return (
-    <div className="w-full h-[calc(100vh-4rem)]">
+    <div className="w-full h-full">
       <FirewallTopology />
     </div>
   )

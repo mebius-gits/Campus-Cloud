@@ -66,7 +66,7 @@ export function User({ user }: { user: UserPublic | null | undefined }) {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground [&:hover_.sidebar-user-text]:text-white!"
               data-testid="user-menu"
             >
               <UserInfo
