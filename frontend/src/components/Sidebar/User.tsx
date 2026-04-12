@@ -37,7 +37,9 @@ function UserInfo({ avatarUrl, fullName, email }: UserInfoProps) {
         fullName={fullName}
       />
       <div className="flex flex-col items-start min-w-0">
-        <p className="text-sm font-medium truncate w-full sidebar-user-text">{displayName}</p>
+        <p className="text-sm font-medium truncate w-full sidebar-user-text">
+          {displayName}
+        </p>
         <p className="text-xs truncate w-full sidebar-user-text">{email}</p>
       </div>
     </div>
@@ -66,7 +68,7 @@ export function User({ user }: { user: UserPublic | null | undefined }) {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground [&:hover_.sidebar-user-text]:text-white!"
               data-testid="user-menu"
             >
               <UserInfo

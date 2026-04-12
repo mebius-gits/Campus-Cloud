@@ -1,9 +1,9 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Monitor, RefreshCw } from "lucide-react"
 import { Suspense, useCallback, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ResourcesService, UsersService } from "@/client"
+import { ResourcesService } from "@/client"
 import { DataTable } from "@/components/Common/DataTable"
 import PendingItems from "@/components/Pending/PendingItems"
 import CreateContainer from "@/components/Resources/CreateResources"
@@ -11,22 +11,19 @@ import { createColumns } from "@/components/Resources/columns"
 import { TerminalConsoleDialog } from "@/components/Terminal"
 import { Button } from "@/components/ui/button"
 import { VNCConsoleDialog } from "@/components/VNC"
+import { requireAdminUser } from "@/features/auth/guards"
+import { queryKeys } from "@/lib/queryKeys"
 
 function getVMsQueryOptions() {
   return {
     queryFn: () => ResourcesService.listResources({}),
-    queryKey: ["resources"],
+    queryKey: queryKeys.resources.all,
   }
 }
 
 export const Route = createFileRoute("/_layout/resources")({
   component: VirtualMachines,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({ to: "/" })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [
       {
@@ -97,7 +94,7 @@ function RefreshButton() {
   const queryClient = useQueryClient()
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["resources"] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
   }
 
   return (

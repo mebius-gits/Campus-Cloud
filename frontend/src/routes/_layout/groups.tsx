@@ -3,12 +3,12 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query"
-import { createFileRoute, Link, redirect } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Plus, Trash2, Users } from "lucide-react"
 import { Suspense, useState } from "react"
 import { useForm } from "react-hook-form"
 import type { GroupPublic } from "@/client"
-import { GroupsService, UsersService } from "@/client"
+import { GroupsService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,16 +23,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { Textarea } from "@/components/ui/textarea"
+import { requireAdminUser } from "@/features/auth/guards"
+import { groupListQueryOptions } from "@/features/groups/queryOptions"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 
 export const Route = createFileRoute("/_layout/groups")({
   component: GroupsPage,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({ to: "/" })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [{ title: "群組管理 - Campus Cloud" }],
   }),
@@ -59,7 +57,7 @@ function CreateGroupDialog() {
       showSuccessToast("群組已建立")
       reset()
       setOpen(false)
-      queryClient.invalidateQueries({ queryKey: ["groups"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups.all })
     },
     onError: () => showErrorToast("建立群組失敗"),
   })
@@ -120,7 +118,7 @@ function GroupCard({ group }: { group: GroupPublic }) {
     mutationFn: () => GroupsService.deleteGroup({ groupId: group.id }),
     onSuccess: () => {
       showSuccessToast("群組已刪除")
-      queryClient.invalidateQueries({ queryKey: ["groups"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.groups.all })
     },
     onError: () => showErrorToast("刪除失敗"),
   })
@@ -159,10 +157,7 @@ function GroupCard({ group }: { group: GroupPublic }) {
 }
 
 function GroupsContent() {
-  const { data } = useSuspenseQuery({
-    queryKey: ["groups"],
-    queryFn: () => GroupsService.listGroups(),
-  })
+  const { data } = useSuspenseQuery(groupListQueryOptions())
 
   if (data.count === 0) {
     return (

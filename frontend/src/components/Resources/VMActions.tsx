@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 
 interface VMActionsProps {
   vmid: number
@@ -61,7 +62,7 @@ export function VMActions({
     mutationFn: () => ResourcesService.startResource({ vmid }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.starting", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
     },
     onError: (error: Error) => {
       showErrorToast(
@@ -74,7 +75,7 @@ export function VMActions({
     mutationFn: () => ResourcesService.stopResource({ vmid }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.stopping", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
     },
     onError: (error: Error) => {
       showErrorToast(
@@ -87,7 +88,7 @@ export function VMActions({
     mutationFn: () => ResourcesService.rebootResource({ vmid }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.rebooting", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
     },
     onError: (error: Error) => {
       showErrorToast(
@@ -100,7 +101,7 @@ export function VMActions({
     mutationFn: () => ResourcesService.shutdownResource({ vmid }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.shuttingDown", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
     },
     onError: (error: Error) => {
       showErrorToast(
@@ -113,7 +114,7 @@ export function VMActions({
     mutationFn: () => ResourcesService.resetResource({ vmid }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.resetting", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
     },
     onError: (error: Error) => {
       showErrorToast(
@@ -127,7 +128,7 @@ export function VMActions({
       ResourcesService.deleteResource({ vmid, force: isRunning }),
     onSuccess: () => {
       showSuccessToast(t("messages:vm.deleted", { name }))
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
       setDeleteDialogOpen(false)
     },
     onError: (error: Error) => {
@@ -147,10 +148,7 @@ export function VMActions({
     deleteMutation.isPending
 
   return (
-    <div
-      className="flex items-center gap-2"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="flex items-center gap-2">
       <Button
         variant="outline"
         size="sm"

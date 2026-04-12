@@ -221,7 +221,7 @@ function ServicePanel({ service }: { service: GatewayService }) {
             language={configLang[service]}
             theme="vs-dark"
             value={editorContent}
-            onChange={(v) => setEditorContent(v ?? "")}
+            onChange={(v: string | undefined) => setEditorContent(v ?? "")}
             options={{
               minimap: { enabled: false },
               fontSize: 13,

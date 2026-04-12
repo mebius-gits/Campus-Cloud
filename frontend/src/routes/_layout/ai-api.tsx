@@ -30,7 +30,12 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  aiApiMyCredentialsQueryOptions,
+  aiApiMyRequestsQueryOptions,
+} from "@/features/aiApi/queryOptions"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 import {
   type AiApiCredentialPublic,
   type AiApiRequestPublic,
@@ -163,7 +168,7 @@ function CredentialRow({
       }),
     onSuccess: () => {
       onSuccess("API Key 已刷新，請同步更新你的客戶端設定")
-      queryClient.invalidateQueries({ queryKey: ["ai-api"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.all })
     },
     onError: handleError.bind(onError),
   })
@@ -175,7 +180,7 @@ function CredentialRow({
       }),
     onSuccess: () => {
       onSuccess("API Key 已刪除")
-      queryClient.invalidateQueries({ queryKey: ["ai-api"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.all })
     },
     onError: handleError.bind(onError),
   })
@@ -189,7 +194,7 @@ function CredentialRow({
     onSuccess: () => {
       onSuccess(`名稱已更新為「${nameInput.trim()}」`)
       setEditingName(false)
-      queryClient.invalidateQueries({ queryKey: ["ai-api"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.all })
     },
     onError: handleError.bind(onError),
   })
@@ -423,15 +428,9 @@ function AiApiPage() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
-  const requestsQuery = useQuery({
-    queryKey: ["ai-api", "my-requests"],
-    queryFn: () => AiApiService.listMyRequests(),
-  })
+  const requestsQuery = useQuery(aiApiMyRequestsQueryOptions())
 
-  const credentialsQuery = useQuery({
-    queryKey: ["ai-api", "my-credentials"],
-    queryFn: () => AiApiService.listMyCredentials(),
-  })
+  const credentialsQuery = useQuery(aiApiMyCredentialsQueryOptions())
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -447,7 +446,7 @@ function AiApiPage() {
       setApiKeyName("test")
       setDuration("never")
       showSuccessToast("AI API 申請已送出")
-      queryClient.invalidateQueries({ queryKey: ["ai-api"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.all })
     },
     onError: handleError.bind(showErrorToast),
   })
@@ -494,8 +493,11 @@ function AiApiPage() {
           >
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">金鑰名稱</label>
+                <label htmlFor="api-key-name" className="text-sm font-medium">
+                  金鑰名稱
+                </label>
                 <Input
+                  id="api-key-name"
                   value={apiKeyName}
                   onChange={(event) => setApiKeyName(event.target.value)}
                   placeholder="例如：課程專案用、測試用、我的 App"
@@ -507,8 +509,11 @@ function AiApiPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">申請目的</label>
+                <label htmlFor="api-purpose" className="text-sm font-medium">
+                  申請目的
+                </label>
                 <Textarea
+                  id="api-purpose"
                   value={purpose}
                   onChange={(event) => setPurpose(event.target.value)}
                   placeholder="例如：課程專題串接聊天模型、工具原型開發、知識庫問答測試或自動化腳本整合。"
@@ -518,7 +523,12 @@ function AiApiPage() {
 
               {/* 過期時間選單 */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">金鑰有效期限</label>
+                <label
+                  htmlFor="duration-select"
+                  className="text-sm font-medium"
+                >
+                  金鑰有效期限
+                </label>
                 <Select value={duration} onValueChange={setDuration}>
                   <SelectTrigger id="duration-select" className="w-48">
                     <SelectValue placeholder="選擇有效期限" />

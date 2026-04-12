@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { queryKeys } from "@/lib/queryKeys"
 import { cn } from "@/lib/utils"
 import {
   type VmRequestAvailabilityDay,
@@ -181,8 +182,8 @@ export function RequestAvailabilityPanel(props: Props) {
   const query = useQuery<VmRequestAvailabilityResponse>({
     queryKey:
       props.mode === "draft"
-        ? ["vm-request-availability", deferredDraft]
-        : ["vm-request-availability", props.requestId],
+        ? queryKeys.vmRequests.availability.draft(deferredDraft)
+        : queryKeys.vmRequests.availability.byRequest(props.requestId),
     queryFn: () => {
       if (props.mode === "draft") {
         return VmRequestAvailabilityService.preview({

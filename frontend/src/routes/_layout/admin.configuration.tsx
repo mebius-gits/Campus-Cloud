@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import {
   AlertTriangle,
   CheckCircle,
@@ -39,7 +39,6 @@ import {
   YAxis,
 } from "recharts"
 import { toast } from "sonner"
-import { UsersService } from "@/client"
 import { OpenAPI } from "@/client/core/OpenAPI"
 import { request as __request } from "@/client/core/request"
 import { Badge } from "@/components/ui/badge"
@@ -99,6 +98,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { requireAdminUser } from "@/features/auth/guards"
 import { cn } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -350,12 +350,7 @@ const ProxmoxConfigService = {
 
 export const Route = createFileRoute("/_layout/admin/configuration")({
   component: AdminConfigPage,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({ to: "/" })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [{ title: "系統設定 - Campus Cloud" }],
   }),

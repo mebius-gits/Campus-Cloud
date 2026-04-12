@@ -24,61 +24,19 @@ import {
   type WheelEvent,
 } from "react"
 import { useTranslation } from "react-i18next"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  type AiMetrics,
+  type AiPlanResult,
+  AiTemplateRecommendationApi,
+  type AiChatMessage as ChatMessage,
+  type FormPrefill,
+} from "@/services/aiTemplateRecommendation"
 
-interface ChatMessage {
-  role: "user" | "assistant" | "system"
-  content: string
-}
-
-interface AiMetrics {
-  total_tokens?: number
-  elapsed_seconds?: number
-  tokens_per_second?: number
-}
-
-interface FormPrefill {
-  resource_type?: string
-  hostname?: string
-  service_template_slug?: string
-  lxc_template_slug?: string
-  lxc_os_image?: string
-  vm_os_choice?: string
-  vm_template_id?: number
-  cores?: number
-  memory_mb?: number
-  disk_gb?: number
-  username?: string
-  reason?: string
-}
-
-export interface AiPlanResult {
-  summary?: string
-  final_plan?: {
-    form_prefill?: FormPrefill
-    recommended_templates?: Array<{
-      slug: string
-      name: string
-      why: string
-    }>
-    machines?: Array<{
-      name: string
-      deployment_type: string
-      cpu: number
-      memory_mb: number
-      disk_gb: number
-      template_slug?: string
-    }>
-    application_target?: {
-      service_name?: string
-      execution_environment?: string
-      environment_reason?: string
-    }
-  }
-  ai_metrics?: AiMetrics
-}
+export type { AiPlanResult } from "@/services/aiTemplateRecommendation"
 
 interface AiChatPanelProps {
   onImportPlan?: (prefill: FormPrefill) => void
@@ -90,23 +48,6 @@ type ServiceTemplateCard = {
   name: string
   slug: string
   why: string
-}
-
-function getApiBase(): string {
-  return (import.meta.env.VITE_API_URL || window.location.origin).replace(
-    /\/$/,
-    "",
-  )
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem("access_token") || ""
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      }
-    : { "Content-Type": "application/json" }
 }
 
 function stripThinkTags(text: string): string {
@@ -247,20 +188,13 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
 
     try {
       const requestMessages = buildRequestMessages(newHistory)
-      const res = await fetch(
-        `${getApiBase()}/api/v1/ai/template-recommendation/chat`,
-        {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            messages: requestMessages,
-            top_k: 5,
-            device_nodes: [],
-          }),
+      const data = await AiTemplateRecommendationApi.chat({
+        requestBody: {
+          messages: requestMessages,
+          top_k: 5,
+          device_nodes: [],
         },
-      )
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
+      })
       const reply = stripThinkTags(data.reply || "")
 
       const aiMsg: ChatMessage = { role: "assistant", content: reply }
@@ -300,20 +234,13 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
     setIsLoading(true)
     try {
       const requestMessages = buildRequestMessages(conversationHistory)
-      const res = await fetch(
-        `${getApiBase()}/api/v1/ai/template-recommendation/recommend`,
-        {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            messages: requestMessages,
-            top_k: 5,
-            device_nodes: [],
-          }),
+      const data = await AiTemplateRecommendationApi.recommend({
+        requestBody: {
+          messages: requestMessages,
+          top_k: 5,
+          device_nodes: [],
         },
-      )
-      if (!res.ok) throw new Error(await res.text())
-      const data: AiPlanResult = await res.json()
+      })
       setPlanInsertionIndex(messages.length)
       setLatestPlan(data)
       if (data.ai_metrics) setMetrics(data.ai_metrics)

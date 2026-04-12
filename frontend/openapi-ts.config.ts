@@ -1,8 +1,9 @@
+import path from "node:path"
 import { defineConfig } from "@hey-api/openapi-ts"
 
 export default defineConfig({
-  input: "./openapi.json",
-  output: "./src/client",
+  input: path.resolve(__dirname, "./openapi.json"),
+  output: path.resolve(__dirname, "./src/client"),
 
   plugins: [
     "legacy/axios",

@@ -14,12 +14,7 @@ import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import {
-  type ApiError,
-  LxcService,
-  VmRequestsService,
-  VmService,
-} from "@/client"
+import { type ApiError, LxcService, VmService } from "@/client"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -44,7 +39,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
+import { toVmRequestCreateRequestBody } from "@/lib/resourcePayloads"
 import { cn } from "@/lib/utils"
+import { VmRequestsApi } from "@/services/vmRequests"
 import { handleError } from "@/utils"
 import { AiChatPanel, type AiPlanResult } from "./AiChatPanel"
 import { type FastTemplate, FastTemplatesTab } from "./FastTemplatesTab"
@@ -301,82 +299,38 @@ export function ApplicationRequestPage() {
   const requestReadinessLabel = isSubmitReady ? "可送出申請" : "尚有欄位待完成"
 
   const { data: lxcTemplates, isLoading: lxcTemplatesLoading } = useQuery({
-    queryKey: ["lxc-templates"],
+    queryKey: queryKeys.resources.templates.lxc,
     queryFn: () => LxcService.getTemplates(),
     enabled: resourceType === "lxc",
   })
 
   const { data: vmTemplates, isLoading: vmTemplatesLoading } = useQuery({
-    queryKey: ["vm-templates"],
+    queryKey: queryKeys.resources.templates.vm,
     queryFn: () => VmService.getVmTemplates(),
     enabled: resourceType === "vm",
   })
 
-  const selectedTemplateLabel = useMemo(
-    () => getSelectedTemplateLabel(),
-    [getSelectedTemplateLabel],
-  )
+  const selectedTemplateLabel = getSelectedTemplateLabel()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mutation = useMutation<any, Error, FormData>({
+  const mutation = useMutation({
     mutationFn: (data: FormData) => {
-      const isImmediate = data.mode === "immediate"
-      const effectiveStartAt = isImmediate ? undefined : data.start_at
-      const effectiveEndAt = isImmediate
-        ? data.immediate_no_end
-          ? undefined
-          : data.end_at
-        : data.end_at
+      const payloadOptions = {
+        lxcEnvironmentType:
+          serviceTemplateName || t("resources:create.customSpec"),
+        vmEnvironmentType: t("resources:create.customSpec"),
+        validationMessages: {
+          lxcRequirements: t("validation:requirement.lxc"),
+          vmRequirements: t("validation:requirement.vm"),
+        },
+      }
 
-      if (data.resource_type === "lxc") {
-        if (!data.ostemplate || !data.rootfs_size) {
-          throw new Error(t("validation:requirement.lxc"))
-        }
-        return VmRequestsService.createVmRequest({
-          requestBody: {
-            reason: data.reason,
-            resource_type: "lxc",
-            environment_type:
-              serviceTemplateName || t("resources:create.customSpec"),
-            hostname: data.hostname,
-            ostemplate: data.ostemplate,
-            cores: data.cores,
-            memory: data.memory,
-            rootfs_size: data.rootfs_size,
-            password: data.password,
-            storage: data.storage,
-            os_info: data.os_info || null,
-            mode: data.mode ?? "scheduled",
-            start_at: effectiveStartAt,
-            end_at: effectiveEndAt,
-          } as any,
-        })
-      }
-      if (!data.template_id || !data.disk_size || !data.username) {
-        throw new Error(t("validation:requirement.vm"))
-      }
-      return VmRequestsService.createVmRequest({
-        requestBody: {
-          reason: data.reason,
-          resource_type: "vm",
-          environment_type: t("resources:create.customSpec"),
-          hostname: data.hostname,
-          template_id: data.template_id,
-          username: data.username,
-          password: data.password,
-          cores: data.cores,
-          memory: data.memory,
-          disk_size: data.disk_size,
-          os_info: data.os_info || null,
-          mode: data.mode ?? "scheduled",
-          start_at: effectiveStartAt,
-          end_at: effectiveEndAt,
-        } as any,
+      return VmRequestsApi.create({
+        requestBody: toVmRequestCreateRequestBody(data, payloadOptions),
       })
     },
     onSuccess: () => {
       showSuccessToast(t("messages:success.applicationSubmitted"))
-      queryClient.invalidateQueries({ queryKey: ["vm-requests"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vmRequests.all })
       navigate({ to: backPath })
     },
     onError: (err) => handleError.call(showErrorToast, err as ApiError),

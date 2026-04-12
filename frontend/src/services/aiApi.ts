@@ -11,6 +11,8 @@ export type AiApiRequestPublic = {
   user_full_name?: string | null
   purpose: string
   api_key_name: string
+  duration?: string
+  rate_limit?: number | null
   status: AiApiRequestStatus
   reviewer_id?: string | null
   reviewer_email?: string | null
@@ -31,6 +33,7 @@ export type AiApiCredentialPublic = {
   api_key: string
   api_key_prefix: string
   api_key_name: string
+  rate_limit?: number | null
   expires_at?: string | null
   revoked_at?: string | null
   created_at: string
@@ -66,9 +69,35 @@ export type AiApiCredentialsAdminPublic = {
   count: number
 }
 
+export type AiApiCreateRequestBody = {
+  purpose: string
+  api_key_name: string
+  duration?: string
+}
+
+export type AiApiReviewRequestBody = {
+  status: AiApiRequestStatus
+  review_comment?: string | null
+}
+
+export type AiApiUpdateCredentialNameBody = {
+  api_key_name: string
+}
+
+export type AiApiListRequestsQuery = {
+  status?: AiApiRequestStatus | null
+}
+
+export type AiApiListCredentialsQuery = {
+  status?: AiApiCredentialAdminStatus | null
+  userEmail?: string | null
+  skip?: number
+  limit?: number
+}
+
 export const AiApiService = {
   createRequest(data: {
-    requestBody: { purpose: string; api_key_name: string; duration?: string }
+    requestBody: AiApiCreateRequestBody
   }): CancelablePromise<AiApiRequestPublic> {
     return __request(OpenAPI, {
       method: "POST",
@@ -87,9 +116,9 @@ export const AiApiService = {
     })
   },
 
-  listAllRequests(data?: {
-    status?: AiApiRequestStatus | null
-  }): CancelablePromise<AiApiRequestsPublic> {
+  listAllRequests(
+    data?: AiApiListRequestsQuery,
+  ): CancelablePromise<AiApiRequestsPublic> {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/ai-api/requests",
@@ -100,10 +129,7 @@ export const AiApiService = {
 
   reviewRequest(data: {
     requestId: string
-    requestBody: {
-      status: AiApiRequestStatus
-      review_comment?: string | null
-    }
+    requestBody: AiApiReviewRequestBody
   }): CancelablePromise<AiApiRequestPublic> {
     return __request(OpenAPI, {
       method: "POST",
@@ -123,12 +149,9 @@ export const AiApiService = {
     })
   },
 
-  listAllCredentials(data?: {
-    status?: AiApiCredentialAdminStatus | null
-    userEmail?: string | null
-    skip?: number
-    limit?: number
-  }): CancelablePromise<AiApiCredentialsAdminPublic> {
+  listAllCredentials(
+    data?: AiApiListCredentialsQuery,
+  ): CancelablePromise<AiApiCredentialsAdminPublic> {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/ai-api/credentials",
@@ -166,7 +189,7 @@ export const AiApiService = {
 
   updateCredentialName(data: {
     credentialId: string
-    requestBody: { api_key_name: string }
+    requestBody: AiApiUpdateCredentialNameBody
   }): CancelablePromise<AiApiCredentialPublic> {
     return __request(OpenAPI, {
       method: "PATCH",

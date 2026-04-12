@@ -19,7 +19,7 @@ export function VMNode({ data, selected }: NodeProps<VMNodeType>) {
     <div
       className={`
         relative flex items-center gap-3 px-4 py-3
-        bg-card border rounded-xl cursor-pointer
+        bg-white border rounded-xl cursor-pointer
         transition-all duration-200 min-w-[180px]
         ${
           selected

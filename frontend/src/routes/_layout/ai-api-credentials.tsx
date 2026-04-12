@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { createFileRoute } from "@tanstack/react-router"
 import { Trash2 } from "lucide-react"
-
-import { UsersService } from "@/client"
+import { useMemo, useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,25 +38,24 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  aiApiAdminCredentialsCountQueryOptions,
+  aiApiAdminCredentialsQueryOptions,
+} from "@/features/aiApi/queryOptions"
+import { requireAdminUser } from "@/features/auth/guards"
+import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
+import {
   type AiApiCredentialAdminPublic,
   type AiApiCredentialAdminStatus,
   AiApiService,
 } from "@/services/aiApi"
-import useCustomToast from "@/hooks/useCustomToast"
 import { handleError } from "@/utils"
 
 const PAGE_SIZE = 50
 
 export const Route = createFileRoute("/_layout/ai-api-credentials")({
   component: AiApiCredentialsAdminPage,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({
-        to: "/",
-      })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [
       {
@@ -88,10 +85,13 @@ function StatusBadge({ item }: { item: AiApiCredentialAdminPublic }) {
 function AiApiCredentialsAdminPage() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
-  const [statusFilter, setStatusFilter] = useState<"all" | AiApiCredentialAdminStatus>("all")
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | AiApiCredentialAdminStatus
+  >("all")
   const [userEmail, setUserEmail] = useState("")
   const [page, setPage] = useState(0)
-  const [deletingItem, setDeletingItem] = useState<AiApiCredentialAdminPublic | null>(null)
+  const [deletingItem, setDeletingItem] =
+    useState<AiApiCredentialAdminPublic | null>(null)
 
   const queryInput = useMemo(
     () => ({
@@ -103,27 +103,24 @@ function AiApiCredentialsAdminPage() {
     [statusFilter, userEmail, page],
   )
 
-  const listQuery = useQuery({
-    queryKey: ["ai-api", "admin-credentials", queryInput],
-    queryFn: () => AiApiService.listAllCredentials(queryInput),
-  })
+  const listQuery = useQuery(
+    aiApiAdminCredentialsQueryOptions({
+      skip: queryInput.skip ?? 0,
+      limit: queryInput.limit ?? PAGE_SIZE,
+      status: statusFilter,
+      userEmail: userEmail,
+    }),
+  )
 
-  const allCountQuery = useQuery({
-    queryKey: ["ai-api", "admin-credentials", "count", "all"],
-    queryFn: () => AiApiService.listAllCredentials({ skip: 0, limit: 1 }),
-  })
+  const allCountQuery = useQuery(aiApiAdminCredentialsCountQueryOptions("all"))
 
-  const activeCountQuery = useQuery({
-    queryKey: ["ai-api", "admin-credentials", "count", "active"],
-    queryFn: () =>
-      AiApiService.listAllCredentials({ status: "active", skip: 0, limit: 1 }),
-  })
+  const activeCountQuery = useQuery(
+    aiApiAdminCredentialsCountQueryOptions("active"),
+  )
 
-  const inactiveCountQuery = useQuery({
-    queryKey: ["ai-api", "admin-credentials", "count", "inactive"],
-    queryFn: () =>
-      AiApiService.listAllCredentials({ status: "inactive", skip: 0, limit: 1 }),
-  })
+  const inactiveCountQuery = useQuery(
+    aiApiAdminCredentialsCountQueryOptions("inactive"),
+  )
 
   const deleteMutation = useMutation({
     mutationFn: (credentialId: string) =>
@@ -133,7 +130,9 @@ function AiApiCredentialsAdminPage() {
     onSuccess: () => {
       showSuccessToast("金鑰已刪除")
       setDeletingItem(null)
-      queryClient.invalidateQueries({ queryKey: ["ai-api", "admin-credentials"] })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.aiApi.adminCredentials,
+      })
     },
     onError: handleError.bind((message: string) =>
       showErrorToast(`刪除失敗：${message}`),
@@ -157,7 +156,9 @@ function AiApiCredentialsAdminPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>全部紀錄</CardDescription>
-            <CardTitle className="text-3xl">{allCountQuery.data?.count ?? 0}</CardTitle>
+            <CardTitle className="text-3xl">
+              {allCountQuery.data?.count ?? 0}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card>
@@ -241,17 +242,24 @@ function AiApiCredentialsAdminPage() {
               <TableBody>
                 {rows.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="max-w-60 truncate" title={item.user_email || "-"}>
+                    <TableCell
+                      className="max-w-60 truncate"
+                      title={item.user_email || "-"}
+                    >
                       {item.user_full_name
                         ? `${item.user_full_name} (${item.user_email || "-"})`
                         : (item.user_email ?? "-")}
                     </TableCell>
                     <TableCell>{item.api_key_name}</TableCell>
-                    <TableCell className="font-mono">{item.api_key_prefix}</TableCell>
+                    <TableCell className="font-mono">
+                      {item.api_key_prefix}
+                    </TableCell>
                     <TableCell>
                       <StatusBadge item={item} />
                     </TableCell>
-                    <TableCell>{inactiveReasonLabel(item.inactive_reason)}</TableCell>
+                    <TableCell>
+                      {inactiveReasonLabel(item.inactive_reason)}
+                    </TableCell>
                     <TableCell>{formatTime(item.created_at)}</TableCell>
                     <TableCell>{formatTime(item.expires_at)}</TableCell>
                     <TableCell>{formatTime(item.revoked_at)}</TableCell>
@@ -292,9 +300,7 @@ function AiApiCredentialsAdminPage() {
                 variant="outline"
                 disabled={page + 1 >= totalPages}
                 onClick={() =>
-                  setPage((prev) =>
-                    prev + 1 >= totalPages ? prev : prev + 1,
-                  )
+                  setPage((prev) => (prev + 1 >= totalPages ? prev : prev + 1))
                 }
               >
                 下一頁
@@ -322,7 +328,9 @@ function AiApiCredentialsAdminPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              取消
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               disabled={deleteMutation.isPending || !deletingItem}

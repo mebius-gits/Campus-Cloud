@@ -32,7 +32,7 @@ export function Main({ items }: MainProps) {
   }
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className="pt-3">
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {

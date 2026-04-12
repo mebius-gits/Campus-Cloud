@@ -11,11 +11,12 @@ import { createColumns } from "@/components/Resources/columns"
 import { TerminalConsoleDialog } from "@/components/Terminal"
 import { Button } from "@/components/ui/button"
 import { VNCConsoleDialog } from "@/components/VNC"
+import { queryKeys } from "@/lib/queryKeys"
 
 function getMyResourcesQueryOptions() {
   return {
     queryFn: () => ResourcesService.listMyResources(),
-    queryKey: ["my-resources"],
+    queryKey: queryKeys.resources.my,
   }
 }
 
@@ -93,7 +94,7 @@ function RefreshButton() {
   const queryClient = useQueryClient()
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["my-resources"] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.resources.my })
   }
 
   return (

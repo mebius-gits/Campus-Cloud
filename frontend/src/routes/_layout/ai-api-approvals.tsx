@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { Check, ClipboardCheck, X } from "lucide-react"
 import { useState } from "react"
-
-import { UsersService } from "@/client"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -24,7 +22,10 @@ import {
 import { LoadingButton } from "@/components/ui/loading-button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { aiApiAdminRequestsQueryOptions } from "@/features/aiApi/queryOptions"
+import { requireAdminUser } from "@/features/auth/guards"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 import {
   type AiApiRequestPublic,
   type AiApiRequestStatus,
@@ -34,14 +35,7 @@ import { handleError } from "@/utils"
 
 export const Route = createFileRoute("/_layout/ai-api-approvals")({
   component: AiApiApprovalsPage,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({
-        to: "/",
-      })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [
       {
@@ -86,8 +80,8 @@ function ReviewDialog({
       )
       setComment("")
       onOpenChange(false)
-      queryClient.invalidateQueries({ queryKey: ["ai-api", "admin-requests"] })
-      queryClient.invalidateQueries({ queryKey: ["ai-api"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.adminRequests })
+      queryClient.invalidateQueries({ queryKey: queryKeys.aiApi.all })
     },
     onError: handleError.bind(showErrorToast),
   })
@@ -222,13 +216,7 @@ function AiApiApprovalsPage() {
     "pending",
   )
 
-  const requestsQuery = useQuery({
-    queryKey: ["ai-api", "admin-requests", statusFilter],
-    queryFn: () =>
-      AiApiService.listAllRequests({
-        status: statusFilter === "all" ? null : statusFilter,
-      }),
-  })
+  const requestsQuery = useQuery(aiApiAdminRequestsQueryOptions(statusFilter))
 
   return (
     <div className="flex flex-col gap-6">

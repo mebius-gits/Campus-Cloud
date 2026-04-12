@@ -1,32 +1,19 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { FileText } from "lucide-react"
 import { Suspense, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 
-import { UsersService, VmRequestsService } from "@/client"
 import CreateVMRequest from "@/components/Applications/CreateVMRequest"
 import { createMyRequestColumns } from "@/components/Applications/columns"
 import { DataTable } from "@/components/Common/DataTable"
 import PendingItems from "@/components/Pending/PendingItems"
-
-function getMyRequestsQueryOptions() {
-  return {
-    queryFn: () => VmRequestsService.listMyVmRequests({}),
-    queryKey: ["vm-requests"],
-  }
-}
+import { myVmRequestsQueryOptions } from "@/features/applications/queryOptions"
+import { requireStudentUser } from "@/features/auth/guards"
 
 export const Route = createFileRoute("/_layout/applications")({
   component: Applications,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (user.role !== "student") {
-      throw redirect({
-        to: "/",
-      })
-    }
-  },
+  beforeLoad: () => requireStudentUser(),
   head: () => ({
     meta: [
       {
@@ -38,7 +25,7 @@ export const Route = createFileRoute("/_layout/applications")({
 
 function RequestsTableContent() {
   const { t } = useTranslation(["applications"])
-  const { data } = useSuspenseQuery(getMyRequestsQueryOptions())
+  const { data } = useSuspenseQuery(myVmRequestsQueryOptions())
 
   const columns = useMemo(() => createMyRequestColumns(t), [t])
 

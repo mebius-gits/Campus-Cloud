@@ -1,18 +1,11 @@
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 
-import { UsersService } from "@/client"
 import { ApplicationRequestPage } from "@/components/Applications/ApplicationRequestPage"
+import { requireStudentUser } from "@/features/auth/guards"
 
 export const Route = createFileRoute("/_layout/applications-create")({
   component: ApplicationsCreateRoute,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (user.role !== "student") {
-      throw redirect({
-        to: "/applications",
-      })
-    }
-  },
+  beforeLoad: () => requireStudentUser({ redirectTo: "/applications" }),
   head: () => ({
     meta: [
       {

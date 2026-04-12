@@ -1,15 +1,9 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router"
-
-import { UsersService } from "@/client"
+import { createFileRoute, Outlet } from "@tanstack/react-router"
+import { requireAdminUser } from "@/features/auth/guards"
 
 export const Route = createFileRoute("/_layout/admin")({
   component: AdminLayout,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({ to: "/" })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
 })
 
 function AdminLayout() {

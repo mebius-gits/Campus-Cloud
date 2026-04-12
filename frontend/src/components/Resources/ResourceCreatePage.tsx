@@ -33,6 +33,11 @@ import {
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
+import {
+  toLxcCreateRequestBody,
+  toVmCreateRequestBody,
+} from "@/lib/resourcePayloads"
 import { handleError } from "@/utils"
 
 function normalizeHostname(value: string) {
@@ -153,65 +158,44 @@ export function ResourceCreatePage() {
   ])
 
   const { data: lxcTemplates, isLoading: lxcTemplatesLoading } = useQuery({
-    queryKey: ["lxc-templates"],
+    queryKey: queryKeys.resources.templates.lxc,
     queryFn: () => LxcService.getTemplates(),
     enabled: resourceType === "lxc",
   })
 
   const { data: vmTemplates, isLoading: vmTemplatesLoading } = useQuery({
-    queryKey: ["vm-templates"],
+    queryKey: queryKeys.resources.templates.vm,
     queryFn: () => VmService.getVmTemplates(),
     enabled: resourceType === "vm",
   })
 
   const mutation = useMutation({
     mutationFn: (data: FormData) => {
+      const payloadOptions = {
+        lxcEnvironmentType:
+          serviceTemplateName || t("resources:create.customSpec"),
+        vmEnvironmentType: t("resources:create.customSpec"),
+        validationMessages: {
+          lxcRequirements: t("validation:requirement.lxc"),
+          vmRequirements: t("validation:requirement.vm"),
+        },
+      }
+
       if (data.resource_type === "lxc") {
-        if (!data.ostemplate || !data.rootfs_size) {
-          throw new Error(t("validation:requirement.lxc"))
-        }
         return LxcService.createLxc({
-          requestBody: {
-            hostname: data.hostname,
-            ostemplate: data.ostemplate,
-            cores: data.cores,
-            memory: data.memory,
-            rootfs_size: data.rootfs_size,
-            password: data.password,
-            storage: data.storage,
-            environment_type:
-              serviceTemplateName || t("resources:create.customSpec"),
-            os_info: data.os_info || null,
-            expiry_date: data.expiry_date || null,
-            start: true,
-            unprivileged: true,
-          },
+          requestBody: toLxcCreateRequestBody(data, payloadOptions),
         })
       }
-      if (!data.template_id || !data.disk_size || !data.username) {
-        throw new Error(t("validation:requirement.vm"))
-      }
+
       return VmService.createVm({
-        requestBody: {
-          hostname: data.hostname,
-          template_id: data.template_id,
-          username: data.username,
-          password: data.password,
-          cores: data.cores,
-          memory: data.memory,
-          disk_size: data.disk_size,
-          environment_type: t("resources:create.customSpec"),
-          os_info: data.os_info || null,
-          expiry_date: data.expiry_date || null,
-          start: true,
-        },
+        requestBody: toVmCreateRequestBody(data, payloadOptions),
       })
     },
     onSuccess: (data) => {
       showSuccessToast(
         `${data.message || t("messages:success.resourceCreated")}`,
       )
-      queryClient.invalidateQueries({ queryKey: ["resources"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all })
       navigate({ to: "/resources" })
     },
     onError: handleError.bind(showErrorToast),

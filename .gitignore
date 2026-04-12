@@ -22,6 +22,9 @@ __pycache__/
 *build/
 *.gemini/
 *.github/
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
 *.agents/
 *.agent
 *test_datasets/

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { Textarea } from "@/components/ui/textarea"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 import { cn } from "@/lib/utils"
 import {
   type VmRequestReviewNodeScore,
@@ -398,7 +399,7 @@ export function VMRequestReviewPage({ requestId }: { requestId: string }) {
   const [comment, setComment] = useState("")
 
   const reviewContextQuery = useSuspenseQuery({
-    queryKey: ["vm-request-review-context", requestId],
+    queryKey: queryKeys.vmRequests.reviewContext(requestId),
     queryFn: () => VmRequestReviewService.getContext({ requestId }),
   })
 
@@ -433,10 +434,12 @@ export function VMRequestReviewPage({ requestId }: { requestId: string }) {
           ? t("messages:success.applicationApproved")
           : t("messages:success.applicationRejected"),
       )
-      queryClient.invalidateQueries({ queryKey: ["vm-requests-admin"] })
-      queryClient.invalidateQueries({ queryKey: ["vm-request", request.id] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vmRequests.admin })
       queryClient.invalidateQueries({
-        queryKey: ["vm-request-review-context", request.id],
+        queryKey: queryKeys.vmRequests.detail(request.id),
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.vmRequests.reviewContext(request.id),
       })
       navigate({ to: "/approvals" })
     },

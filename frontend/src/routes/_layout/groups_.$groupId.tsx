@@ -5,7 +5,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query"
 
-import { createFileRoute, Link, redirect } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   ArrowLeft,
   CheckCircle2,
@@ -17,11 +17,10 @@ import {
   UserMinus,
   XCircle,
 } from "lucide-react"
-import { Suspense, useCallback, useEffect, useRef, useState } from "react"
+import { Suspense, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { GroupsService, LxcService, OpenAPI, UsersService, VmService } from "@/client"
-import { request as __request } from "@/client/core/request"
+import { GroupsService, LxcService, VmService } from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -53,7 +52,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { requireAdminUser } from "@/features/auth/guards"
+import { GroupFeatureService } from "@/features/groups/api"
+import { groupDetailQueryOptions } from "@/features/groups/queryOptions"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,12 +100,7 @@ type BatchJob = {
 
 export const Route = createFileRoute("/_layout/groups_/$groupId")({
   component: GroupDetailPage,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({ to: "/" })
-    }
-  },
+  beforeLoad: () => requireAdminUser(),
   head: () => ({
     meta: [{ title: "群組詳情 - Campus Cloud" }],
   }),
@@ -113,7 +111,8 @@ export const Route = createFileRoute("/_layout/groups_/$groupId")({
 function TaskStatusIcon({ status }: { status: TaskStatus }) {
   if (status === "completed")
     return <CheckCircle2 className="h-4 w-4 text-green-500" />
-  if (status === "failed") return <XCircle className="h-4 w-4 text-destructive" />
+  if (status === "failed")
+    return <XCircle className="h-4 w-4 text-destructive" />
   if (status === "running")
     return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
   return <Circle className="h-4 w-4 text-muted-foreground" />
@@ -147,13 +146,11 @@ function ImportCsvDialog({ groupId }: { groupId: string }) {
     setLoading(true)
     setResult(null)
     try {
-      const data = await __request<CsvImportResult>(OpenAPI, {
-        method: "POST",
-        url: `/api/v1/groups/${groupId}/import-csv`,
-        formData: { file },
-      })
+      const data = await GroupFeatureService.importCsv({ groupId, file })
       setResult(data)
-      queryClient.invalidateQueries({ queryKey: ["group", groupId] })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.groups.detail(groupId),
+      })
       showSuccessToast(
         `匯入完成：新建 ${data.created.length} 人，加入群組 ${data.added_to_group} 人`,
       )
@@ -252,7 +249,9 @@ function AddMembersDialog({ groupId }: { groupId: string }) {
     mutationFn: (emails: string[]) =>
       GroupsService.addMembers({ groupId, requestBody: { emails } }),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["group", groupId] })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.groups.detail(groupId),
+      })
       if (data.message.includes("Not found:")) {
         showErrorToast(data.message)
       } else {
@@ -340,29 +339,23 @@ function BatchProvisionDialog({
   const [expiryDate, setExpiryDate] = useState("")
 
   const { data: lxcTemplates } = useQuery({
-    queryKey: ["lxc-templates"],
+    queryKey: queryKeys.resources.templates.lxc,
     queryFn: () => LxcService.getTemplates(),
     enabled: open && resourceType === "lxc",
   })
 
   const { data: vmTemplates } = useQuery({
-    queryKey: ["vm-templates"],
+    queryKey: queryKeys.resources.templates.vm,
     queryFn: () => VmService.getVmTemplates(),
     enabled: open && resourceType === "qemu",
   })
 
   // 輪詢進度
-  const {
-    data: jobStatus,
-    isLoading: jobLoading,
-  } = useQuery<BatchJob>({
-    queryKey: ["batch-job", jobId],
+  const { data: jobStatus } = useQuery<BatchJob>({
+    queryKey: queryKeys.groups.batchJob(jobId ?? "pending"),
     queryFn: () =>
-      __request<BatchJob>(OpenAPI, {
-        method: "GET",
-        url: `/api/v1/batch-provision/${jobId}/status`,
-      }),
-    enabled: !!jobId,
+      GroupFeatureService.getBatchProvisionStatus({ jobId: jobId! }),
+    enabled: Boolean(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
       if (status === "completed" || status === "failed") return false
@@ -380,7 +373,9 @@ function BatchProvisionDialog({
 
     setSubmitting(true)
     try {
-      const body: Record<string, any> = {
+      const body: Parameters<
+        typeof GroupFeatureService.createBatchProvisionJob
+      >[0]["requestBody"] = {
         resource_type: resourceType,
         hostname_prefix: hostnamePrefix.trim(),
         password,
@@ -393,15 +388,14 @@ function BatchProvisionDialog({
         body.ostemplate = ostemplate
         body.rootfs_size = rootfsSize
       } else {
-        body.template_id = templateId
+        body.template_id = templateId ?? undefined
         body.username = username.trim()
         body.disk_size = diskSize
       }
 
-      const job = await __request<BatchJob>(OpenAPI, {
-        method: "POST",
-        url: `/api/v1/batch-provision/${groupId}`,
-        body,
+      const job = await GroupFeatureService.createBatchProvisionJob({
+        groupId,
+        requestBody: body,
       })
       setJobId(job.id)
     } catch (err: any) {
@@ -427,11 +421,6 @@ function BatchProvisionDialog({
     }
   }
 
-  const pct =
-    jobStatus && jobStatus.total > 0
-      ? Math.round((jobStatus.done / jobStatus.total) * 100)
-      : 0
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -451,8 +440,8 @@ function BatchProvisionDialog({
           <div className="space-y-5 py-2">
             <p className="text-sm text-muted-foreground">
               將為群組 <strong>{memberCount}</strong>{" "}
-              位成員各自建立一台資源，並自動分配給對應帳號。
-              Hostname 會自動加上流水號（例如 <code>webdev-1</code>、
+              位成員各自建立一台資源，並自動分配給對應帳號。 Hostname
+              會自動加上流水號（例如 <code>webdev-1</code>、
               <code>webdev-2</code>…）。
             </p>
 
@@ -531,7 +520,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={1} max={8} step={1}
+                      min={1}
+                      max={8}
+                      step={1}
                       value={[cores]}
                       onValueChange={([v]) => setCores(v)}
                     />
@@ -544,7 +535,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={512} max={32768} step={512}
+                      min={512}
+                      max={32768}
+                      step={512}
                       value={[memory]}
                       onValueChange={([v]) => setMemory(v)}
                     />
@@ -557,7 +550,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={8} max={500} step={1}
+                      min={8}
+                      max={500}
+                      step={1}
                       value={[rootfsSize]}
                       onValueChange={([v]) => setRootfsSize(v)}
                     />
@@ -646,7 +641,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={1} max={8} step={1}
+                      min={1}
+                      max={8}
+                      step={1}
                       value={[cores]}
                       onValueChange={([v]) => setCores(v)}
                     />
@@ -659,7 +656,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={512} max={32768} step={512}
+                      min={512}
+                      max={32768}
+                      step={512}
                       value={[memory]}
                       onValueChange={([v]) => setMemory(v)}
                     />
@@ -672,7 +671,9 @@ function BatchProvisionDialog({
                       </span>
                     </div>
                     <Slider
-                      min={20} max={500} step={1}
+                      min={20}
+                      max={500}
+                      step={1}
                       value={[diskSize]}
                       onValueChange={([v]) => setDiskSize(v)}
                     />
@@ -708,7 +709,8 @@ function BatchProvisionDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {jobStatus?.done ?? 0} / {jobStatus?.total ?? memberCount} 台完成
+                  {jobStatus?.done ?? 0} / {jobStatus?.total ?? memberCount}{" "}
+                  台完成
                 </span>
                 <div className="flex items-center gap-2">
                   {jobStatus?.failed_count ? (
@@ -732,7 +734,10 @@ function BatchProvisionDialog({
                   </Badge>
                 </div>
               </div>
-              <ProgressBar done={jobStatus?.done ?? 0} total={jobStatus?.total ?? memberCount} />
+              <ProgressBar
+                done={jobStatus?.done ?? 0}
+                total={jobStatus?.total ?? memberCount}
+              />
             </div>
 
             {/* 每台進度列表 */}
@@ -821,10 +826,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
-  const { data: group } = useSuspenseQuery({
-    queryKey: ["group", groupId],
-    queryFn: () => GroupsService.getGroup({ groupId }),
-  })
+  const { data: group } = useSuspenseQuery(groupDetailQueryOptions(groupId))
   const members = group.members ?? []
 
   const removeMutation = useMutation({
@@ -832,7 +834,9 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
       GroupsService.removeMember({ groupId, userId }),
     onSuccess: () => {
       showSuccessToast("成員已移除")
-      queryClient.invalidateQueries({ queryKey: ["group", groupId] })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.groups.detail(groupId),
+      })
     },
     onError: (err: any) => showErrorToast(err?.body?.detail ?? "移除失敗"),
   })

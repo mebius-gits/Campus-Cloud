@@ -16,6 +16,7 @@ import {
 import { LoadingButton } from "@/components/ui/loading-button"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 import { handleError } from "@/utils"
 
 const DeleteConfirmation = () => {
@@ -32,7 +33,7 @@ const DeleteConfirmation = () => {
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser })
     },
   })
 

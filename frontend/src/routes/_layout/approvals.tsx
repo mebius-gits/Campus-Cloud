@@ -1,37 +1,22 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
-import { createFileRoute, redirect } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { ClipboardCheck } from "lucide-react"
 import { Suspense, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { UsersService, type VMRequestStatus, VmRequestsService } from "@/client"
+import { type VMRequestStatus, VmRequestsService } from "@/client"
 import { createAdminRequestColumns } from "@/components/Applications/adminColumns"
 import { DataTable } from "@/components/Common/DataTable"
 import PendingItems from "@/components/Pending/PendingItems"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
-function getAdminRequestsQueryOptions(status?: VMRequestStatus | null) {
-  return {
-    queryFn: () =>
-      VmRequestsService.listAllVmRequests({
-        status: status || undefined,
-        limit: 100,
-      }),
-    queryKey: ["vm-requests-admin", status || "all"],
-  }
-}
+import { adminVmRequestsQueryOptions } from "@/features/applications/queryOptions"
+import { requireAdminUser } from "@/features/auth/guards"
+import { queryKeys } from "@/lib/queryKeys"
 
 export const Route = createFileRoute("/_layout/approvals")({
   component: Approvals,
-  beforeLoad: async () => {
-    const user = await UsersService.readUserMe()
-    if (!(user.role === "admin" || user.is_superuser)) {
-      throw redirect({
-        to: "/applications",
-      })
-    }
-  },
+  beforeLoad: () => requireAdminUser({ redirectTo: "/applications" }),
   head: () => ({
     meta: [
       {
@@ -47,7 +32,7 @@ function AdminRequestsTableContent({
   status: VMRequestStatus | null
 }) {
   const { t } = useTranslation(["approvals"])
-  const { data } = useSuspenseQuery(getAdminRequestsQueryOptions(status))
+  const { data } = useSuspenseQuery(adminVmRequestsQueryOptions(status))
 
   const columns = useMemo(() => createAdminRequestColumns(t), [t])
 
@@ -86,7 +71,7 @@ function PendingCountBadge() {
       VmRequestsService.listAllVmRequests({
         status: "pending" as VMRequestStatus,
       }),
-    queryKey: ["vm-requests-admin", "pending-count"],
+    queryKey: queryKeys.vmRequests.pendingCount,
   })
 
   const count = data?.count ?? 0

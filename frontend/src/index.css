@@ -43,6 +43,7 @@
 
 :root {
   --radius: 0.625rem;
+  --sidebar-left-offset: 60px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -67,10 +68,10 @@
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(1 0 0 / 20%);
-  --sidebar-foreground: #5471BF;
-  --sidebar-primary: #5471BF;
+  --sidebar-foreground: #5471bf;
+  --sidebar-primary: #5471bf;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #5471BF;
+  --sidebar-accent: #5471bf;
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: oklch(1 0 0 / 85%);
   --sidebar-ring: oklch(0.708 0 0);
@@ -201,9 +202,10 @@
   /* App shell — full-page gradient (light mode only) */
   .app-layout {
     background:
-      radial-gradient(ellipse 55% 45% at 88% 8%, rgba(170, 205, 235, 0.65) 0%, transparent 55%),
-      radial-gradient(ellipse 50% 40% at 12% 88%, rgba(240, 225, 185, 0.50) 0%, transparent 55%),
-      linear-gradient(155deg, #ebf3fb 0%, #f9f9fb 45%, #f7edd5 100%);
+      radial-gradient(ellipse 120% 100% at 105% -5%, #CDE1FF 0%, #CDE1FF 30%, transparent 70%),
+      radial-gradient(ellipse 101% 138% at -5% 105%, #FEFFED 0%, #FEFFED 30%, transparent 70%),
+      radial-gradient(ellipse 120% 100% at 105% 105%, #EDFFF6 0%, #EDFFF6 30%, transparent 70%),
+      #E8F0FD;
   }
 
   .dark .app-layout {
@@ -212,56 +214,74 @@
 
   /* Sidebar footer buttons — language & appearance */
   [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"] {
-    color: #5D7FD8;
+    color: #5d7fd8;
   }
 
   [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"]:hover {
-    background-color: #5D7FD8 !important;
-    color: #ffffff !important;
+    background-color: #5d7fd8;
+    color: #ffffff;
   }
 
   .sidebar-user-text {
-    color: #1C41A0;
+    color: #1c41a0;
   }
 
   [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"]:hover * {
-    color: #ffffff !important;
+    color: #ffffff;
   }
 
-  [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"]:hover .sidebar-user-text {
-    color: #ffffff !important;
+  [data-slot="sidebar-footer"]
+    [data-slot="sidebar-menu-button"]:hover
+    .sidebar-user-text {
+    color: #ffffff;
   }
 
   /* Hide text when sidebar collapsed, center icon */
-  [data-collapsible="icon"] [data-slot="sidebar-menu-button"] > span:not(.sr-only) {
+  [data-collapsible="icon"]
+    [data-slot="sidebar-menu-button"]
+    > span:not(.sr-only) {
     display: none;
   }
 
   [data-collapsible="icon"] [data-slot="sidebar-menu-button"] {
-    justify-content: center !important;
+    justify-content: center;
   }
 
   /* Sidebar glass card — light mode */
   [data-slot="sidebar-container"] {
-    overflow: hidden;
+    overflow: visible;
+    padding-left: var(--sidebar-left-offset);
   }
 
+  /* 展開狀態：gap 和 container 加上左側偏移量 */
+  [data-slot="sidebar"][data-state="expanded"] > [data-slot="sidebar-gap"],
+  [data-slot="sidebar"][data-state="expanded"] > [data-slot="sidebar-container"] {
+    width: calc(var(--sidebar-width) + var(--sidebar-left-offset)) !important;
+  }
+
+  /* 收合成 icon 狀態：icon 寬度加上左側偏移量與右側 padding */
+  [data-slot="sidebar"][data-collapsible="icon"] > [data-slot="sidebar-gap"],
+  [data-slot="sidebar"][data-collapsible="icon"] > [data-slot="sidebar-container"] {
+    width: calc(var(--sidebar-width-icon) + var(--sidebar-left-offset) + 0.5rem) !important;
+  }
+
+
   [data-slot="sidebar-inner"] {
-    border-radius: 12px !important;
-    backdrop-filter: blur(24px) !important;
-    -webkit-backdrop-filter: blur(24px) !important;
+    border-radius: 12px;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
     box-shadow:
-      0 8px 32px rgba(100, 140, 200, 0.10),
-      inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
-    border: 1px solid rgba(255, 255, 255, 0.85) !important;
+      0 8px 32px rgba(100, 140, 200, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.85);
   }
 
   .dark [data-slot="sidebar-inner"] {
-    border-radius: 0 !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: none !important;
-    border: unset !important;
+    border-radius: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border: unset;
   }
 
   /* Dark mode glass card — light text on frosted dark */
@@ -392,6 +412,29 @@
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
+}
+
+.firewall-canvas,
+.firewall-canvas .dark {
+  --muted-foreground: #435A95;
+  --foreground: #435A95;
+}
+
+.react-flow__controls {
+  background-color: #fff !important;
+}
+
+.react-flow__controls-button {
+  background-color: #fff !important;
+  border-bottom-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #bec9e6 !important;
+}
+
+.react-flow__controls-button svg {
+  fill: #435A95 !important;
 }
 
 @keyframes page-loading {

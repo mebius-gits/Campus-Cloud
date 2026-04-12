@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import useAuth from "@/hooks/useAuth"
 import useCustomToast from "@/hooks/useCustomToast"
+import { queryKeys } from "@/lib/queryKeys"
 import { cn } from "@/lib/utils"
 import { handleError } from "@/utils"
 
@@ -73,13 +74,13 @@ const UserInformation = () => {
     mutationFn: (data: UserUpdateMe) =>
       UsersService.updateUserMe({ requestBody: data }),
     onSuccess: (updatedUser) => {
-      queryClient.setQueryData(["currentUser"], updatedUser)
+      queryClient.setQueryData(queryKeys.auth.currentUser, updatedUser)
       showSuccessToast(t("messages:success.userUpdated"))
       toggleEditMode()
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser })
     },
   })
 

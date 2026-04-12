@@ -4,10 +4,12 @@ import { useNavigate } from "@tanstack/react-router"
 import {
   type Body_login_login_access_token as AccessToken,
   LoginService,
-  type UserPublic,
   type UserRegister,
   UsersService,
 } from "@/client"
+import { currentUserQueryOptions } from "@/features/auth/queries"
+import { queryKeys } from "@/lib/queryKeys"
+import { AuthSessionService } from "@/services/authSession"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
@@ -20,9 +22,8 @@ const useAuth = () => {
   const queryClient = useQueryClient()
   const { showErrorToast } = useCustomToast()
 
-  const { data: user } = useQuery<UserPublic | null, Error>({
-    queryKey: ["currentUser"],
-    queryFn: UsersService.readUserMe,
+  const { data: user } = useQuery({
+    ...currentUserQueryOptions(),
     enabled: isLoggedIn(),
   })
 
@@ -34,7 +35,7 @@ const useAuth = () => {
     },
     onError: handleError.bind(showErrorToast),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
     },
   })
 
@@ -42,49 +43,35 @@ const useAuth = () => {
     const response = await LoginService.loginAccessToken({
       formData: data,
     })
-    localStorage.setItem("access_token", response.access_token)
-    if (response.refresh_token) {
-      localStorage.setItem("refresh_token", response.refresh_token)
-    }
+    AuthSessionService.setTokens(response)
   }
 
   const loginMutation = useMutation({
     mutationFn: login,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.auth.currentUser,
+      })
       navigate({ to: "/" })
     },
     onError: handleError.bind(showErrorToast),
   })
 
-  const googleLogin = async (idToken: string) => {
-    const apiBase = import.meta.env.VITE_API_URL ?? ""
-    const response = await fetch(`${apiBase}/api/v1/login/google`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id_token: idToken }),
-    })
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      throw new Error(err.detail ?? "Google login failed")
-    }
-    const data = await response.json()
-    localStorage.setItem("access_token", data.access_token)
-    if (data.refresh_token) {
-      localStorage.setItem("refresh_token", data.refresh_token)
-    }
-  }
-
   const googleLoginMutation = useMutation({
-    mutationFn: googleLogin,
-    onSuccess: () => {
+    mutationFn: (idToken: string) =>
+      AuthSessionService.loginWithGoogle(idToken),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.auth.currentUser,
+      })
       navigate({ to: "/" })
     },
     onError: handleError.bind(showErrorToast),
   })
 
   const logout = () => {
-    localStorage.removeItem("access_token")
-    localStorage.removeItem("refresh_token")
+    AuthSessionService.clearTokens()
+    queryClient.setQueryData(queryKeys.auth.currentUser, null)
     navigate({ to: "/login" })
   }
 

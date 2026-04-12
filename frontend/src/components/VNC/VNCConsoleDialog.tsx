@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query"
 import {
   Clipboard,
   Keyboard,
@@ -14,7 +15,10 @@ import { VncScreen } from "react-vnc"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { queryKeys } from "@/lib/queryKeys"
 import { cn } from "@/lib/utils"
+import { AuthSessionService } from "@/services/authSession"
+import { VncConsoleService } from "@/services/vncConsole"
 
 interface VNCConsoleDialogProps {
   vmid: number | null
@@ -32,53 +36,24 @@ export function VNCConsoleDialog({
   const vncRef = useRef<React.ElementRef<typeof VncScreen>>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isConnected, setIsConnected] = useState(false)
-  const [vncTicket, setVncTicket] = useState<string | null>(null)
-  const [vncPort, setVncPort] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const { t } = useTranslation("resources")
 
-  useEffect(() => {
-    if (open && vmid) {
-      setIsLoading(true)
-      setError(null)
-      setVncTicket(null)
-      setVncPort(null)
+  const consoleQuery = useQuery({
+    queryKey: queryKeys.resources.console(vmid ?? 0),
+    queryFn: () => VncConsoleService.getVmConsole({ vmid: vmid! }),
+    enabled: open && vmid !== null,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  })
 
-      const token = localStorage.getItem("access_token")
-      const apiBase = import.meta.env.VITE_API_URL || ""
-      fetch(`${apiBase}/api/v1/vm/${vmid}/console`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then((res) => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`)
-          }
-          return res.json()
-        })
-        .then((data) => {
-          if (data.ticket) {
-            setVncTicket(data.ticket)
-            setVncPort(data.port ?? null)
-          } else {
-            setError(t("console.vnc.ticketError"))
-          }
-        })
-        .catch((err) => {
-          setError(t("console.vnc.fetchError", { error: err.message }))
-        })
-        .finally(() => {
-          setIsLoading(false)
-        })
-    } else {
-      setVncTicket(null)
-      setVncPort(null)
-      setError(null)
+  useEffect(() => {
+    if (!open) {
+      setIsConnected(false)
     }
-  }, [open, vmid, t])
+  }, [open])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -98,13 +73,9 @@ export function VNCConsoleDialog({
   }, [])
 
   const handleClose = () => {
-    if (vncRef.current) {
-      vncRef.current.disconnect?.()
-    }
-    onOpenChange(false)
+    vncRef.current?.disconnect?.()
     setIsConnected(false)
-    setVncTicket(null)
-    setVncPort(null)
+    onOpenChange(false)
   }
 
   const sendCtrlAltDel = () => {
@@ -138,10 +109,16 @@ export function VNCConsoleDialog({
         )
       : new URL("http://localhost:8000")
   const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:"
-  const accessToken =
-    typeof window !== "undefined"
-      ? localStorage.getItem("access_token") || ""
-      : ""
+  const accessToken = AuthSessionService.getAccessToken() || ""
+  const vncTicket = consoleQuery.data?.ticket ?? null
+  const vncPort = consoleQuery.data?.port ?? null
+  const isLoading = consoleQuery.isLoading || consoleQuery.isFetching
+  const error = consoleQuery.isError
+    ? t("console.vnc.fetchError", { error: consoleQuery.error.message })
+    : !isLoading && open && vmid && !vncTicket
+      ? t("console.vnc.ticketError")
+      : null
+
   const wsUrl =
     vmid && vncTicket
       ? `${protocol}//${apiUrl.host}/ws/vnc/${vmid}?token=${encodeURIComponent(accessToken)}&vnc_ticket=${encodeURIComponent(vncTicket)}${vncPort ? `&vnc_port=${encodeURIComponent(vncPort)}` : ""}`
@@ -329,7 +306,7 @@ export function VNCConsoleDialog({
                   ? t("console.websocket.connected")
                   : t("console.websocket.disconnected")}
               </span>
-              <span>•</span>
+              <span>|</span>
               <span>{t("console.protocol.vnc")}</span>
             </div>
             <div className="flex items-center gap-2">
