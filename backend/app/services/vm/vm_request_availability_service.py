@@ -26,11 +26,7 @@ from app.services.vm import vm_request_placement_service
 
 GIB = 1024**3
 
-_ROLE_ALLOWED_HOURS: dict[UserRole, tuple[int, int]] = {
-    UserRole.student: (8, 22),
-    UserRole.teacher: (7, 23),
-    UserRole.admin: (0, 24),
-}
+_ALL_DAY_POLICY_WINDOW = (0, 24)
 
 _ROLE_LABELS: dict[UserRole, str] = {
     UserRole.student: "學生",
@@ -125,8 +121,6 @@ def validate_request_window(
     if end_at <= start_at:
         raise BadRequestError("end_at must be later than start_at")
 
-    _validate_policy_window(role=role, start_at=start_at, end_at=end_at)
-
     placement_request = PlacementRequest(
         resource_type=cast(str, getattr(request_in, "resource_type")),
         cpu_cores=int(getattr(request_in, "cores", 1) or 1),
@@ -161,9 +155,7 @@ def _build_availability_response(
 ) -> VMRequestAvailabilityResponse:
     tz = _resolve_timezone(source_request.timezone)
     days = max(1, min(int(source_request.days), 14))
-    allowed_start, allowed_end = _ROLE_ALLOWED_HOURS.get(
-        role, _ROLE_ALLOWED_HOURS[UserRole.student]
-    )
+    allowed_start, allowed_end = _ALL_DAY_POLICY_WINDOW
 
     placement_request = _to_placement_request(source_request)
     baseline_nodes, baseline_resources = advisor_service._load_cluster_state()
@@ -305,14 +297,14 @@ def _build_availability_response(
         timezone=str(tz.key),
         role=str(role.value),
         role_label=_ROLE_LABELS.get(role, str(role.value)),
-        policy_window=f"{allowed_start:02d}:00-{allowed_end:02d}:00",
+        policy_window="全天",
         checked_days=days,
         feasible_slot_count=feasible_slot_count,
         recommended_slot_count=len(recommended_slots),
         current_status=(
             "目前規格可安排時段"
             if feasible_slot_count > 0
-            else "目前沒有符合政策與容量條件的時段"
+            else "目前沒有符合容量條件的時段"
         ),
     )
 
@@ -371,24 +363,7 @@ def _validate_policy_window(
     start_at: datetime,
     end_at: datetime,
 ) -> None:
-    allowed_start, allowed_end = _ROLE_ALLOWED_HOURS.get(
-        role, _ROLE_ALLOWED_HOURS[UserRole.student]
-    )
-    cursor = start_at.replace(minute=0, second=0, microsecond=0)
-    while cursor < end_at:
-        if not _is_hour_within_policy(
-            hour=cursor.hour,
-            allowed_start=allowed_start,
-            allowed_end=allowed_end,
-        ):
-            raise BadRequestError(
-                _policy_block_summary(
-                    role=role,
-                    allowed_start=allowed_start,
-                    allowed_end=allowed_end,
-                )
-            )
-        cursor += timedelta(hours=1)
+    return None
 
 
 def _load_hourly_demand_profile(*, session: Session, timezone: ZoneInfo) -> dict[int, float]:
@@ -509,7 +484,6 @@ def _slot_from_plan(
 
     if status == "limited":
         reasons = reasons + [
-            _policy_hint(role=role),
             f"熱門時段壓力係數 {demand_ratio:.2f}，待審核壓力 {pending_pressure:.2f}。",
         ]
 
@@ -706,15 +680,11 @@ def _average_share(
 
 
 def _policy_block_summary(*, role: UserRole, allowed_start: int, allowed_end: int) -> str:
-    return (
-        f"{_ROLE_LABELS.get(role, str(role.value))}目前可申請時段為 "
-        f"{allowed_start:02d}:00-{allowed_end:02d}:00。"
-    )
+    return "目前不限制申請時段。"
 
 
 def _policy_hint(*, role: UserRole) -> str:
-    allowed_start, allowed_end = _ROLE_ALLOWED_HOURS.get(role, (8, 22))
-    return f"此評估已套用 {_ROLE_LABELS.get(role, str(role.value))} 時段政策 {allowed_start:02d}:00-{allowed_end:02d}:00。"
+    return "此評估未套用時段限制。"
 
 
 def _summarize_day(day: date, slots: list[VMRequestAvailabilitySlot]) -> VMRequestAvailabilityDay:
