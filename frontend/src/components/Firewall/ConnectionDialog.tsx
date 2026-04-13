@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import useAuth from "@/hooks/useAuth"
 import { GatewayApiService } from "@/services/gateway"
 
 // PVE 支援的所有協定
@@ -88,8 +89,10 @@ export function ConnectionDialog({
   onConfirm,
   onClose,
 }: Props) {
+  const { user: currentUser } = useAuth()
   const isGateway = targetVmid === null
   const isInbound = sourceVmid === null
+  const isAdmin = currentUser?.role === "admin" || currentUser?.is_superuser
 
   // ─── 入站模式狀態 ────────────────────────────────────────────────────────
   const [inboundMode, setInboundMode] = useState<InboundMode>("domain")
@@ -117,10 +120,13 @@ export function ConnectionDialog({
   const { data: gatewayConfig } = useQuery({
     queryKey: ["gateway-config-conn"],
     queryFn: GatewayApiService.getConfig,
-    enabled: isInbound,
+    enabled: isInbound && isAdmin,
     staleTime: 30_000,
   })
-  const isGatewayConfigured = gatewayConfig?.is_configured ?? false
+  const isGatewayConfigured = isAdmin ? gatewayConfig?.is_configured ?? false : false
+  const gatewaySetupMessage = isAdmin
+    ? "Gateway VM 尚未設定，請先至「Gateway VM 管理」設定後再使用此功能。"
+    : "此功能需要管理員先完成 Gateway VM 設定。"
   const needsGateway =
     isInbound && (inboundMode === "domain" || inboundMode === "port")
 
@@ -307,8 +313,7 @@ export function ConnectionDialog({
                 <div className="flex gap-2 items-start bg-orange-950/40 border border-orange-700/60 rounded-lg px-3 py-2.5 text-xs text-orange-300">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-medium">Gateway VM 尚未設定</span>
-                    ，請先至「Gateway VM 管理」設定後再使用此功能。
+                    <span className="font-medium">{gatewaySetupMessage}</span>
                   </span>
                 </div>
               )}
