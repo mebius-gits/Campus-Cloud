@@ -144,10 +144,21 @@ def control_service(session: object, service: str, action: str) -> tuple[bool, s
 
     try:
         client = _make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-        code, out, err = _exec(client, f"systemctl {action} {service} 2>&1")
-        client.close()
-        output = (out + err).strip()
-        return code == 0, output or f"{service} {action} 完成"
+        if action == "restart":
+            # Some services hang on restart; do stop+start with a kill fallback
+            _exec(client, f"systemctl stop {service} 2>&1; sleep 1; "
+                          f"systemctl kill -s SIGKILL {service} 2>/dev/null; "
+                          f"systemctl start {service} 2>&1")
+            code, out, err = _exec(client, f"systemctl is-active {service} 2>&1")
+            client.close()
+            if out.strip() == "active":
+                return True, f"{service} restart 完成"
+            return False, f"{service} restart 後狀態: {out.strip()}"
+        else:
+            code, out, err = _exec(client, f"systemctl {action} {service} 2>&1")
+            client.close()
+            output = (out + err).strip()
+            return code == 0, output or f"{service} {action} 完成"
     except Exception as exc:
         return False, str(exc)
 
