@@ -152,6 +152,25 @@ def control_service(session: object, service: str, action: str) -> tuple[bool, s
         return False, str(exc)
 
 
+def get_service_logs(session: object, service: str, lines: int = 50) -> tuple[bool, str]:
+    """Read recent journalctl logs for a service on the Gateway VM."""
+    from app.repositories.gateway_config import get_decrypted_private_key  # noqa: PLC0415
+
+    config = _get_config(session)
+    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+
+    if service not in SERVICE_CONFIG_PATHS:
+        raise BadRequestError(f"未知服務：{service}")
+
+    try:
+        client = _make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
+        _, out, err = _exec(client, f"journalctl -u {service} --no-pager -n {lines} 2>&1")
+        client.close()
+        return True, (out + err).strip()
+    except Exception as exc:
+        return False, str(exc)
+
+
 def get_service_status(session: object, service: str) -> tuple[bool, str]:
     from app.repositories.gateway_config import get_decrypted_private_key  # noqa: PLC0415
 
