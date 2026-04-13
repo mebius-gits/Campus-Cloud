@@ -208,6 +208,19 @@ def service_status(service: str, session: SessionDep, _: AdminUser):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/services/{service}/logs")
+def service_logs(service: str, session: SessionDep, _: AdminUser, lines: int = 50):
+    """查看服務最近的 journalctl 日誌"""
+    _require_valid_service(service)
+    try:
+        ok, output = gateway_service.get_service_logs(
+            session=session, service=service, lines=lines
+        )
+        return PlainTextResponse(content=output)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/services/{service}/{action}", response_model=ServiceActionResult)
 def control_service(
     service: str,
