@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, func, select
 
+from app.models.batch_provision import (
+    BatchProvisionJob,
+    BatchProvisionTask,
+    BatchProvisionTaskStatus,
+)
 from app.models.group import Group
 from app.models.group_member import GroupMember
 from app.models.user import User
@@ -51,9 +56,7 @@ def delete_group(*, session: Session, group_id: uuid.UUID) -> None:
 def get_group_members(*, session: Session, group_id: uuid.UUID) -> list[User]:
     """回傳群組內所有 User 物件"""
     members = list(
-        session.exec(
-            select(GroupMember).where(GroupMember.group_id == group_id)
-        ).all()
+        session.exec(select(GroupMember).where(GroupMember.group_id == group_id)).all()
     )
     user_ids = [m.user_id for m in members]
     if not user_ids:
@@ -64,9 +67,7 @@ def get_group_members(*, session: Session, group_id: uuid.UUID) -> list[User]:
 def get_member_rows(*, session: Session, group_id: uuid.UUID) -> list[GroupMember]:
     """回傳群組成員的 GroupMember rows（含 added_at）"""
     return list(
-        session.exec(
-            select(GroupMember).where(GroupMember.group_id == group_id)
-        ).all()
+        session.exec(select(GroupMember).where(GroupMember.group_id == group_id)).all()
     )
 
 
@@ -108,9 +109,7 @@ def add_members_by_emails(
     return added, not_found
 
 
-def remove_member(
-    *, session: Session, group_id: uuid.UUID, user_id: uuid.UUID
-) -> bool:
+def remove_member(*, session: Session, group_id: uuid.UUID, user_id: uuid.UUID) -> bool:
     """移除成員，回傳是否成功找到並刪除"""
     gm = session.exec(
         select(GroupMember).where(
@@ -188,3 +187,41 @@ def get_member_counts(
         .group_by(GroupMember.group_id)
     ).all()
     return {group_id: count for group_id, count in rows}
+
+
+def get_member_vmids(
+    *, session: Session, group_id: uuid.UUID
+) -> dict[uuid.UUID, int | None]:
+    """取得群組中每個成員最新一次成功批量建立的 vmid。
+
+    回傳 {user_id: vmid}，沒有成功建立過的成員不會出現在 dict 中。
+    查詢邏輯：找該群組所有 batch_provision_jobs，取每個成員最新
+    completed task 的 vmid。
+    """
+    # 子查詢：該群組所有 job id
+    job_ids_stmt = select(BatchProvisionJob.id).where(
+        BatchProvisionJob.group_id == group_id
+    )
+
+    # 取出所有屬於該群組的 completed tasks（含 vmid）
+    stmt = (
+        select(
+            BatchProvisionTask.user_id,
+            BatchProvisionTask.vmid,
+            BatchProvisionTask.finished_at,
+        )
+        .where(
+            BatchProvisionTask.job_id.in_(job_ids_stmt),
+            BatchProvisionTask.status == BatchProvisionTaskStatus.completed,
+            BatchProvisionTask.vmid.is_not(None),
+        )
+        .order_by(BatchProvisionTask.finished_at.desc())
+    )
+    rows = session.exec(stmt).all()
+
+    # 每個 user_id 只取最新一筆
+    result: dict[uuid.UUID, int | None] = {}
+    for user_id, vmid, _ in rows:
+        if user_id not in result:
+            result[user_id] = vmid
+    return result
