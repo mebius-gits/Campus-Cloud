@@ -34,6 +34,9 @@ class GroupMemberPublic(BaseModel):
     email: EmailStr
     full_name: str | None = None
     added_at: datetime | None = None
+    vmid: int | None = None
+    vm_status: str | None = None  # "running" | "stopped" | None (未開過機器)
+    vm_type: str | None = None  # "qemu" | "lxc" | None
 
 
 class GroupPublic(BaseModel):
@@ -72,9 +75,7 @@ class GroupDetailPublic(BaseModel):
 class CsvImportResult(BaseModel):
     """CSV 大量匯入結果"""
 
-    created: list[str] = []         # 新建立帳號的 email 列表
-    already_existed: list[str] = [] # 已存在帳號的 email 列表
-    added_to_group: int = 0         # 成功加入群組的人數
-    errors: list[str] = []          # 錯誤訊息列表
-
-
+    created: list[str] = []  # 新建立帳號的 email 列表
+    already_existed: list[str] = []  # 已存在帳號的 email 列表
+    added_to_group: int = 0  # 成功加入群組的人數
+    errors: list[str] = []  # 錯誤訊息列表

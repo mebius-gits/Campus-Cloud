@@ -112,7 +112,10 @@ export function ApplicationRequestPage() {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const { user } = useAuth()
-  const backPath = user?.role === "student" ? "/applications" : "/approvals"
+  const backPath =
+    user?.role === "admin" || user?.is_superuser
+      ? "/approvals"
+      : "/applications"
   const showAiAssistant = true
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
   const [resourceType, setResourceType] = useState<"lxc" | "vm">("lxc")
@@ -1257,20 +1260,9 @@ export function ApplicationRequestPage() {
                 </section>
                 <div className="flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
                   {showAiAssistant ? (
-                    <>
-                      <p className="text-sm text-muted-foreground">
-                        使用 AI
-                        協助整理需求後，再確認規格、可申請時段與申請原因。
-                      </p>
-                      <p className="hidden text-sm text-muted-foreground">
-                        使用 AI
-                        協助整理需求後，再確認規格、可申請時段與申請原因。
-                      </p>
-                      <p className="hidden text-sm text-muted-foreground">
-                        使用 AI
-                        協助整理需求後，再確認規格、可申請時段與申請原因。
-                      </p>
-                    </>
+                    <p className="text-sm text-muted-foreground">
+                      使用 AI 協助整理需求後，再確認規格、可申請時段與申請原因。
+                    </p>
                   ) : (
                     <div />
                   )}

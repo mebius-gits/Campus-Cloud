@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.api.deps import AdminUser, SessionDep
+from app.api.deps import InstructorUser, SessionDep
 from app.core.authorizers import (
     can_bypass_group_ownership,
     require_group_access,
 )
 from app.core.config import settings
+from app.infrastructure.proxmox import operations as proxmox_ops
 from app.repositories import group as group_repo
 from app.repositories.user import create_user as create_user_in_db
 from app.repositories.user import get_user_by_email
@@ -45,7 +46,7 @@ def _check_group_access(current_user, db_group) -> None:
 def create_group(
     group_in: GroupCreate,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ):
     db_group = group_repo.create_group(
         session=session,
@@ -71,7 +72,7 @@ def create_group(
 
 
 @router.get("/", response_model=GroupsPublic)
-def list_groups(session: SessionDep, current_user: AdminUser):
+def list_groups(session: SessionDep, current_user: InstructorUser):
     if can_bypass_group_ownership(current_user):
         groups = group_repo.get_all_groups(session=session)
     else:
@@ -97,7 +98,7 @@ def list_groups(session: SessionDep, current_user: AdminUser):
 
 @router.get("/{group_id}", response_model=GroupDetailPublic)
 def get_group(
-    group_id: uuid.UUID, session: SessionDep, current_user: AdminUser
+    group_id: uuid.UUID, session: SessionDep, current_user: InstructorUser
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -108,12 +109,36 @@ def get_group(
     members_map = {m.user_id: m for m in member_rows}
     users = group_repo.get_group_members(session=session, group_id=group_id)
 
+    # 取得每個成員最新的 vmid
+    member_vmids = group_repo.get_member_vmids(session=session, group_id=group_id)
+
+    # 批量取得所有 VM 的即時狀態與類型（一次 Proxmox API 呼叫）
+    vm_status_map: dict[int, str] = {}
+    vm_type_map: dict[int, str] = {}
+    vmids_to_check = [v for v in member_vmids.values() if v is not None]
+    if vmids_to_check:
+        try:
+            all_resources = proxmox_ops.list_all_resources()
+            for r in all_resources:
+                if r["vmid"] in vmids_to_check:
+                    vm_status_map[r["vmid"]] = r.get("status", "unknown")
+                    vm_type_map[r["vmid"]] = r.get("type", "unknown")
+        except Exception:
+            logger.warning("無法取得 Proxmox 資源狀態，將略過 VM 狀態欄位")
+
     members_public = [
         GroupMemberPublic(
             user_id=u.id,
             email=u.email,
             full_name=u.full_name,
             added_at=members_map[u.id].added_at if u.id in members_map else None,
+            vmid=member_vmids.get(u.id),
+            vm_status=vm_status_map.get(member_vmids[u.id])
+            if u.id in member_vmids
+            else None,
+            vm_type=vm_type_map.get(member_vmids[u.id])
+            if u.id in member_vmids
+            else None,
         )
         for u in users
     ]
@@ -130,7 +155,7 @@ def get_group(
 
 @router.delete("/{group_id}", response_model=Message)
 def delete_group(
-    group_id: uuid.UUID, session: SessionDep, current_user: AdminUser
+    group_id: uuid.UUID, session: SessionDep, current_user: InstructorUser
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -152,7 +177,7 @@ def add_members(
     group_id: uuid.UUID,
     body: GroupMemberAdd,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -184,7 +209,7 @@ def remove_member(
     group_id: uuid.UUID,
     user_id: uuid.UUID,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ):
     db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
     if not db_group:
@@ -210,7 +235,7 @@ def remove_member(
 async def import_members_from_csv(
     group_id: uuid.UUID,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
     file: UploadFile = File(...),
 ):
     """從 CSV 大量匯入學生帳號並加入群組。
@@ -300,4 +325,3 @@ async def import_members_from_csv(
         ),
     )
     return result
-

@@ -51,8 +51,6 @@ export function AppSidebar() {
 
   const aiItems: Item[] = [{ icon: Bot, title: "AI API", path: "/ai-api" }]
 
-  const teacherItems: Item[] = [...overviewItems, ...resourceItems, ...aiItems]
-
   const studentItems: Item[] = [
     ...overviewItems,
     ...resourceItems,
@@ -60,17 +58,26 @@ export function AppSidebar() {
     ...aiItems,
   ]
 
+  const teacherItems: Item[] = [
+    ...overviewItems,
+    ...resourceItems,
+    { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
+    ...aiItems,
+    { icon: UsersRound, title: "Groups", path: "/groups" },
+  ]
+
   const adminItems: Item[] = [
     ...overviewItems,
     ...resourceItems,
+    { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
     { icon: Monitor, title: t("sidebar.resources"), path: "/resources" },
     { icon: ClipboardCheck, title: t("sidebar.approvals"), path: "/approvals" },
     ...aiItems,
-    { icon: ClipboardCheck, title: "AI API 審核", path: "/ai-api-approvals" },
-    { icon: KeyRound, title: "AI API 金鑰狀態", path: "/ai-api-credentials" },
-    { icon: UsersRound, title: "群組管理", path: "/groups" },
+    { icon: ClipboardCheck, title: "AI API Review", path: "/ai-api-approvals" },
+    { icon: KeyRound, title: "AI API Keys", path: "/ai-api-credentials" },
+    { icon: UsersRound, title: "Groups", path: "/groups" },
     { icon: Users, title: t("sidebar.admin"), path: "/admin" },
-    { icon: Settings2, title: "系統設定", path: "/admin/configuration" },
+    { icon: Settings2, title: "System Settings", path: "/admin/configuration" },
     {
       icon: ArrowRightLeft,
       title: "Migration Jobs",
@@ -78,33 +85,28 @@ export function AppSidebar() {
     },
     { icon: Cloud, title: "網域管理", path: "/admin/domains" },
     { icon: Network, title: "Gateway VM", path: "/admin/gateway" },
-    { icon: ScrollText, title: "稽核日誌", path: "/admin/audit-logs" },
+    { icon: ScrollText, title: "Audit Logs", path: "/admin/audit-logs" },
   ]
 
-  // currentUser 為 undefined 時（初次載入 / token refresh 中）不要 fallback 到
-  // 任何角色的選單，避免 admin 使用者在 refresh 期間被暫時降級成 teacher 選單。
   const items: Item[] = !currentUser
     ? []
-    : currentUser.role === "student"
-      ? studentItems
-      : currentUser.role === "admin" || currentUser.is_superuser
-        ? adminItems
-        : teacherItems
+    : currentUser.role === "admin" || currentUser.is_superuser
+      ? adminItems
+      : currentUser.role === "teacher"
+        ? teacherItems
+        : studentItems
 
   return (
-    <Sidebar
-      collapsible="icon"
-      variant="floating"
-    >
+    <Sidebar collapsible="icon" variant="floating">
       <button
         type="button"
         onClick={toggleSidebar}
-        className="absolute -right-3 top-9 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background shadow-md hover:bg-accent transition-colors"
-        title={open ? "收合側邊欄" : "展開側邊欄"}
+        className="absolute -right-3 top-9 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-accent"
+        title={open ? "Collapse sidebar" : "Expand sidebar"}
       >
         {open ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
       </button>
-      <SidebarHeader className="px-4 py-3.75 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:items-center">
+      <SidebarHeader className="px-4 py-3.75 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
         <Logo variant="responsive" />
       </SidebarHeader>
       <hr

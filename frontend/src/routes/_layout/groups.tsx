@@ -23,14 +23,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { Textarea } from "@/components/ui/textarea"
-import { requireAdminUser } from "@/features/auth/guards"
+import { requireGroupManagerUser } from "@/features/auth/guards"
 import { groupListQueryOptions } from "@/features/groups/queryOptions"
 import useCustomToast from "@/hooks/useCustomToast"
 import { queryKeys } from "@/lib/queryKeys"
 
 export const Route = createFileRoute("/_layout/groups")({
   component: GroupsPage,
-  beforeLoad: () => requireAdminUser(),
+  beforeLoad: () => requireGroupManagerUser(),
   head: () => ({
     meta: [{ title: "群組管理 - Campus Cloud" }],
   }),

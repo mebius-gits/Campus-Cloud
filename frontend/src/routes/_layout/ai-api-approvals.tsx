@@ -1,15 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
+import type { ColumnDef } from "@tanstack/react-table"
 import { Check, ClipboardCheck, X } from "lucide-react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { DataTable } from "@/components/Common/DataTable"
 import {
   Dialog,
   DialogClose,
@@ -136,46 +131,14 @@ function ReviewDialog({
   )
 }
 
-function RequestCard({ item }: { item: AiApiRequestPublic }) {
+function ReviewActionCell({ item }: { item: AiApiRequestPublic }) {
   const [approveOpen, setApproveOpen] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
 
   return (
-    <div className="space-y-4 rounded-xl border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="font-medium">
-            {item.user_full_name || item.user_email}
-          </div>
-          <div className="text-sm text-muted-foreground">
-            申請時間：{formatTime(item.created_at)}
-          </div>
-        </div>
-        <div className="text-sm text-muted-foreground">
-          狀態：
-          {item.status === "pending"
-            ? "審核中"
-            : item.status === "approved"
-              ? "已通過"
-              : "已拒絕"}
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-1 text-sm font-medium">用途</div>
-        <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-          {item.purpose}
-        </p>
-      </div>
-
-      {item.review_comment ? (
-        <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-          審核意見：{item.review_comment}
-        </div>
-      ) : null}
-
+    <div className="flex min-w-[180px] items-center gap-2">
       {item.status === "pending" ? (
-        <div className="flex gap-2">
+        <>
           <Button size="sm" onClick={() => setApproveOpen(true)}>
             <Check className="mr-1 h-4 w-4" />
             通過
@@ -188,11 +151,11 @@ function RequestCard({ item }: { item: AiApiRequestPublic }) {
             <X className="mr-1 h-4 w-4" />
             拒絕
           </Button>
-        </div>
+        </>
       ) : (
-        <div className="text-sm text-muted-foreground">
-          審核時間：{formatTime(item.reviewed_at)}
-        </div>
+        <span className="truncate text-sm text-muted-foreground">
+          {item.review_comment || "-"}
+        </span>
       )}
 
       <ReviewDialog
@@ -211,6 +174,22 @@ function RequestCard({ item }: { item: AiApiRequestPublic }) {
   )
 }
 
+function statusLabel(status: AiApiRequestStatus) {
+  if (status === "approved") return "已通過"
+  if (status === "rejected") return "已拒絕"
+  return "待審核"
+}
+
+function statusClass(status: AiApiRequestStatus) {
+  if (status === "approved") {
+    return "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"
+  }
+  if (status === "rejected") {
+    return "border-destructive/20 bg-destructive/10 text-destructive"
+  }
+  return "border-amber-500/20 bg-amber-500/10 text-amber-700"
+}
+
 function AiApiApprovalsPage() {
   const [statusFilter, setStatusFilter] = useState<AiApiRequestStatus | "all">(
     "pending",
@@ -218,13 +197,86 @@ function AiApiApprovalsPage() {
 
   const requestsQuery = useQuery(aiApiAdminRequestsQueryOptions(statusFilter))
 
+  const columns = useMemo<ColumnDef<AiApiRequestPublic>[]>(
+    () => [
+      {
+        id: "applicant",
+        header: "申請者",
+        cell: ({ row }) => (
+          <div className="min-w-[180px] max-w-[220px] overflow-hidden">
+            <div className="truncate font-medium">
+              {row.original.user_full_name || row.original.user_email}
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {row.original.user_email}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "api_key_name",
+        header: "金鑰名稱",
+        cell: ({ row }) => (
+          <span className="block min-w-[140px] max-w-[180px] truncate">
+            {row.original.api_key_name}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "purpose",
+        header: "用途",
+        cell: ({ row }) => (
+          <span className="block min-w-[260px] max-w-[360px] truncate text-muted-foreground">
+            {row.original.purpose}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "狀態",
+        cell: ({ row }) => (
+          <span
+            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass(
+              row.original.status,
+            )}`}
+          >
+            {statusLabel(row.original.status)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "created_at",
+        header: "申請時間",
+        cell: ({ row }) => (
+          <span className="block min-w-[170px] text-sm text-muted-foreground">
+            {formatTime(row.original.created_at)}
+          </span>
+        ),
+      },
+      {
+        id: "reviewed_at",
+        header: "審核時間",
+        cell: ({ row }) => (
+          <span className="block min-w-[170px] text-sm text-muted-foreground">
+            {formatTime(row.original.reviewed_at)}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        cell: ({ row }) =>
+          <ReviewActionCell item={row.original} />,
+      },
+    ],
+    [],
+  )
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">AI API 審核</h1>
-        <p className="text-muted-foreground">
-          獨立審核 AI API 申請，通過後系統會直接核發連線參數。
-        </p>
+        <p className="text-muted-foreground">審核申請並核發 API 存取參數。</p>
       </div>
 
       <Tabs
@@ -241,31 +293,16 @@ function AiApiApprovalsPage() {
         </TabsList>
       </Tabs>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>申請清單</CardTitle>
-          <CardDescription>
-            切換篩選查看不同狀態的 AI API 申請。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {requestsQuery.data?.data.length ? (
-            requestsQuery.data.data.map((item) => (
-              <RequestCard key={item.id} item={item} />
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-12 text-center">
-              <div className="mb-4 rounded-full bg-muted p-4">
-                <ClipboardCheck className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <div className="font-medium">目前沒有符合條件的 AI API 申請</div>
-              <div className="text-sm text-muted-foreground">
-                切換上方篩選，或稍後再查看。
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {requestsQuery.data?.data.length ? (
+        <DataTable columns={columns} data={requestsQuery.data.data} />
+      ) : (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-12 text-center">
+          <div className="mb-4 rounded-full bg-muted p-4">
+            <ClipboardCheck className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div className="font-medium">目前沒有符合條件的 AI API 申請</div>
+        </div>
+      )}
     </div>
   )
 }

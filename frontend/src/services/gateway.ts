@@ -161,6 +161,26 @@ export const GatewayApiService = {
     })
   },
 
+  /** 取得服務日誌 */
+  static async getServiceLogs(
+    service: GatewayService,
+    lines: number = 50,
+  ): Promise<string> {
+    const token =
+      typeof OpenAPI.TOKEN === "function"
+        ? await (OpenAPI.TOKEN as (options: object) => Promise<string>)({})
+        : (OpenAPI.TOKEN as string)
+    const resp = await fetch(
+      `${OpenAPI.BASE}/api/v1/gateway/services/${service}/logs?lines=${lines}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    )
+    return resp.text()
+  }
+
   /** 取得安裝腳本下載 URL */
   getInstallScriptUrl(): string {
     return `${OpenAPI.BASE}/api/v1/gateway/install-script`

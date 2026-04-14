@@ -8,6 +8,7 @@ import {
   Circle,
   ClipboardCopy,
   Download,
+  FileText,
   Loader2,
   RefreshCw,
   Save,
@@ -81,6 +82,9 @@ function InstallCommand({ publicKey }: { publicKey: string }) {
 function ServicePanel({ service }: { service: GatewayService }) {
   const [editorContent, setEditorContent] = useState<string>("")
   const [confirmAction, setConfirmAction] = useState<ServiceAction | null>(null)
+  const [showLogs, setShowLogs] = useState(false)
+  const [logs, setLogs] = useState<string>("")
+  const [logsLoading, setLogsLoading] = useState(false)
 
   const configLang: Record<GatewayService, string> = {
     haproxy: "plaintext",
@@ -136,6 +140,19 @@ function ServicePanel({ service }: { service: GatewayService }) {
 
   const isActive = statusData?.active ?? false
 
+  const fetchLogs = async () => {
+    setLogsLoading(true)
+    try {
+      const text = await GatewayApiService.getServiceLogs(service, 50)
+      setLogs(text)
+      setShowLogs(true)
+    } catch (e: any) {
+      toast.error(`取得日誌失敗：${e.message}`)
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
   const handleAction = (action: ServiceAction) => {
     if (action === "restart" || action === "stop") {
       setConfirmAction(action)
@@ -189,6 +206,20 @@ function ServicePanel({ service }: { service: GatewayService }) {
               </Button>
             ),
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={logsLoading}
+            onClick={fetchLogs}
+            className="h-7 text-xs border-border bg-card hover:bg-accent hover:text-blue-400"
+          >
+            {logsLoading ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <FileText className="w-3 h-3 mr-1" />
+            )}
+            日誌
+          </Button>
         </div>
       </div>
 
@@ -218,6 +249,44 @@ function ServicePanel({ service }: { service: GatewayService }) {
           >
             取消
           </Button>
+        </div>
+      )}
+
+      {/* 日誌面板 */}
+      {showLogs && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              服務日誌（最近 50 行）
+            </span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={fetchLogs}
+                disabled={logsLoading}
+                className="h-7 text-xs border-border bg-card hover:bg-accent"
+              >
+                {logsLoading ? (
+                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                )}
+                重新整理
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowLogs(false)}
+                className="h-7 text-xs"
+              >
+                關閉
+              </Button>
+            </div>
+          </div>
+          <pre className="bg-black/80 border border-border rounded-lg p-4 text-xs text-green-400 font-mono overflow-auto max-h-80 whitespace-pre-wrap">
+            {logs || "（無日誌）"}
+          </pre>
         </div>
       )}
 

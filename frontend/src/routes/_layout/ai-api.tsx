@@ -114,7 +114,7 @@ function RequestStatusIcon({ status }: { status: AiApiRequestStatus }) {
 
 function StatPill({ label, value }: { label: string; value: number }) {
   return (
-    <div className="glass-panel rounded-full px-4 py-2">
+    <div className="rounded-full border bg-background/60 px-4 py-2">
       <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </div>
@@ -133,7 +133,7 @@ function Panel({
   children: ReactNode
 }) {
   return (
-    <div className="glass-panel rounded-2xl p-5">
+    <div className="rounded-xl border bg-background/70 p-4">
       <div className="mb-4 space-y-1">
         <div className="text-base font-semibold">{title}</div>
         {description ? (
@@ -231,105 +231,99 @@ function CredentialRow({
   })()
 
   return (
-    <div className="border-b py-4 last:border-b-0 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-3">
-          {/* 名稱列 */}
-          <div className="flex flex-wrap items-center gap-2">
-            {editingName ? (
-              <div className="flex items-center gap-2">
-                <Input
-                  id={`rename-input-${item.id}`}
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  maxLength={20}
-                  className="h-7 w-44 text-sm font-medium"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") renameMutation.mutate()
-                    if (e.key === "Escape") handleCancelRename()
-                  }}
-                />
-                <LoadingButton
-                  loading={renameMutation.isPending}
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2"
-                  onClick={() => renameMutation.mutate()}
-                  disabled={nameInput.trim().length === 0}
-                >
-                  <Save className="h-3.5 w-3.5" />
-                </LoadingButton>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  onClick={handleCancelRename}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <div className="font-medium">{item.api_key_name}</div>
-                <Button
-                  id={`rename-btn-${item.id}`}
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setNameInput(item.api_key_name)
-                    setEditingName(true)
-                  }}
-                >
-                  <Pencil className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-            <span
-              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusBadge.cls}`}
-            >
-              {statusBadge.label}
-            </span>
+    <div className="border-b py-3 last:border-b-0 first:pt-0 last:pb-0">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {editingName ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={`rename-input-${item.id}`}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    maxLength={20}
+                    className="h-7 w-44 text-sm font-medium"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") renameMutation.mutate()
+                      if (e.key === "Escape") handleCancelRename()
+                    }}
+                  />
+                  <LoadingButton
+                    loading={renameMutation.isPending}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2"
+                    onClick={() => renameMutation.mutate()}
+                    disabled={nameInput.trim().length === 0}
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                  </LoadingButton>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={handleCancelRename}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <div className="truncate font-medium">{item.api_key_name}</div>
+                  <Button
+                    id={`rename-btn-${item.id}`}
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setNameInput(item.api_key_name)
+                      setEditingName(true)
+                    }}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusBadge.cls}`}
+              >
+                {statusBadge.label}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>Prefix：{item.api_key_prefix}</span>
+              <span>建立：{formatTime(item.created_at)}</span>
+              <span className={expired ? "font-medium text-destructive" : ""}>
+                到期：{formatExpiry(item.expires_at)}
+              </span>
+              {item.revoked_at ? <span>失效：{formatTime(item.revoked_at)}</span> : null}
+            </div>
           </div>
 
-          {/* Base URL & API Key */}
-          <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-xs uppercase tracking-[0.16em]">
+          <div className="min-w-0 space-y-2 text-sm">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                 <Link2 className="h-3.5 w-3.5" />
                 Base URL
               </div>
-              <div className="break-all font-mono text-foreground">
-                {item.base_url}
-              </div>
+              <div className="truncate font-mono text-foreground">{item.base_url}</div>
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-xs uppercase tracking-[0.16em]">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                 <KeyRound className="h-3.5 w-3.5" />
                 API Key
               </div>
-              <div className="break-all font-mono text-foreground">
+              <div className="truncate font-mono text-foreground">
                 {showKey ? item.api_key : maskApiKey(item.api_key)}
               </div>
             </div>
           </div>
-
-          {/* Meta info */}
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            <span>Key Prefix：{item.api_key_prefix}</span>
-            <span>建立時間：{formatTime(item.created_at)}</span>
-            <span className={expired ? "text-destructive font-medium" : ""}>
-              過期時間：{formatExpiry(item.expires_at)}
-            </span>
-            {item.revoked_at ? (
-              <span>失效時間：{formatTime(item.revoked_at)}</span>
-            ) : null}
-          </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 xl:justify-end">
           <Button
             size="sm"
             variant="outline"
@@ -386,35 +380,26 @@ function CredentialRow({
 
 function RequestRow({ item }: { item: AiApiRequestPublic }) {
   return (
-    <div className="border-b py-4 last:border-b-0 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="font-medium">AI API 申請 - {item.api_key_name}</div>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${requestStatusStyle(
-                item.status,
-              )}`}
-            >
-              <RequestStatusIcon status={item.status} />
-              {requestStatusLabel(item.status)}
-            </span>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-sm font-medium">用途</div>
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {item.purpose}
-            </p>
-          </div>
+    <div className="border-b py-3 last:border-b-0 first:pt-0 last:pb-0">
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_220px] lg:items-start">
+        <div className="min-w-0 space-y-1">
+          <div className="truncate font-medium">{item.api_key_name}</div>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${requestStatusStyle(
+              item.status,
+            )}`}
+          >
+            <RequestStatusIcon status={item.status} />
+            {requestStatusLabel(item.status)}
+          </span>
         </div>
 
-        <div className="min-w-56 space-y-2 text-sm text-muted-foreground">
-          <div>申請時間：{formatTime(item.created_at)}</div>
-          <div>審核時間：{formatTime(item.reviewed_at)}</div>
-          {item.review_comment ? (
-            <div>審核備註：{item.review_comment}</div>
-          ) : null}
+        <p className="line-clamp-2 text-sm text-muted-foreground">{item.purpose}</p>
+
+        <div className="space-y-1 text-xs text-muted-foreground lg:text-right">
+          <div>申請：{formatTime(item.created_at)}</div>
+          <div>審核：{formatTime(item.reviewed_at)}</div>
+          {item.review_comment ? <div className="truncate">備註：{item.review_comment}</div> : null}
         </div>
       </div>
     </div>
@@ -466,10 +451,7 @@ function AiApiPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             AI API 金鑰申請與管理
           </h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            這裡只負責核發專屬 API Key 與 Base
-            URL。模型由你自己的客戶端決定，頁面則集中處理申請、查看、刷新與刪除。
-          </p>
+          <p className="max-w-3xl text-sm text-muted-foreground">申請、管理與查詢 AI API 金鑰。</p>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -489,7 +471,7 @@ function AiApiPage() {
         <TabsContent value="request" className="space-y-5">
           <Panel
             title="送出新申請"
-            description="簡短描述你的使用目的，管理員審核後就會核發可直接使用的連線參數。"
+            description="填寫用途後送審。"
           >
             <div className="space-y-4">
               <div className="space-y-1.5">
@@ -503,9 +485,6 @@ function AiApiPage() {
                   placeholder="例如：課程專案用、測試用、我的 App"
                   maxLength={20}
                 />
-                <p className="text-xs text-muted-foreground">
-                  為你的金鑰取一個好辨識的名字（最多 20 字）。
-                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -541,15 +520,10 @@ function AiApiPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  金鑰核發後將從核發當下開始計算有效期。
-                </p>
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-xs text-muted-foreground">
-                  至少輸入 10 個字，方便管理員快速理解用途。
-                </div>
+                <div className="text-xs text-muted-foreground">用途需至少 10 字。</div>
                 <LoadingButton
                   onClick={() => createMutation.mutate()}
                   loading={createMutation.isPending}
@@ -561,30 +535,12 @@ function AiApiPage() {
               </div>
             </div>
           </Panel>
-
-          <Panel
-            title="使用提醒"
-            description="這個頁面負責核發存取金鑰，不會替你綁定模型。"
-          >
-            <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
-              <div className="rounded-xl bg-muted/40 p-4">
-                通過後會拿到固定的 Base URL 與系統產生的專屬 API Key。
-              </div>
-              <div className="rounded-xl bg-muted/40 p-4">
-                如果你刷新 API
-                Key，舊金鑰會立即變成已替換狀態。刷新後過期時間同步保留。
-              </div>
-              <div className="rounded-xl bg-muted/40 p-4">
-                呼叫時要使用哪個 model，請在你的客戶端請求中自行帶入。
-              </div>
-            </div>
-          </Panel>
         </TabsContent>
 
         <TabsContent value="keys" className="space-y-5">
           <Panel
             title="我的 API Keys"
-            description="保留你現在正在使用的金鑰，需要換新時直接刷新即可。點擊名稱旁的鉛筆圖示可以隨時修改名稱。"
+            description="查看、複製、刷新或刪除金鑰。"
           >
             {credentials.length ? (
               <div>
@@ -611,7 +567,7 @@ function AiApiPage() {
         <TabsContent value="history" className="space-y-5">
           <Panel
             title="申請紀錄"
-            description="查看每筆申請目前是否仍在審核、已通過或已拒絕。"
+            description="近期申請狀態。"
           >
             {requests.length ? (
               <div>

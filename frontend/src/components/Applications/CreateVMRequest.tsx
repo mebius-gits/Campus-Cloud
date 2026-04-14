@@ -9,7 +9,13 @@ const CreateVMRequest = () => {
   const { t } = useTranslation("applications")
   const { user } = useAuth()
 
-  if (!user || user.role !== "student") {
+  if (
+    !user ||
+    (user.role !== "student" &&
+      user.role !== "teacher" &&
+      user.role !== "admin" &&
+      !user.is_superuser)
+  ) {
     return null
   }
 

@@ -63,13 +63,18 @@ export const AuthSessionService = {
       const refreshToken = this.getRefreshToken()
       if (!refreshToken) return false
 
+      // Use bare fetch to bypass OpenAPI.TOKEN — otherwise this call would
+      // re-enter the token resolver and cause infinite recursion when the
+      // access token is near expiry.
       try {
-        const tokens = await __request<AuthTokens>(OpenAPI, {
+        const base = (OpenAPI.BASE ?? "").replace(/\/+$/, "")
+        const res = await fetch(`${base}/api/v1/login/refresh-token`, {
           method: "POST",
-          url: "/api/v1/login/refresh-token",
-          body: { refresh_token: refreshToken },
-          mediaType: "application/json",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
         })
+        if (!res.ok) return false
+        const tokens = (await res.json()) as AuthTokens
         this.setTokens(tokens)
         _lastSuccessfulRefreshAt = Date.now()
         return true

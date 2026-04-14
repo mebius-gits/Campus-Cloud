@@ -3,13 +3,16 @@ import {
   createFileRoute,
   Link as RouterLink,
   redirect,
+  useNavigate,
+  useSearch,
 } from "@tanstack/react-router"
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
 import type { Body_login_login_access_token as AccessToken } from "@/client"
+import { OpenAPI } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,
@@ -43,10 +46,17 @@ declare global {
   }
 }
 
+const loginSearchSchema = z.object({
+  device_code: z.string().optional(),
+})
+
 export const Route = createFileRoute("/login")({
   component: Login,
-  beforeLoad: async () => {
-    if (isLoggedIn()) {
+  validateSearch: loginSearchSchema,
+  beforeLoad: async ({ search }) => {
+    // If device_code is present and user is already logged in,
+    // don't redirect — let the component approve the device code first
+    if (isLoggedIn() && !(search as { device_code?: string }).device_code) {
       throw redirect({
         to: "/",
       })
@@ -61,19 +71,63 @@ export const Route = createFileRoute("/login")({
   }),
 })
 
+async function approveDeviceCode(deviceCode: string): Promise<boolean> {
+  try {
+    const token =
+      typeof OpenAPI.TOKEN === "function"
+        ? await (OpenAPI.TOKEN as (options: object) => Promise<string>)({})
+        : (OpenAPI.TOKEN as string)
+    const resp = await fetch(
+      `${OpenAPI.BASE}/api/v1/desktop-client/auth/approve`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ device_code: deviceCode }),
+      },
+    )
+    return resp.ok
+  } catch {
+    return false
+  }
+}
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as
   | string
   | undefined
 
 function Login() {
-  const { loginMutation, googleLoginMutation } = useAuth()
+  const { device_code: deviceCode } = useSearch({ from: "/login" })
+  const [deviceApproved, setDeviceApproved] = useState(false)
+  const { loginMutation, googleLoginMutation } = useAuth({
+    onLoginSuccess: deviceCode
+      ? async () => {
+          await approveDeviceCode(deviceCode)
+          setDeviceApproved(true)
+          return true // prevent navigate to "/"
+        }
+      : undefined,
+  })
   const { t } = useTranslation(["auth", "validation"])
+  const navigate = useNavigate()
   const googleButtonRef = useRef<HTMLDivElement>(null)
   const mutationRef = useRef(googleLoginMutation)
   mutationRef.current = googleLoginMutation
 
+  // If user is already logged in and device_code is present, approve immediately
+  useEffect(() => {
+    if (!deviceCode || !isLoggedIn() || deviceApproved) return
+    approveDeviceCode(deviceCode).then((ok) => {
+      if (ok) setDeviceApproved(true)
+    })
+  }, [deviceCode, deviceApproved])
+
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return
+    // Skip Google button setup on the success screen — the DOM node won't exist.
+    if (deviceApproved) return
 
     const init = () => {
       if (!window.google || !googleButtonRef.current) return
@@ -101,7 +155,7 @@ function Login() {
       script?.addEventListener("load", init)
       return () => script?.removeEventListener("load", init)
     }
-  }, [])
+  }, [deviceApproved])
 
   const formSchema = useMemo(
     () =>
@@ -134,6 +188,48 @@ function Login() {
     loginMutation.mutate(data)
   }
 
+  // Show success screen after device code approval.
+  // IMPORTANT: Must be rendered AFTER all hooks above — an early return before
+  // hooks would violate the Rules of Hooks and crash on re-render.
+  if (deviceApproved) {
+    return (
+      <AuthLayout>
+        <div className="flex flex-col items-center gap-4 text-center py-8">
+          <div className="rounded-full bg-green-100 p-3 dark:bg-green-900">
+            <svg
+              className="h-8 w-8 text-green-600 dark:text-green-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold">
+            {t("auth:deviceApprovalSuccess.title", { defaultValue: "授權成功" })}
+          </h2>
+          <p className="text-muted-foreground">
+            {t("auth:deviceApprovalSuccess.description", {
+              defaultValue: "桌面連線工具已授權，你可以關閉此頁面。",
+            })}
+          </p>
+          <button
+            type="button"
+            className="mt-4 text-sm text-muted-foreground underline"
+            onClick={() => navigate({ to: "/" })}
+          >
+            {t("auth:deviceApprovalSuccess.goHome", { defaultValue: "前往主頁" })}
+          </button>
+        </div>
+      </AuthLayout>
+    )
+  }
+
   return (
     <AuthLayout>
       <Form {...form}>
@@ -144,6 +240,12 @@ function Login() {
           <div className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-2xl font-bold">{t("auth:login.title")}</h1>
           </div>
+
+          {deviceCode && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+              請登入以授權桌面連線工具
+            </div>
+          )}
 
           <div className="grid gap-4">
             <FormField

@@ -8,6 +8,7 @@ from app.api.routes import (
     audit_logs,
     batch_provision,
     cloudflare,
+    desktop_client,
     firewall,
     gateway,
     groups,
@@ -19,8 +20,10 @@ from app.api.routes import (
     resource_details,
     resources,
     reverse_proxy,
+    rubric,
     script_deploy,
     spec_change_requests,
+    tunnel,
     users,
     utils,
     vm,
@@ -52,6 +55,9 @@ api_router.include_router(firewall.router)
 api_router.include_router(reverse_proxy.router)
 api_router.include_router(gateway.router)
 api_router.include_router(script_deploy.router)
+api_router.include_router(rubric.router)
+api_router.include_router(tunnel.router)
+api_router.include_router(desktop_client.router)
 
 
 if settings.ENVIRONMENT == "local":

@@ -1472,6 +1472,39 @@ export const GroupMemberPublicSchema = {
                 }
             ],
             title: 'Added At'
+        },
+        vmid: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vmid'
+        },
+        vm_status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vm Status'
+        },
+        vm_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vm Type'
         }
     },
     type: 'object',

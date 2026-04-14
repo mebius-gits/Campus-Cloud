@@ -1,4 +1,4 @@
-"""群組批量建立資源 API"""
+"""Batch provisioning APIs for group-owned VM/LXC creation jobs."""
 
 import logging
 import uuid
@@ -6,25 +6,23 @@ from datetime import date, datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+from sqlmodel import select
 
-from app.api.deps import AdminUser, SessionDep
+from app.api.deps import InstructorUser, SessionDep
+from app.core.authorizers import require_group_access
 from app.exceptions import BadRequestError, NotFoundError
+from app.models import User
 from app.repositories import batch_provision as bp_repo
 from app.repositories import group as group_repo
 from app.services.vm import batch_provision_service
-from app.models import User
-from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/batch-provision", tags=["batch-provision"])
 
 
-# ─── Request / Response Schemas ───────────────────────────────────────────────
-
-
 class BatchProvisionRequest(BaseModel):
-    """批量建立參數（與 ResourceCreatePage 表單對應）"""
+    """Payload used to create one batch provisioning job."""
 
     resource_type: str = Field(..., pattern="^(lxc|qemu)$")
     hostname_prefix: str = Field(
@@ -35,15 +33,13 @@ class BatchProvisionRequest(BaseModel):
     password: str = Field(..., min_length=6)
     cores: int = Field(2, ge=1, le=32)
     memory: int = Field(2048, ge=128, le=65536)
-    environment_type: str = Field(default="批量建立")
+    environment_type: str = Field(default="批次部署")
     os_info: str | None = None
     expiry_date: date | None = None
 
-    # LXC 欄位
     ostemplate: str | None = None
     rootfs_size: int | None = Field(default=8, ge=1, le=1000)
 
-    # VM 欄位
     template_id: int | None = None
     username: str | None = None
     disk_size: int | None = Field(default=20, ge=10, le=1000)
@@ -76,46 +72,54 @@ class BatchProvisionJobPublic(BaseModel):
     tasks: list[BatchProvisionTaskPublic]
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-
 def _validate_request(body: BatchProvisionRequest) -> None:
     if body.resource_type == "lxc":
         if not body.ostemplate:
-            raise BadRequestError("LXC 建立需要指定 ostemplate")
-    else:
-        if not body.template_id:
-            raise BadRequestError("VM 建立需要指定 template_id")
-        if not body.username:
-            raise BadRequestError("VM 建立需要指定 username")
+            raise BadRequestError("LXC batch provision requires ostemplate")
+        return
+
+    if not body.template_id:
+        raise BadRequestError("VM batch provision requires template_id")
+    if not body.username:
+        raise BadRequestError("VM batch provision requires username")
 
 
-def _build_job_public(session, job) -> BatchProvisionJobPublic:
+def _require_group_job_access(
+    *,
+    session: SessionDep,
+    current_user,
+    group_id: uuid.UUID,
+):
+    db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
+    if not db_group:
+        raise NotFoundError("Group not found")
+    require_group_access(current_user, db_group.owner_id)
+    return db_group
+
+
+def _build_job_public(session: SessionDep, job) -> BatchProvisionJobPublic:
     tasks = bp_repo.get_job_tasks(session=session, job_id=job.id)
 
-    # 一次查出所有涉及的 user
-    user_ids = [t.user_id for t in tasks]
+    user_ids = [task.user_id for task in tasks]
     users: dict[uuid.UUID, User] = {}
     if user_ids:
-        results = session.exec(
-            select(User).where(User.id.in_(user_ids))
-        ).all()
-        users = {u.id: u for u in results}
+        rows = session.exec(select(User).where(User.id.in_(user_ids))).all()
+        users = {user.id: user for user in rows}
 
     task_publics = [
         BatchProvisionTaskPublic(
-            id=t.id,
-            user_id=t.user_id,
-            user_email=users[t.user_id].email if t.user_id in users else None,
-            user_name=users[t.user_id].full_name if t.user_id in users else None,
-            member_index=t.member_index,
-            vmid=t.vmid,
-            status=t.status,
-            error=t.error,
-            started_at=t.started_at,
-            finished_at=t.finished_at,
+            id=task.id,
+            user_id=task.user_id,
+            user_email=users[task.user_id].email if task.user_id in users else None,
+            user_name=users[task.user_id].full_name if task.user_id in users else None,
+            member_index=task.member_index,
+            vmid=task.vmid,
+            status=task.status,
+            error=task.error,
+            started_at=task.started_at,
+            finished_at=task.finished_at,
         )
-        for t in tasks
+        for task in tasks
     ]
 
     return BatchProvisionJobPublic(
@@ -133,32 +137,24 @@ def _build_job_public(session, job) -> BatchProvisionJobPublic:
     )
 
 
-# ─── Endpoints ────────────────────────────────────────────────────────────────
-
-
 @router.post("/{group_id}", response_model=BatchProvisionJobPublic)
 def start_batch_provision(
     group_id: uuid.UUID,
     body: BatchProvisionRequest,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ) -> BatchProvisionJobPublic:
-    """
-    為群組所有成員批量建立資源（LXC 或 VM）。
-    建立後立即回傳，實際建立在背景逐一排隊執行。
-    """
     _validate_request(body)
+    _require_group_job_access(
+        session=session,
+        current_user=current_user,
+        group_id=group_id,
+    )
 
-    db_group = group_repo.get_group_by_id(session=session, group_id=group_id)
-    if not db_group:
-        raise NotFoundError("群組不存在")
-
-    # 序列化參數（排除 resource_type 和 hostname_prefix，service 自己組）
     params = body.model_dump(
         exclude={"resource_type", "hostname_prefix"},
         exclude_none=False,
     )
-    # 將 date 轉為 ISO string，方便 JSON 序列化
     if params.get("expiry_date"):
         params["expiry_date"] = params["expiry_date"].isoformat()
 
@@ -172,6 +168,8 @@ def start_batch_provision(
     )
 
     job = bp_repo.get_job(session=session, job_id=job_id)
+    if not job:
+        raise NotFoundError("Batch provision job not found")
     return _build_job_public(session, job)
 
 
@@ -179,12 +177,16 @@ def start_batch_provision(
 def get_batch_status(
     job_id: uuid.UUID,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ) -> BatchProvisionJobPublic:
-    """輪詢批量建立工作的進度。"""
     job = bp_repo.get_job(session=session, job_id=job_id)
     if not job:
-        raise NotFoundError("批量工作不存在")
+        raise NotFoundError("Batch provision job not found")
+    _require_group_job_access(
+        session=session,
+        current_user=current_user,
+        group_id=job.group_id,
+    )
     return _build_job_public(session, job)
 
 
@@ -192,8 +194,12 @@ def get_batch_status(
 def list_group_jobs(
     group_id: uuid.UUID,
     session: SessionDep,
-    current_user: AdminUser,
+    current_user: InstructorUser,
 ) -> list[BatchProvisionJobPublic]:
-    """列出某群組的所有批量建立紀錄（最新在前）。"""
+    _require_group_job_access(
+        session=session,
+        current_user=current_user,
+        group_id=group_id,
+    )
     jobs = bp_repo.list_jobs_by_group(session=session, group_id=group_id)
-    return [_build_job_public(session, j) for j in jobs]
+    return [_build_job_public(session, job) for job in jobs]

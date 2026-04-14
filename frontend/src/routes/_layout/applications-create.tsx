@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { ApplicationRequestPage } from "@/components/Applications/ApplicationRequestPage"
-import { requireStudentUser } from "@/features/auth/guards"
+import { requireApplicationUser } from "@/features/auth/guards"
 
 export const Route = createFileRoute("/_layout/applications-create")({
   component: ApplicationsCreateRoute,
-  beforeLoad: () => requireStudentUser({ redirectTo: "/applications" }),
+  beforeLoad: () => requireApplicationUser({ redirectTo: "/applications" }),
   head: () => ({
     meta: [
       {

@@ -413,6 +413,9 @@ export type GroupMemberPublic = {
     email: string;
     full_name?: (string | null);
     added_at?: (string | null);
+    vmid?: (number | null);
+    vm_status?: (string | null);
+    vm_type?: (string | null);
 };
 
 /**

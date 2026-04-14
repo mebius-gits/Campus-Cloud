@@ -21,11 +21,12 @@ logger = logging.getLogger(__name__)
 # Shared helpers
 # ──────────────────────────────────────────────────────────────
 
+
 def _strip_think_tags(text: str) -> str:
     """Keep only content after </think>; return text as-is if tag absent."""
     marker = "</think>"
     idx = text.find(marker)
-    return text[idx + len(marker):].strip() if idx != -1 else text.strip()
+    return text[idx + len(marker) :].strip() if idx != -1 else text.strip()
 
 
 def _apply_thinking_control(payload: dict[str, Any]) -> dict[str, Any]:
@@ -84,15 +85,19 @@ def _normalize_rubric_items(raw_items: Any) -> list[RubricItem]:
         detection_method = raw.get("detection_method") or raw.get("detection")
         fallback = raw.get("fallback") or raw.get("suggestion")
 
-        normalized.append(RubricItem(
-            id=item_id,
-            title=title,
-            description=description,
-            max_score=max_score,
-            detectable=detectable,
-            detection_method=str(detection_method) if detection_method is not None else None,
-            fallback=str(fallback) if fallback is not None else None,
-        ))
+        normalized.append(
+            RubricItem(
+                id=item_id,
+                title=title,
+                description=description,
+                max_score=max_score,
+                detectable=detectable,
+                detection_method=str(detection_method)
+                if detection_method is not None
+                else None,
+                fallback=str(fallback) if fallback is not None else None,
+            )
+        )
 
     return normalized
 
@@ -111,20 +116,22 @@ def _extract_context_item_count(rubric_context: str) -> int:
     return len(items) if isinstance(items, list) else 0
 
 
-async def _call_vllm(payload: dict[str, Any], timeout: float = 60.0) -> tuple[str, dict]:
+async def _call_vllm(
+    payload: dict[str, Any], timeout: float = 60.0
+) -> tuple[str, dict]:
     """Call vLLM chat/completions and return (content, usage_metrics)."""
     from app.core.dependencies import get_http_client
-    
+
     url = f"{settings.vllm_base_url}/chat/completions"
     started = perf_counter()
-    
+
     logger.debug(f"Calling vLLM API: {url}")
-    
+
     try:
         client = get_http_client()
         resp = await client.post(
-            url, 
-            json=payload, 
+            url,
+            json=payload,
             headers=_vllm_headers(),
             timeout=timeout,
         )
@@ -135,10 +142,14 @@ async def _call_vllm(payload: dict[str, Any], timeout: float = 60.0) -> tuple[st
         usage = data.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
-        total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+        total_tokens = int(
+            usage.get("total_tokens") or (prompt_tokens + completion_tokens)
+        )
         tps = (completion_tokens / elapsed) if elapsed > 0 else 0.0
 
-        logger.info(f"vLLM call successful: {total_tokens} tokens in {elapsed:.2f}s ({tps:.1f} t/s)")
+        logger.info(
+            f"vLLM call successful: {total_tokens} tokens in {elapsed:.2f}s ({tps:.1f} t/s)"
+        )
 
         content = data["choices"][0]["message"]["content"] or ""
         content = _strip_think_tags(content)
@@ -152,11 +163,15 @@ async def _call_vllm(payload: dict[str, Any], timeout: float = 60.0) -> tuple[st
         return content, metrics
     except httpx.TimeoutException as exc:
         logger.error(f"vLLM API timeout after {timeout}s")
-        raise HTTPException(status_code=504, detail="AI 服務回應超時，請稍後再試。") from exc
+        raise HTTPException(
+            status_code=504, detail="AI 服務回應超時，請稍後再試。"
+        ) from exc
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         logger.error(f"vLLM API returned status {status}")
-        raise HTTPException(status_code=502, detail=f"AI 服務異常（狀態碼 {status}）") from exc
+        raise HTTPException(
+            status_code=502, detail=f"AI 服務異常（狀態碼 {status}）"
+        ) from exc
     except Exception as exc:
         logger.error(f"vLLM API call failed: {exc}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"AI 呼叫失敗：{exc}") from exc
@@ -224,20 +239,22 @@ async def analyze_rubric(raw_text: str) -> tuple[RubricAnalysis, dict]:
         raise HTTPException(status_code=503, detail="VLLM_MODEL_NAME 未設定。")
 
     logger.info(f"Starting rubric analysis, text length: {len(raw_text)} characters")
-    
+
     user_content = f"# 評分表原文\n\n{raw_text}"
 
-    payload = _apply_thinking_control({
-        "model": settings.vllm_model_name,
-        "messages": [
-            {"role": "system", "content": _ANALYZE_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "max_tokens": settings.vllm_max_tokens,
-        "temperature": 0.2,
-        "top_p": settings.vllm_top_p,
-        "response_format": {"type": "json_object"},
-    })
+    payload = _apply_thinking_control(
+        {
+            "model": settings.vllm_model_name,
+            "messages": [
+                {"role": "system", "content": _ANALYZE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            "max_tokens": settings.vllm_max_tokens,
+            "temperature": 0.2,
+            "top_p": settings.vllm_top_p,
+            "response_format": {"type": "json_object"},
+        }
+    )
 
     content, metrics = await _call_vllm(payload, timeout=float(settings.vllm_timeout))
 
@@ -245,7 +262,9 @@ async def analyze_rubric(raw_text: str) -> tuple[RubricAnalysis, dict]:
         data = json.loads(content)
     except json.JSONDecodeError as exc:
         logger.error(f"Failed to parse AI response as JSON: {exc}")
-        raise HTTPException(status_code=502, detail=f"AI 回傳 JSON 解析失敗：{exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"AI 回傳 JSON 解析失敗：{exc}"
+        ) from exc
 
     # 使用統一的正規化函數處理 AI 回傳的項目
     items_raw = data.get("items") or []
@@ -256,7 +275,9 @@ async def analyze_rubric(raw_text: str) -> tuple[RubricAnalysis, dict]:
     partial_count = sum(1 for item in items if item.detectable == "partial")
     manual_count = sum(1 for item in items if item.detectable == "manual")
 
-    logger.info(f"Analysis complete: {len(items)} items, {total_score} total points (auto: {auto_count}, partial: {partial_count}, manual: {manual_count})")
+    logger.info(
+        f"Analysis complete: {len(items)} items, {total_score} total points (auto: {auto_count}, partial: {partial_count}, manual: {manual_count})"
+    )
 
     analysis = RubricAnalysis(
         items=items,
@@ -304,7 +325,13 @@ _CHAT_SYSTEM_TEMPLATE = """
 - 想像你是老師的教學助理，用「我」稱呼自己，用「你」或「您」稱呼老師（視語境自然選擇）。
 - 避免過度正式的用語（例如「依據分析」「經判斷」），改用自然對話（例如「我看了一下」「這個的話」）。
 - 不得提到技術欄位名稱（id、detectable、detection_method、fallback 等）。
-- 不得在 reply 中重新列出所有項目，只說明變動的部分。
+- 不得在 reply 中重新列出所有項目或逐項說明修改細節。
+
+## 精簡回覆原則（極為重要）
+- 當執行修改時，只需**簡短總結**變更結果，不要逐一列出每個欄位的前後差異。
+- 修改應在背景靜默完成，回覆只需告知老師「做了什麼」和「結果如何」。
+- 好的回覆範例：「好的，已幫你調整了 3 個項目的偵測方式，配分也一併更新了。」
+- 不好的回覆範例：「已修改如下：第 1 項：標題從 X 改為 Y，配分從 5 改為 10，偵測方式從...改為...；第 2 項：...」
 
 ## 語氣示範
 ❌ 不好：「經分析，該項目不符合自動偵測條件，建議歸類為手動評閱。」
@@ -425,12 +452,11 @@ _SITUATION_REFINE = """
 **當你不確定是否該修改時，保持原樣。**
 只修正明顯的錯誤（矛盾、空白、語病），不做「美化」或「風格統一」的過度編輯。
 
-## 回覆要求
-在 reply 中清楚列出你做了哪些調整，分類說明：
-- 更正了 X 個可偵測性矛盾的項目（說明是哪幾項）
-- 補齊了 Y 個空白的檢查方式或替代建議
-- 潤飾了 Z 個說明文字過於簡略的項目
-- 如果沒有需要調整的地方，請說「檢查完畢，評分表目前狀態良好，沒有需要調整的地方」
+## 回覆要求（精簡總結，不列細節）
+- 只需**一句話總結**你做了哪些調整（例如「審核完畢，共調整了 X 個項目的偵測判斷，並補齊了 Y 處空白欄位。」）。
+- 如果有特別重要的矛盾或需要老師留意的地方，可簡短提及，但不要逐項列出所有修改。
+- 如果沒有需要調整的地方，簡短說明「檢查完畢，評分表目前狀態良好。」
+- 修改在背景完成即可，老師可以直接在表單上看到變更結果。
 """.strip()
 
 
@@ -452,8 +478,9 @@ async def chat_with_rubric(
     context_item_count = _extract_context_item_count(rubric_context)
     situation = _SITUATION_REFINE if is_refine else _SITUATION_NORMAL
     system_prompt = (
-        _CHAT_SYSTEM_TEMPLATE
-        .replace("{rubric_context}", rubric_context or "（尚未上傳評分表）")
+        _CHAT_SYSTEM_TEMPLATE.replace(
+            "{rubric_context}", rubric_context or "（尚未上傳評分表）"
+        )
         .replace("{rubric_item_count}", str(context_item_count))
         .replace("{situation_instruction}", situation)
     )
@@ -462,16 +489,18 @@ async def chat_with_rubric(
     for msg in messages:
         formatted.append({"role": msg.role, "content": msg.content})
 
-    payload = _apply_thinking_control({
-        "model": settings.vllm_model_name,
-        "messages": formatted,
-        "max_tokens": settings.vllm_chat_max_tokens,
-        "temperature": settings.vllm_chat_temperature,
-        "top_p": settings.vllm_top_p,
-        "top_k": settings.vllm_top_k,
-        "repetition_penalty": settings.vllm_repetition_penalty,
-        "response_format": {"type": "json_object"},
-    })
+    payload = _apply_thinking_control(
+        {
+            "model": settings.vllm_model_name,
+            "messages": formatted,
+            "max_tokens": settings.vllm_chat_max_tokens,
+            "temperature": settings.vllm_chat_temperature,
+            "top_p": settings.vllm_top_p,
+            "top_k": settings.vllm_top_k,
+            "repetition_penalty": settings.vllm_repetition_penalty,
+            "response_format": {"type": "json_object"},
+        }
+    )
 
     content, metrics = await _call_vllm(payload, timeout=float(settings.vllm_timeout))
 
@@ -491,6 +520,7 @@ async def chat_with_rubric(
                 # 如果項目數減少超過 1 個，且不是精煉模式（精煉模式不應該刪除項目）
                 if updated_count < context_item_count - 1:
                     import logging
+
                     logger = logging.getLogger("rubric_service")
                     logger.warning(
                         f"⚠️ AI 返回的項目數異常：期望至少 {context_item_count - 1} 個，"
@@ -521,8 +551,8 @@ _DETECTABLE_LABELS = {
 }
 
 _DETECTABLE_COLORS = {
-    "auto": "D8F5E1",    # 綠
-    "partial": "FFF3CD", # 黃
+    "auto": "D8F5E1",  # 綠
+    "partial": "FFF3CD",  # 黃
     "manual": "FDDEDE",  # 紅
 }
 
@@ -540,8 +570,13 @@ def export_to_excel(items: list[RubricItem], summary: str = "") -> bytes:
     # ── Header ──
     header_font = Font(bold=True, size=11)
     headers = [
-        "項目編號", "評分項目", "說明",
-        "配分", "可偵測性", "自動偵測方式", "替代建議",
+        "項目編號",
+        "評分項目",
+        "說明",
+        "配分",
+        "可偵測性",
+        "自動偵測方式",
+        "替代建議",
     ]
     col_widths = [10, 25, 40, 8, 18, 35, 35]
 
@@ -549,7 +584,9 @@ def export_to_excel(items: list[RubricItem], summary: str = "") -> bytes:
         cell = ws.cell(row=1, column=col_idx, value=h)
         cell.font = header_font
         cell.fill = PatternFill("solid", fgColor="D0D0D0")
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
         ws.column_dimensions[get_column_letter(col_idx)].width = w
 
     ws.row_dimensions[1].height = 22
@@ -582,8 +619,10 @@ def export_to_excel(items: list[RubricItem], summary: str = "") -> bytes:
         ws.cell(row=last_row, column=1, value="備註").font = Font(bold=True)
         summary_cell = ws.cell(row=last_row, column=2, value=summary)
         ws.merge_cells(
-            start_row=last_row, start_column=2,
-            end_row=last_row, end_column=len(headers),
+            start_row=last_row,
+            start_column=2,
+            end_row=last_row,
+            end_column=len(headers),
         )
         summary_cell.alignment = Alignment(wrap_text=True, vertical="top")
         ws.row_dimensions[last_row].height = 60

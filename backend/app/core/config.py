@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
     FRONTEND_HOST: str = "http://localhost:5173"
+    # Public base URL of the backend API as seen by desktop clients.
+    # Defaults to http://localhost:8000 when unset (override in .env for deploys).
+    DESKTOP_CLIENT_BACKEND_URL: str = "http://localhost:8000"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
     BACKEND_CORS_ORIGINS: Annotated[
@@ -95,6 +98,12 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
 
     GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+
+    # frp tunnel settings
+    FRP_SERVER_ADDR: str = ""   # public IP/domain that desktop clients connect to
+    FRP_SERVER_PORT: int = 7000
+    FRP_TOKEN: str = ""
 
     PROXMOX_HOST: str = "localhost"
     PROXMOX_USER: str = ""
@@ -104,6 +113,24 @@ class Settings(BaseSettings):
     PROXMOX_DATA_STORAGE: str = "local-lvm"
     PROXMOX_API_TIMEOUT: int = 30  # API request timeout in seconds
     PROXMOX_TASK_CHECK_INTERVAL: int = 1  # Seconds between task status checks
+
+    TRAEFIK_API_BASE_URL: str = "http://127.0.0.1:8080"
+    TRAEFIK_API_TIMEOUT: int = 10
+
+    # vLLM settings for AI Teacher Judge
+    TEMPLATE_RECOMMENDATION_VLLM_BASE_URL: str = "http://localhost:8000/v1"
+    TEMPLATE_RECOMMENDATION_VLLM_API_KEY: str = "vllm-secret-key-change-me"
+    TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME: str = ""
+    TEMPLATE_RECOMMENDATION_VLLM_ENABLE_THINKING: bool = False
+    TEMPLATE_RECOMMENDATION_VLLM_TIMEOUT: int = 60
+    TEMPLATE_RECOMMENDATION_VLLM_TEMPERATURE: float = 0.2
+    TEMPLATE_RECOMMENDATION_VLLM_CHAT_TEMPERATURE: float = 0.7
+    TEMPLATE_RECOMMENDATION_VLLM_TOP_P: float = 0.95
+    TEMPLATE_RECOMMENDATION_VLLM_TOP_K: int = 20
+    TEMPLATE_RECOMMENDATION_VLLM_MAX_TOKENS: int = 8192
+    TEMPLATE_RECOMMENDATION_VLLM_CHAT_MAX_TOKENS: int = 4096
+    TEMPLATE_RECOMMENDATION_VLLM_REPETITION_PENALTY: float = 1.0
+    TEMPLATE_RECOMMENDATION_VLLM_MAX_UPLOAD_SIZE_MB: int = 10
 
     TRAEFIK_API_BASE_URL: str = "http://127.0.0.1:8080"
     TRAEFIK_API_TIMEOUT: int = 10
