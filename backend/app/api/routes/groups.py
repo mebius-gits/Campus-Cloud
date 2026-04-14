@@ -4,6 +4,8 @@ import csv
 import io
 import logging
 import secrets
+import threading
+import time
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,11 @@ from app.utils import generate_new_account_email, send_email
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
+_GROUP_RESOURCES_CACHE_TTL_SECONDS = 8.0
+_group_resources_cache_lock = threading.Lock()
+_group_resources_cache_data: list[dict] | None = None
+_group_resources_cache_monotonic = 0.0
+
 
 def _check_group_access(current_user, db_group) -> None:
     """確認使用者是群組擁有者或 admin，否則拋出例外"""
@@ -55,6 +62,27 @@ def _safe_usage_pct(used: object, total: object) -> float | None:
 
     pct = max(0.0, min((used_value / total_value) * 100, 100.0))
     return round(pct, 1)
+
+
+def _get_cached_group_resources() -> list[dict]:
+    """回傳群組 VM 查詢所需的 Proxmox 資源列表（短 TTL 快取）。"""
+    global _group_resources_cache_data, _group_resources_cache_monotonic
+
+    now = time.monotonic()
+    with _group_resources_cache_lock:
+        if (
+            _group_resources_cache_data is not None
+            and now - _group_resources_cache_monotonic
+            < _GROUP_RESOURCES_CACHE_TTL_SECONDS
+        ):
+            return list(_group_resources_cache_data)
+
+    resources = proxmox_ops.list_all_resources()
+
+    with _group_resources_cache_lock:
+        _group_resources_cache_data = list(resources)
+        _group_resources_cache_monotonic = time.monotonic()
+        return list(_group_resources_cache_data)
 
 
 @router.post("/", response_model=GroupPublic)
@@ -137,7 +165,7 @@ def get_group(
     if vmids_to_check:
         try:
             vmid_set = set(vmids_to_check)
-            all_resources = proxmox_ops.list_all_resources()
+            all_resources = _get_cached_group_resources()
             for r in all_resources:
                 raw_vmid = r.get("vmid")
                 try:
