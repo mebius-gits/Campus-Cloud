@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -74,9 +75,28 @@ func (m *Manager) Start(config *api.TunnelConfig) error {
 	// Ensure frpc binary exists
 	frpcPath := filepath.Join(m.dataDir, frpcBinaryName())
 	if _, err := os.Stat(frpcPath); os.IsNotExist(err) {
+		// Before downloading, try to add a Windows Defender exclusion for
+		// the frpc-data folder (Windows only, no-op elsewhere). This avoids
+		// the download being quarantined. Errors are non-fatal — we still try.
+		if err := ensureDefenderExclusion(m.dataDir); err != nil {
+			log.Printf("Defender 排除加入失敗（將嘗試直接下載）: %v", err)
+		}
+
 		m.status.Error = "正在下載 frpc..."
 		if err := downloadFrpc(frpcPath); err != nil {
-			m.status.Error = "下載 frpc 失敗: " + err.Error()
+			// If the download was blocked by AV, show actionable guidance
+			// including the exact path the user needs to exclude.
+			errMsg := err.Error()
+			if strings.Contains(strings.ToLower(errMsg), "virus") ||
+				strings.Contains(strings.ToLower(errMsg), "unwanted software") {
+				errMsg = fmt.Sprintf(
+					"下載被防毒軟體攔截。請以系統管理員身分開啟 PowerShell 並執行：\n\n"+
+						"Add-MpPreference -ExclusionPath '%s'\n\n"+
+						"執行後再試一次。",
+					m.dataDir,
+				)
+			}
+			m.status.Error = "下載 frpc 失敗: " + errMsg
 			return fmt.Errorf("download frpc: %w", err)
 		}
 	}
