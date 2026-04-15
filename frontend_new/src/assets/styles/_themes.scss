@@ -18,15 +18,15 @@
   --color-sidebar-glass-border: rgba(255, 255, 255, 0.35);
 
   /* ----- Brand ----- */
-  --color-primary: #435a95;
+  --color-primary: #5471bf;
   --color-primary-dark: #324775;
   --color-primary-light: #6a7fb3;
   --color-accent-yellow: #f5c842;
 
   /* ----- Text ----- */
-  --color-text: #435a95;
-  --color-text-secondary: #7a8aa8;
-  --color-text-muted: #a0adc4;
+  --color-text: #5471bf;
+  --color-text-secondary: #617dc8;
+  --color-text-muted: #8291aa;
   --color-text-on-primary: #ffffff;
 
   /* ----- Borders & dividers ----- */
@@ -34,7 +34,7 @@
   --color-divider: #eef2f9;
 
   /* ----- Interactive ----- */
-  --color-hover: #eef2fb;
+  --color-hover: #dee6f6;
   --color-overlay: rgba(20, 30, 60, 0.25);
 
   /* ----- Status ----- */
@@ -67,8 +67,8 @@ body.dark {
   --color-sidebar-glass-border: rgba(255, 255, 255, 0.06);
 
   /* ----- Brand ----- */
-  --color-primary: #6a8cd5;
-  --color-primary-dark: #587bc2;
+  --color-primary: #4361a2;
+  --color-primary-dark: rgb(47, 78, 140);
   --color-primary-light: #89a5e0;
   --color-accent-yellow: #e8b93a;
 

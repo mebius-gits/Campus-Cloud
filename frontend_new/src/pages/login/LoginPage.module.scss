@@ -3,10 +3,10 @@
   min-height: 100vh;
   min-height: 100dvh;
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  padding: $spacing-md;
+  padding: $spacing-16;
 
   @include respond-to(sm) {
-    padding: $spacing-xl;
+    padding: $spacing-32;
   }
 }
 
@@ -14,61 +14,61 @@
   width: 100%;
   max-width: 420px;
   background: var(--color-surface);
-  border-radius: $radius-base;
+  border-radius: $radius-16;
   box-shadow: var(--shadow-lg);
-  padding: $spacing-lg $spacing-md;
+  padding: $spacing-24 $spacing-16;
   text-align: center;
 
   @include respond-to(sm) {
-    padding: $spacing-2xl $spacing-xl;
+    padding: $spacing-48 $spacing-32;
   }
 }
 
 .title {
-  font-size: $font-size-xl;
+  font-size: $font-size-24;
   color: var(--color-primary);
-  margin-bottom: $spacing-xs;
+  margin-bottom: $spacing-4;
 
   @include respond-to(sm) {
-    font-size: $font-size-2xl;
+    font-size: $font-size-32;
   }
 }
 
 .subtitle {
-  font-size: $font-size-sm;
+  font-size: $font-size-14;
   color: var(--color-text-secondary);
-  margin-bottom: $spacing-lg;
+  margin-bottom: $spacing-24;
 
   @include respond-to(sm) {
-    margin-bottom: $spacing-xl;
+    margin-bottom: $spacing-32;
   }
 }
 
 .form {
   @include flex-column;
-  gap: $spacing-sm;
+  gap: $spacing-8;
 
   @include respond-to(sm) {
-    gap: $spacing-md;
+    gap: $spacing-16;
   }
 }
 
 .field {
   @include flex-column;
-  gap: $spacing-xs;
+  gap: $spacing-4;
   text-align: left;
 
   label {
-    font-size: $font-size-sm;
-    font-weight: $font-weight-medium;
+    font-size: $font-size-14;
+    font-weight: $font-weight-500;
     color: var(--color-text);
   }
 
   input {
     width: 100%;
-    padding: $spacing-sm $spacing-md;
+    padding: $spacing-8 $spacing-16;
     border: 1px solid var(--color-border);
-    border-radius: $radius-sm;
+    border-radius: $radius-8;
     font-size: 16px;
     background: var(--color-surface);
     color: var(--color-text);
@@ -84,20 +84,20 @@
     }
 
     @include respond-to(sm) {
-      font-size: $font-size-base;
+      font-size: $font-size-16;
     }
   }
 }
 
 .btn {
   width: 100%;
-  padding: 10px $spacing-md;
-  margin-top: $spacing-sm;
+  padding: 10px $spacing-16;
+  margin-top: $spacing-8;
   background: var(--color-primary);
   color: var(--color-text-on-primary);
-  font-size: $font-size-base;
-  font-weight: $font-weight-medium;
-  border-radius: $radius-sm;
+  font-size: $font-size-16;
+  font-weight: $font-weight-500;
+  border-radius: $radius-8;
   transition: background $transition-base;
 
   &:hover {

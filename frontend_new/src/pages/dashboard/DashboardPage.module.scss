@@ -3,10 +3,10 @@
   flex: 1;
   @include flex-column;
   position: relative;
-  padding-top: 60px; // 手機版留漢堡按鈕空間
+  padding: $spacing-8 $spacing-16;
 
   @include respond-to(md) {
-    padding-top: 0;
+    padding: 0;
   }
 }
 
@@ -18,26 +18,21 @@
 }
 
 .greeting {
-  font-size: $font-size-xl;
-  font-weight: $font-weight-bold;
+  font-size: $font-size-24;
+  font-weight: $font-weight-700;
   color: var(--color-text);
-  margin-bottom: $spacing-xs;
+  margin-bottom: $spacing-4;
 
   @include respond-to(sm) {
-    font-size: $font-size-2xl;
+    font-size: $font-size-32;
   }
 }
 
-.emoji {
-  font-style: normal;
-  margin-left: $spacing-xs;
-}
-
 .subtitle {
-  font-size: $font-size-sm;
+  font-size: $font-size-14;
   color: var(--color-text-secondary);
 
   @include respond-to(sm) {
-    font-size: $font-size-base;
+    font-size: $font-size-16;
   }
 }

@@ -5,26 +5,26 @@
 
 /* ----- Typography ----- */
 $font-family-base: "Noto Sans TC", "Helvetica Neue", Arial, sans-serif;
-$font-size-base: 16px;
-$font-size-sm: 14px;
-$font-size-xs: 12px;
-$font-size-lg: 18px;
-$font-size-xl: 24px;
-$font-size-2xl: 32px;
+$font-size-12: 12px;
+$font-size-14: 14px;
+$font-size-16: 16px;
+$font-size-18: 18px;
+$font-size-24: 24px;
+$font-size-32: 32px;
 
-$font-weight-normal: 400;
-$font-weight-medium: 500;
-$font-weight-bold: 700;
+$font-weight-400: 400;
+$font-weight-500: 500;
+$font-weight-700: 700;
 
 $line-height-base: 1.6;
 
 /* ----- Spacing ----- */
-$spacing-xs: 4px;
-$spacing-sm: 8px;
-$spacing-md: 16px;
-$spacing-lg: 24px;
-$spacing-xl: 32px;
-$spacing-2xl: 48px;
+$spacing-4:  4px;
+$spacing-8:  8px;
+$spacing-16: 16px;
+$spacing-24: 24px;
+$spacing-32: 32px;
+$spacing-48: 48px;
 
 /* ----- Breakpoints ----- */
 $breakpoint-sm: 576px;
@@ -40,10 +40,12 @@ $content-padding: 40px;
 $container-max-width: 1200px;
 
 /* ----- Shape ----- */
-$radius-base: 16px;       // 全域圓角
-$radius-sm: 8px;
+$radius-16: 16px;
+$radius-12: 12px;
+$radius-8:   8px;
 $radius-pill: 999px;
 
 /* ----- Motion ----- */
 $transition-base: 0.2s ease;
 $transition-slow: 0.3s ease;
+ 

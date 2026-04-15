@@ -5,9 +5,9 @@ export default function DashboardPage() {
     <div className={styles.page}>
       <div className={styles.header}>
         <h1 className={styles.greeting}>
-          嗨 · lianqianyi <span className={styles.emoji}>🌿</span>
+          嗨，lianqianyi
         </h1>
-        <p className={styles.subtitle}>歡迎回來，在這裡開始你的任務！</p>
+        <p className={styles.subtitle}>歡迎回來，很高興再次見到您！</p>
       </div>
     </div>
   );

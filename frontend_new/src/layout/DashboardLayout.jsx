@@ -23,16 +23,18 @@ export default function DashboardLayout({ children }) {
       />
 
       <main className={styles.main}>
-        <button
-          className={styles.mobileMenuBtn}
-          onClick={() => setMobileOpen(true)}
-          aria-label="開啟選單"
-          type="button"
-        >
-          <span className="material-icons-outlined" style={{ fontSize: 22 }}>
-            menu
-          </span>
-        </button>
+        <div className={styles.mobileTopBar}>
+          <button
+            className={styles.mobileMenuBtn}
+            onClick={() => setMobileOpen(true)}
+            aria-label="開啟選單"
+            type="button"
+          >
+            <span className="material-icons-outlined" style={{ fontSize: 22 }}>
+              segment
+            </span>
+          </button>
+        </div>
         {children}
         <div className={styles.footer}>Campus Cloud · 2026</div>
       </main>
