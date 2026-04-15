@@ -2,8 +2,10 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     ai_api,
+    ai_monitoring,
     ai_proxy,
     ai_pve_advisor,
+    ai_pve_log,
     ai_template_recommendation,
     audit_logs,
     batch_provision,
@@ -42,7 +44,9 @@ api_router.include_router(lxc.router)
 api_router.include_router(vm_requests.router)
 api_router.include_router(migration_jobs.router)
 api_router.include_router(ai_api.router)
+api_router.include_router(ai_monitoring.router)
 api_router.include_router(ai_proxy.router)
+api_router.include_router(ai_pve_log.router)
 api_router.include_router(ai_pve_advisor.router)
 api_router.include_router(ai_template_recommendation.router)
 api_router.include_router(spec_change_requests.router)
