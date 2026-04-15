@@ -10,7 +10,7 @@ from app.api.deps import (
 )
 from app.core.security import decrypt_value
 from app.exceptions import ProxmoxError
-from app.schemas import Message, NodeSchema, ResourcePublic, SSHKeyResponse, VMSchema
+from app.schemas import Message, NodeSchema, ResourcePublic, SSHKeyResponse
 from app.services.proxmox import proxmox_service
 from app.services.resource import resource_service
 from app.repositories import resource as resource_repo
