@@ -428,6 +428,16 @@ export function ApplicationRequestPage() {
           updateFormValue("template_id", prefill.vm_template_id)
         }
         if (prefill.username) updateFormValue("username", prefill.username)
+        if (prefill.gpu_mapping_id) {
+          updateFormValue("gpu_mapping_id", prefill.gpu_mapping_id)
+        }
+      }
+
+      if (prefill.start_at) {
+        updateFormValue("start_at", prefill.start_at)
+      }
+      if (prefill.end_at) {
+        updateFormValue("end_at", prefill.end_at)
       }
     },
     [updateFormValue],
@@ -1474,6 +1484,14 @@ export function ApplicationRequestPage() {
               <AiChatPanel
                 onImportPlan={handleImportPlan}
                 onImportReason={handleImportReason}
+                recommendationContext={{
+                  resource_type: resourceType,
+                  mode: watchedMode,
+                  start_at: watchedStartAt || undefined,
+                  end_at: watchedEndAt || undefined,
+                  selected_gpu_mapping_id: watchedGpuMappingId || undefined,
+                  gpu_options: gpuOptions || [],
+                }}
               />
             </div>
           </aside>

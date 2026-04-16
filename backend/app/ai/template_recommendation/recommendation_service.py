@@ -163,6 +163,31 @@ def _minimum_disk_gb(resource_type: str) -> int:
     return MIN_VM_DISK_GB if resource_type == "vm" else MIN_LXC_DISK_GB
 
 
+def _gpu_option_label(option: dict[str, Any]) -> str:
+    description = str(option.get("description") or "").strip()
+    mapping_id = str(option.get("mapping_id") or "").strip()
+    node = str(option.get("node") or "").strip()
+    if description:
+                return description
+    if mapping_id and node:
+      return f"{mapping_id} ({node})"
+    return mapping_id or node or "GPU"
+
+
+def _best_gpu_option(options: list[dict[str, Any]]) -> dict[str, Any] | None:
+    available = [option for option in options if int(option.get("available_count") or 0) > 0]
+    if not available:
+        return None
+    return sorted(
+        available,
+        key=lambda option: (
+            -int(option.get("available_count") or 0),
+            -int(option.get("total_vram_mb") or 0),
+            str(option.get("mapping_id") or ""),
+        ),
+    )[0]
+
+
 def _build_submission_reason(
     *,
     request: RecommendationRequest,
@@ -265,8 +290,14 @@ async def generate_ai_plan(
         "needs_database": request.needs_database,
         "requires_gpu": request.requires_gpu,
         "needs_windows": request.needs_windows,
+        "form_context": request.form_context.model_dump(mode="json") if request.form_context else None,
     }
-    resource_options = resource_options or {"lxc_os_images": [], "vm_operating_systems": []}
+    resource_options = resource_options or {
+        "lxc_os_images": [],
+        "vm_operating_systems": [],
+        "gpu_options": [],
+    }
+    gpu_options = list(resource_options.get("gpu_options") or [])
     plan_schema = {
         "summary": "Traditional Chinese summary",
         "workload_profile": "one of: lightweight | moderate | compute-intensive | gpu-required | storage-heavy",
@@ -283,11 +314,25 @@ async def generate_ai_plan(
             "lxc_os_image": "real-lxc-os-image-or-empty",
             "vm_os_choice": "real-vm-os-label-or-empty",
             "vm_template_id": "integer-or-0",
+            "gpu_mapping_id": "gpu-mapping-id-or-empty",
             "cores": "integer",
             "memory_mb": "integer",
             "disk_gb": "integer",
             "username": "string-or-empty",
             "reason": "Traditional Chinese short application reason",
+        },
+        "gpu_recommendation": {
+            "should_use_gpu": "boolean",
+            "selected_gpu_mapping_id": "gpu-mapping-id-or-empty",
+            "selected_gpu_label": "Traditional Chinese label-or-empty",
+            "reason": "Traditional Chinese short reason",
+            "candidates": [
+                {
+                    "mapping_id": "gpu-mapping-id",
+                    "label": "Traditional Chinese label",
+                    "reason": "Traditional Chinese reason",
+                }
+            ],
         },
         "recommended_templates": [
             {"slug": "template-slug", "name": "template-name", "why": "Traditional Chinese reason"}
@@ -329,7 +374,10 @@ async def generate_ai_plan(
                         user_context=user_context,
                         node_capacity_summary=summarize_device_nodes(nodes),
                         prompt_bundle=prompt_bundle,
-                        resource_options=resource_options,
+                        resource_options={
+                            **resource_options,
+                            "gpu_options": gpu_options,
+                        },
                         plan_schema=plan_schema,
                     ),
                 }
@@ -372,9 +420,15 @@ def normalize_ai_result(
     resource_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     lookup = catalog_lookup(template_catalog)
-    resource_options = resource_options or {"lxc_os_images": [], "vm_operating_systems": []}
+    resource_options = resource_options or {
+        "lxc_os_images": [],
+        "vm_operating_systems": [],
+        "gpu_options": [],
+    }
     lxc_os_images = list(resource_options.get("lxc_os_images") or [])
     vm_operating_systems = list(resource_options.get("vm_operating_systems") or [])
+    gpu_options = list(resource_options.get("gpu_options") or [])
+    form_context = request.form_context
 
     recommended_templates: list[dict[str, Any]] = []
     for item in list(ai_result.get("recommended_templates") or []):
@@ -487,6 +541,49 @@ def normalize_ai_result(
         selected_vm_template_id = int(selected_vm.get("template_id") or 0)
         selected_vm_os = str(selected_vm.get("label") or "").strip()
 
+    requested_gpu_mapping_id = str(
+        ai_result.get("form_prefill", {}).get("gpu_mapping_id")
+        or (form_context.selected_gpu_mapping_id if form_context else "")
+        or ""
+    ).strip()
+    selected_gpu: dict[str, Any] | None = None
+    if resource_type == "vm" and gpu_options:
+        if requested_gpu_mapping_id:
+            selected_gpu = next(
+                (
+                    option
+                    for option in gpu_options
+                    if str(option.get("mapping_id") or "").strip() == requested_gpu_mapping_id
+                ),
+                None,
+            )
+        if not selected_gpu and (request.requires_gpu or requested_gpu_mapping_id):
+            selected_gpu = _best_gpu_option(gpu_options)
+
+    gpu_reason = ""
+    gpu_candidates: list[dict[str, Any]] = []
+    if resource_type == "vm" and gpu_options:
+        for option in gpu_options[:3]:
+            if int(option.get("available_count") or 0) <= 0:
+                continue
+            gpu_candidates.append(
+                {
+                    "mapping_id": str(option.get("mapping_id") or "").strip(),
+                    "label": _gpu_option_label(option),
+                    "reason": "此 GPU 目前有可用額度，適合作為預設推薦。",
+                }
+            )
+        if selected_gpu:
+            gpu_reason = "AI 依目前可用 GPU 與節點狀況挑選最適合的映射。"
+        elif request.requires_gpu:
+            gpu_reason = "使用者明確需要 GPU，但目前可用 GPU 不足。"
+
+    selected_gpu_mapping_id = ""
+    selected_gpu_label = ""
+    if selected_gpu:
+        selected_gpu_mapping_id = str(selected_gpu.get("mapping_id") or "").strip()
+        selected_gpu_label = _gpu_option_label(selected_gpu)
+
     cores = _safe_int(ai_result.get("form_prefill", {}).get("cores") or primary_machine.get("cpu"), 2, 1)
     memory_mb = _safe_int(ai_result.get("form_prefill", {}).get("memory_mb") or primary_machine.get("memory_mb"), 2048, 512)
     disk_gb = _safe_int(
@@ -511,6 +608,7 @@ def normalize_ai_result(
         "lxc_os_image": selected_lxc_image if resource_type == "lxc" else "",
         "vm_os_choice": selected_vm_os if resource_type == "vm" else "",
         "vm_template_id": selected_vm_template_id if resource_type == "vm" else 0,
+        "gpu_mapping_id": selected_gpu_mapping_id if resource_type == "vm" else "",
         "cores": cores,
         "memory_mb": memory_mb,
         "disk_gb": disk_gb,
@@ -565,6 +663,13 @@ def normalize_ai_result(
                 ).strip(),
             },
             "form_prefill": form_prefill,
+            "gpu_recommendation": {
+                "should_use_gpu": bool(selected_gpu_mapping_id),
+                "selected_gpu_mapping_id": selected_gpu_mapping_id,
+                "selected_gpu_label": selected_gpu_label,
+                "reason": gpu_reason,
+                "candidates": gpu_candidates,
+            },
             "machines": machines,
             "recommended_templates": recommended_templates,
             "possible_needed_templates": possible_needed_templates[:3],
