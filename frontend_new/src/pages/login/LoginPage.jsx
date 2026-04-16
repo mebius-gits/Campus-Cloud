@@ -75,7 +75,7 @@ function LoginView({ onForgot, onRegister }) {
           <input
             id="username"
             type="text"
-            placeholder="請輸入帳號（Email）"
+            placeholder="請輸入帳號（電子郵件）"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             disabled={loading}
@@ -133,7 +133,7 @@ function ForgotView({ onBack }) {
       await apiPost(`/api/v1/password-recovery/${encodeURIComponent(email)}`, null);
       setSuccess(true);
     } catch (err) {
-      setError(err?.message ?? "發送失敗，請確認 Email 是否正確");
+      setError(err?.message ?? "發送失敗，請確認電子郵件是否正確");
     } finally {
       setLoading(false);
     }
@@ -147,7 +147,7 @@ function ForgotView({ onBack }) {
       </button>
 
       <h1 className={styles.title}>忘記密碼</h1>
-      <p className={styles.subtitle}>輸入您的 Email，我們將寄送重設連結</p>
+      <p className={styles.subtitle}>輸入您的電子郵件，我們將寄送重設連結</p>
 
       {success ? (
         <div className={styles.successBox}>
@@ -157,7 +157,7 @@ function ForgotView({ onBack }) {
       ) : (
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.field}>
-            <label htmlFor="forgot-email">Email</label>
+            <label htmlFor="forgot-email">電子郵件</label>
             <input
               id="forgot-email"
               type="email"
@@ -253,7 +253,7 @@ function RegisterView({ onBack }) {
           </div>
 
           <div className={styles.field}>
-            <label htmlFor="reg-email">Email</label>
+            <label htmlFor="reg-email">電子郵件</label>
             <input
               id="reg-email"
               type="email"

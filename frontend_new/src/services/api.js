@@ -74,10 +74,28 @@ export function apiPatch(path, body) {
   }).then(handleResponse);
 }
 
-/** DELETE */
+/** DELETE（無 body） */
 export function apiDelete(path) {
   return fetch(`${BASE_URL}${path}`, {
     method: "DELETE",
     headers: buildHeaders(),
+  }).then(handleResponse);
+}
+
+/** DELETE（帶 JSON body，用於需要傳送條件的刪除） */
+export function apiDeleteJson(path, body) {
+  return fetch(`${BASE_URL}${path}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
+  }).then(handleResponse);
+}
+
+/** PUT */
+export function apiPut(path, body) {
+  return fetch(`${BASE_URL}${path}`, {
+    method: "PUT",
+    headers: buildHeaders(),
+    body: JSON.stringify(body),
   }).then(handleResponse);
 }

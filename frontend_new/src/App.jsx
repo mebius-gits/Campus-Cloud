@@ -25,8 +25,9 @@ import MigrationPage from "./pages/system/migration/MigrationPage";
 import AuditPage     from "./pages/system/audit/AuditPage";
 
 // 網路
-import DomainPage  from "./pages/network/domain/DomainPage";
-import GatewayPage from "./pages/network/gateway/GatewayPage";
+import FirewallPage from "./pages/network/firewall/FirewallPage";
+import DomainPage   from "./pages/network/domain/DomainPage";
+import GatewayPage  from "./pages/network/gateway/GatewayPage";
 
 const PAGE_MAP = {
   dashboard:        <DashboardPage />,
@@ -42,6 +43,7 @@ const PAGE_MAP = {
   settings:         <SettingsPage />,
   migration:        <MigrationPage />,
   audit:            <AuditPage />,
+  firewall:         <FirewallPage />,
   domain:           <DomainPage />,
   gateway:          <GatewayPage />,
 };
