@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth }  from "../../contexts/AuthContext";
 import styles from "./Sidebar.module.scss";
@@ -123,8 +123,37 @@ function NavGroup({ group, active, onSelect, collapsed, onExpand }) {
   );
 }
 
+/** 管理 popup 的開關，含 closing 動畫狀態 */
+function usePopup(DURATION = 150) {
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const timerRef = useRef(null);
+
+  const close = useCallback(() => {
+    setClosing(true);
+    timerRef.current = setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, DURATION);
+  }, [DURATION]);
+
+  const toggle = useCallback(() => {
+    if (open && !closing) {
+      close();
+    } else if (!open) {
+      clearTimeout(timerRef.current);
+      setClosing(false);
+      setOpen(true);
+    }
+  }, [open, closing, close]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  return { open, closing, toggle, close };
+}
+
 /** 通用彈出選單，供外觀與語言共用 */
-function SelectPopup({ options, value, onSelect, onClose, triggerRef }) {
+function SelectPopup({ options, value, onSelect, onClose, triggerRef, closing }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -138,7 +167,7 @@ function SelectPopup({ options, value, onSelect, onClose, triggerRef }) {
   }, [onClose, triggerRef]);
 
   return (
-    <div className={styles.appearancePopup} ref={ref}>
+    <div className={`${styles.appearancePopup} ${closing ? styles.popupClosing : styles.popupOpening}`} ref={ref}>
       {options.map((opt) => (
         <button
           key={opt.key}
@@ -157,7 +186,7 @@ function SelectPopup({ options, value, onSelect, onClose, triggerRef }) {
   );
 }
 
-function UserPopup({ user, onLogout, onClose, triggerRef }) {
+function UserPopup({ user, onLogout, onClose, triggerRef, closing }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -171,7 +200,7 @@ function UserPopup({ user, onLogout, onClose, triggerRef }) {
   }, [onClose, triggerRef]);
 
   return (
-    <div className={styles.userPopup} ref={ref}>
+    <div className={`${styles.userPopup} ${closing ? styles.popupClosing : styles.popupOpening}`} ref={ref}>
       <div className={styles.userPopupHeader}>
         <div className={styles.userPopupAvatar}>
           {user?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "U"}
@@ -212,10 +241,10 @@ const LANG_OPTIONS = [
 
 export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, activePage, onNavigate }) {
   const [active, setActive] = useState(activePage ?? "dashboard");
-  const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const [langOpen, setLangOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const [lang, setLang] = useState("zh-TW");
+  const appearance = usePopup();
+  const langPopup  = usePopup();
+  const userPopup  = usePopup();
   const appearanceBtnRef = useRef(null);
   const langBtnRef = useRef(null);
   const userBtnRef = useRef(null);
@@ -250,6 +279,8 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
         )}
       </div>
 
+      <div className={styles.brandDivider} />
+
       {/* ===== Main nav ===== */}
       <nav className={styles.nav}>
         {navGroups.map((group) => (
@@ -268,20 +299,21 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
       <div className={styles.bottom}>
         {/* 外觀選擇 */}
         <div className={styles.appearanceWrap}>
-          {appearanceOpen && (
+          {appearance.open && (
             <SelectPopup
               options={THEME_OPTIONS}
               value={mode}
               onSelect={setMode}
-              onClose={() => setAppearanceOpen(false)}
+              onClose={appearance.close}
               triggerRef={appearanceBtnRef}
+              closing={appearance.closing}
             />
           )}
           <button
             ref={appearanceBtnRef}
             type="button"
-            className={`${styles.navItem} ${appearanceOpen ? styles.active : ""}`}
-            onClick={() => setAppearanceOpen((o) => !o)}
+            className={`${styles.navItem} ${appearance.open && !appearance.closing ? styles.active : ""}`}
+            onClick={appearance.toggle}
             title={collapsed ? "外觀" : undefined}
           >
             <MIcon name="palette" size={20} />
@@ -291,20 +323,21 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
 
         {/* 語言選擇 */}
         <div className={styles.appearanceWrap}>
-          {langOpen && (
+          {langPopup.open && (
             <SelectPopup
               options={LANG_OPTIONS}
               value={lang}
               onSelect={setLang}
-              onClose={() => setLangOpen(false)}
+              onClose={langPopup.close}
               triggerRef={langBtnRef}
+              closing={langPopup.closing}
             />
           )}
           <button
             ref={langBtnRef}
             type="button"
-            className={`${styles.navItem} ${langOpen ? styles.active : ""}`}
-            onClick={() => setLangOpen((o) => !o)}
+            className={`${styles.navItem} ${langPopup.open && !langPopup.closing ? styles.active : ""}`}
+            onClick={langPopup.toggle}
             title={collapsed ? "語言" : undefined}
           >
             <MIcon name="language" size={20} />
@@ -314,19 +347,20 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
 
         {/* 使用者資料 */}
         <div className={styles.appearanceWrap}>
-          {userOpen && (
+          {userPopup.open && (
             <UserPopup
               user={user}
               onLogout={logout}
-              onClose={() => setUserOpen(false)}
+              onClose={userPopup.close}
               triggerRef={userBtnRef}
+              closing={userPopup.closing}
             />
           )}
           <button
             ref={userBtnRef}
             type="button"
-            className={`${styles.user} ${userOpen ? styles.userActive : ""}`}
-            onClick={() => setUserOpen((o) => !o)}
+            className={`${styles.user} ${userPopup.open && !userPopup.closing ? styles.userActive : ""}`}
+            onClick={userPopup.toggle}
             title={collapsed ? (user?.full_name ?? user?.email) : undefined}
           >
             <div className={styles.avatar}>
@@ -338,7 +372,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
                   <span className={styles.userName}>{user?.full_name ?? "—"}</span>
                   <span className={styles.userEmail}>{user?.email ?? "—"}</span>
                 </div>
-                <MIcon name={userOpen ? "expand_more" : "unfold_more"} size={16} />
+                <MIcon name={userPopup.open && !userPopup.closing ? "expand_more" : "unfold_more"} size={16} />
               </>
             )}
           </button>

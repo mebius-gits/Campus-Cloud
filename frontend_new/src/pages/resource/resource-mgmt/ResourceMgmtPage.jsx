@@ -37,13 +37,13 @@ export default function ResourceMgmtPage() {
           <p className={styles.pageSubtitle}>查看所有已在線虛擬機與 LXC 容器</p>
         </div>
         <div className={styles.pageActions}>
-          <button type="button" className={styles.btnPrimary}>
-            <MIcon name="add" size={16} />
-            建立資源
-          </button>
           <button type="button" className={styles.btnSecondary}>
             <MIcon name="sync" size={16} />
             重新整理
+          </button>
+          <button type="button" className={styles.btnPrimary}>
+            <MIcon name="add" size={16} />
+            建立資源
           </button>
         </div>
       </div>

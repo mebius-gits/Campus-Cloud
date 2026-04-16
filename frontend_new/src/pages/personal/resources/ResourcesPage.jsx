@@ -96,13 +96,13 @@ export default function ResourcesPage() {
         </div>
 
         <div className={styles.pageActions}>
-          <button type="button" className={styles.btnPrimary}>
-            <MIcon name="download" size={16} />
-            下載連線工具
-          </button>
           <button type="button" className={styles.btnSecondary}>
             <MIcon name="sync" size={16} />
             重新整理
+          </button>
+          <button type="button" className={styles.btnPrimary}>
+            <MIcon name="download" size={16} />
+            下載連線工具
           </button>
         </div>
       </div>

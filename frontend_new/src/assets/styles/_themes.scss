@@ -46,6 +46,11 @@
   --shadow-sm: 0 1px 3px rgba(67, 90, 149, 0.08);
   --shadow-md: 0 4px 12px rgba(67, 90, 149, 0.08);
   --shadow-lg: 0 8px 24px rgba(67, 90, 149, 0.12);
+
+  /* ----- Flow canvas ----- */
+  --color-flow-bg: rgba(179, 213, 250, 0.315);
+  --color-flow-border: rgba(255, 255, 255, 0.6);
+  --color-flow-shadow: rgba(0, 0, 0, 0.06);
 }
 
 /* ============================================
@@ -74,7 +79,7 @@ body.dark {
   /* ----- Text ----- */
   --color-text: #d4deef;
   --color-text-primary: #f0f4ff;
-  --color-text-secondary: #8494b0;
+  --color-text-secondary: #bdd2f3;
   --color-text-muted: #5c6880;
   --color-text-on-primary: #ffffff;
 
@@ -90,4 +95,9 @@ body.dark {
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* ----- Flow canvas ----- */
+  --color-flow-bg: rgba(52, 63, 89, 0.471);
+  --color-flow-border: rgba(255, 255, 255, 0.06);
+  --color-flow-shadow: rgba(0, 0, 0, 0.25);
 }

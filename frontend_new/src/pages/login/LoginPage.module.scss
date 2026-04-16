@@ -121,6 +121,71 @@
   padding: $spacing-8 $spacing-16;
 }
 
+/* 返回按鈕（忘記密碼 / 註冊頁頂部） */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-4;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  margin-bottom: $spacing-16;
+  transition: color $transition-base;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text);
+  }
+}
+
+/* 底部文字連結（還沒有帳號？） */
+.footerText {
+  margin-top: $spacing-16;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* 行內連結（立即註冊） */
+.link {
+  color: var(--color-primary);
+  font-weight: $font-weight-500;
+  cursor: pointer;
+  transition: opacity $transition-base;
+
+  &:hover {
+    opacity: 0.75;
+  }
+}
+
+/* 右對齊連結（忘記密碼？） */
+.linkRight {
+  align-self: flex-end;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color $transition-base;
+  margin-top: -$spacing-4;
+
+  &:hover {
+    color: var(--color-primary);
+  }
+}
+
+/* 成功狀態 box */
+.successBox {
+  @include flex-column;
+  align-items: center;
+  gap: $spacing-8;
+  padding: $spacing-24 $spacing-16;
+  text-align: center;
+  color: var(--color-success, #38a169);
+  font-size: $font-size-14;
+
+  span[class*="material"] {
+    font-size: 40px;
+  }
+}
+
 .btn {
   width: 100%;
   padding: 10px $spacing-16;

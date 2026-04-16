@@ -1,0 +1,386 @@
+@use "../../../assets/styles/variables" as *;
+@use "../../../assets/styles/mixins" as *;
+
+/* ── Page（全高，無 header） ── */
+.page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: $spacing-8 $spacing-16;
+
+  @include respond-to(md) { padding: 0; }
+}
+
+/* ── Header ── */
+.pageHeader {
+  @include flex-between;
+  flex-wrap: wrap;
+  gap: $spacing-16;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pageHeading { @include flex-column; gap: $spacing-4; }
+
+.pageTitle {
+  font-size: $font-size-24;
+  font-weight: $font-weight-700;
+  color: var(--color-text-primary);
+
+  @include respond-to(sm) {
+    font-size: $font-size-28;
+  }
+}
+
+.pageSubtitle {
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+}
+
+.headerActions {
+  display: flex;
+  gap: $spacing-8;
+}
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px $spacing-16;
+  border-radius: $radius-8;
+  font-size: $font-size-14;
+  font-weight: $font-weight-500;
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  cursor: pointer;
+  transition: background $transition-base;
+
+  &:hover { background: var(--color-primary-dark); }
+}
+
+/* ── Content ── */
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  border-radius: $radius-16;
+  overflow: hidden;
+  background: var(--color-flow-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-flow-border);
+  box-shadow: 0 4px 24px var(--color-flow-shadow);
+  margin: $spacing-16 0;
+}
+
+.centerState {
+  flex: 1;
+  @include flex-column;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-16;
+  color: var(--color-text-secondary);
+  font-size: $font-size-14;
+}
+
+/* ── ReactFlow wrap ── */
+.flowWrap {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+
+  :global(.react-flow) { background: transparent; }
+  :global(.react-flow) svg { max-width: none; }
+  :global(.react-flow__background) { background: transparent; }
+  :global(.react-flow__edge path) {
+    stroke-opacity: 1 !important;
+  }
+  :global(.react-flow__minimap) {
+    border-radius: $radius-8;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    background: var(--color-surface);
+  }
+
+  /* Controls（操作欄）深色模式覆寫 */
+  :global(.react-flow__controls) {
+    border-radius: $radius-8;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+
+  :global(.react-flow__controls-button) {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    fill: var(--color-text-secondary);
+
+    &:hover {
+      background: var(--color-hover);
+    }
+
+    svg { fill: inherit; }
+  }
+}
+
+/* ── Toolbar（在 Panel 內） ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: $spacing-4;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: $radius-8;
+  padding: 4px;
+}
+
+.toolbarBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px $spacing-8;
+  border-radius: 6px;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background $transition-base, color $transition-base;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &.toolbarBtnActive {
+    background: color-mix(in srgb, #38a169 12%, transparent);
+    color: #38a169;
+  }
+}
+
+/* ── Hint ── */
+.hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: $radius-8;
+  padding: 5px $spacing-16;
+  backdrop-filter: blur(4px);
+}
+
+/* ── Handle（節點連接點） ── */
+.handleIn {
+  background: #3b82f6 !important;
+  border-color: #3b82f6 !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.handleOut {
+  background: #38a169 !important;
+  border-color: #38a169 !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+/* ── Gateway 節點 ── */
+.gwNode {
+  width: 90px;
+  height: 90px;
+  border-radius: $radius-16;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  @include flex-column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  transition: border-color $transition-base, box-shadow $transition-base;
+  cursor: grab;
+
+  &:active { cursor: grabbing; }
+
+  &.nodeSelected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+}
+
+.gwLabel {
+  font-size: $font-size-18;
+  font-weight: $font-weight-500;
+  color: var(--color-text-secondary);
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ── VM 節點 ── */
+.vmNode {
+  display: flex;
+  align-items: center;
+  gap: $spacing-8;
+  padding: $spacing-8 $spacing-16;
+  width: 180px;
+  height: 60px;
+  border-radius: $radius-12;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: var(--color-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  color: var(--color-text-secondary);
+  transition: border-color $transition-base, box-shadow $transition-base;
+  cursor: grab;
+
+  &:active { cursor: grabbing; }
+
+  &.nodeSelected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+}
+
+.vmStatus {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vmInfo {
+  @include flex-column;
+  min-width: 0;
+  flex: 1;
+}
+
+.vmName {
+  font-size: $font-size-18;
+  font-weight: $font-weight-500;
+  color: var(--color-text);
+  @include text-truncate;
+}
+
+.vmMeta {
+  font-size: $font-size-16;
+  color: var(--color-text-muted);
+  @include text-truncate;
+}
+
+/* ── Edge label ── */
+.edgeLabelWrap {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: all;
+}
+
+.edgeLabel {
+  font-size: 11px;
+  font-weight: $font-weight-500;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: $radius-pill;
+  padding: 1px 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.edgeDeleteBtn {
+  @include flex-center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background $transition-base;
+  box-shadow: var(--shadow-sm);
+
+  &:hover {
+    background: #e53e3e;
+    border-color: #e53e3e;
+    color: #fff;
+  }
+}
+
+/* ── Buttons（用於 loading/error 狀態） ── */
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px $spacing-16;
+  border-radius: $radius-8;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: background $transition-base;
+
+  &:hover { background: var(--color-hover); }
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px $spacing-24;
+  border-radius: $radius-8;
+  font-size: $font-size-14;
+  font-weight: $font-weight-500;
+  background: #e53e3e;
+  color: #fff;
+  cursor: pointer;
+  transition: background $transition-base;
+
+  &:hover { background: #c53030; }
+}
+
+/* ── Confirm overlay ── */
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  @include flex-center;
+  z-index: 600;
+  backdrop-filter: blur(2px);
+}
+
+.confirmDialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: $radius-16;
+  box-shadow: var(--shadow-lg);
+  padding: $spacing-24;
+  width: 320px;
+  @include flex-column;
+  gap: $spacing-16;
+}
+
+.confirmTitle {
+  font-size: $font-size-16;
+  font-weight: $font-weight-700;
+  color: var(--color-text-primary);
+}
+
+.confirmMsg {
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: $spacing-8;
+}
+
+$spacing-12: 12px;
+$spacing-24: 24px;

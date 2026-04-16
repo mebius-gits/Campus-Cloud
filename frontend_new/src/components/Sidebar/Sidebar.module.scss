@@ -91,6 +91,14 @@
   flex-shrink: 0;
 }
 
+/* ===== Brand Divider ===== */
+.brandDivider {
+  height: 1px;
+  background: var(--color-sidebar-glass-border);
+  margin: 0 $spacing-16;
+  flex-shrink: 0;
+}
+
 /* ===== Nav ===== */
 .nav {
   @include flex-column;
@@ -219,6 +227,25 @@
   @include text-truncate;
 }
 
+/* ===== Popup animations ===== */
+@keyframes popupIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@keyframes popupOut {
+  from { opacity: 1; transform: translateY(0)   scale(1); }
+  to   { opacity: 0; transform: translateY(6px) scale(0.97); }
+}
+
+.popupOpening {
+  animation: popupIn 0.15s ease forwards;
+}
+
+.popupClosing {
+  animation: popupOut 0.15s ease forwards;
+}
+
 /* ===== Appearance Popup ===== */
 .appearanceWrap {
   position: relative;
@@ -241,7 +268,7 @@
   .collapsed & {
     left: 50%;
     right: auto;
-    transform: translateX(-50%);
+    translate: -50% 0;
     width: max-content;
   }
 }
@@ -301,7 +328,7 @@
   .collapsed & {
     left: 50%;
     right: auto;
-    transform: translateX(-50%);
+    translate: -50% 0;
     width: max-content;
   }
 }
