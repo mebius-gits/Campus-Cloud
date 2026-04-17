@@ -29,18 +29,18 @@ class Settings(BaseSettings):
     collector_retry_attempts: int = Field(default=3, ge=1, le=10)
     collector_retry_backoff: float = Field(default=0.3, ge=0.0, le=10.0)
 
-    # Reuse existing template recommendation vLLM settings for now.
+    # Reuse shared VLLM_* settings.
     vllm_base_url: str = Field(
         default="http://localhost:8000/v1",
-        alias="template_recommendation_vllm_base_url",
+        alias="vllm_base_url",
     )
     vllm_api_key: str = Field(
         default="",
-        alias="template_recommendation_vllm_api_key",
+        alias="vllm_api_key",
     )
     vllm_model_name: str = Field(
         default="",
-        alias="template_recommendation_vllm_model_name",
+        alias="vllm_model_name",
     )
     chat_timeout: int = Field(default=120, ge=10, le=600)
 

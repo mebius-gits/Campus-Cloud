@@ -60,14 +60,14 @@ def _strip_think_tags(text: str) -> str:
 def _apply_thinking_control(payload: dict[str, Any]) -> dict[str, Any]:
     payload["chat_template_kwargs"] = {
         **dict(payload.get("chat_template_kwargs") or {}),
-        "enable_thinking": settings.TEMPLATE_RECOMMENDATION_VLLM_ENABLE_THINKING,
+        "enable_thinking": settings.VLLM_ENABLE_THINKING,
     }
     return payload
 
 
 def _vllm_headers() -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {settings.TEMPLATE_RECOMMENDATION_VLLM_API_KEY}",
+        "Authorization": f"Bearer {settings.VLLM_API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -148,7 +148,7 @@ async def _call_vllm(
     payload: dict[str, Any], timeout: float = 60.0
 ) -> tuple[str, dict]:
     """Call vLLM chat/completions and return (content, usage_metrics)."""
-    url = f"{settings.TEMPLATE_RECOMMENDATION_VLLM_BASE_URL}/chat/completions"
+    url = f"{settings.VLLM_BASE_URL}/chat/completions"
     started = perf_counter()
 
     logger.debug(f"Calling vLLM API: {url}")
@@ -261,10 +261,8 @@ _ANALYZE_SYSTEM_PROMPT = """
 
 async def analyze_rubric(raw_text: str) -> tuple[RubricAnalysis, dict]:
     """Send raw document text to AI, return structured RubricAnalysis."""
-    if not settings.TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME:
-        raise HTTPException(
-            status_code=503, detail="TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME 未設定。"
-        )
+    if not settings.VLLM_MODEL_NAME:
+        raise HTTPException(status_code=503, detail="VLLM_MODEL_NAME 未設定。")
 
     logger.info(f"Starting rubric analysis, text length: {len(raw_text)} characters")
 
@@ -272,20 +270,20 @@ async def analyze_rubric(raw_text: str) -> tuple[RubricAnalysis, dict]:
 
     payload = _apply_thinking_control(
         {
-            "model": settings.TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME,
+            "model": settings.VLLM_MODEL_NAME,
             "messages": [
                 {"role": "system", "content": _ANALYZE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
-            "max_tokens": settings.TEMPLATE_RECOMMENDATION_VLLM_MAX_TOKENS,
+            "max_tokens": settings.VLLM_MAX_TOKENS,
             "temperature": 0.2,
-            "top_p": settings.TEMPLATE_RECOMMENDATION_VLLM_TOP_P,
+            "top_p": settings.VLLM_TOP_P,
             "response_format": {"type": "json_object"},
         }
     )
 
     content, metrics = await _call_vllm(
-        payload, timeout=float(settings.TEMPLATE_RECOMMENDATION_VLLM_TIMEOUT)
+        payload, timeout=float(settings.VLLM_TIMEOUT)
     )
 
     try:
@@ -502,10 +500,8 @@ async def chat_with_rubric(
     - updated_items: complete list of RubricItem dicts when AI modified the rubric;
       None when AI only answered a question without changes.
     """
-    if not settings.TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME:
-        raise HTTPException(
-            status_code=503, detail="TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME 未設定。"
-        )
+    if not settings.VLLM_MODEL_NAME:
+        raise HTTPException(status_code=503, detail="VLLM_MODEL_NAME 未設定。")
 
     context_item_count = _extract_context_item_count(rubric_context)
     situation = _SITUATION_REFINE if is_refine else _SITUATION_NORMAL
@@ -523,19 +519,19 @@ async def chat_with_rubric(
 
     payload = _apply_thinking_control(
         {
-            "model": settings.TEMPLATE_RECOMMENDATION_VLLM_MODEL_NAME,
+            "model": settings.VLLM_MODEL_NAME,
             "messages": formatted,
-            "max_tokens": settings.TEMPLATE_RECOMMENDATION_VLLM_CHAT_MAX_TOKENS,
-            "temperature": settings.TEMPLATE_RECOMMENDATION_VLLM_CHAT_TEMPERATURE,
-            "top_p": settings.TEMPLATE_RECOMMENDATION_VLLM_TOP_P,
-            "top_k": settings.TEMPLATE_RECOMMENDATION_VLLM_TOP_K,
-            "repetition_penalty": settings.TEMPLATE_RECOMMENDATION_VLLM_REPETITION_PENALTY,
+            "max_tokens": settings.VLLM_CHAT_MAX_TOKENS,
+            "temperature": settings.VLLM_CHAT_TEMPERATURE,
+            "top_p": settings.VLLM_TOP_P,
+            "top_k": settings.VLLM_TOP_K,
+            "repetition_penalty": settings.VLLM_REPETITION_PENALTY,
             "response_format": {"type": "json_object"},
         }
     )
 
     content, metrics = await _call_vllm(
-        payload, timeout=float(settings.TEMPLATE_RECOMMENDATION_VLLM_TIMEOUT)
+        payload, timeout=float(settings.VLLM_TIMEOUT)
     )
 
     # 解析結構化 JSON 回覆
