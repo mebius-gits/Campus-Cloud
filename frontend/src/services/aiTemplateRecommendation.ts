@@ -3,6 +3,7 @@ import {
   type ChatRequest,
   type ChatResponse,
 } from "@/client"
+import type { GPUSummary } from "@/services/gpu"
 
 export type AiChatMessage = {
   role: "user" | "assistant" | "system"
@@ -23,6 +24,9 @@ export type FormPrefill = {
   lxc_os_image?: string
   vm_os_choice?: string
   vm_template_id?: number
+  gpu_mapping_id?: string
+  start_at?: string
+  end_at?: string
   cores?: number
   memory_mb?: number
   disk_gb?: number
@@ -30,10 +34,30 @@ export type FormPrefill = {
   reason?: string
 }
 
+export type RecommendationFormContext = {
+  resource_type?: string
+  mode?: string
+  start_at?: string
+  end_at?: string
+  selected_gpu_mapping_id?: string
+  gpu_options?: GPUSummary[]
+}
+
 export type AiPlanResult = {
   summary?: string
   final_plan?: {
     form_prefill?: FormPrefill
+    gpu_recommendation?: {
+      should_use_gpu?: boolean
+      selected_gpu_mapping_id?: string
+      selected_gpu_label?: string
+      reason?: string
+      candidates?: Array<{
+        mapping_id: string
+        label: string
+        reason: string
+      }>
+    }
     recommended_templates?: Array<{
       slug: string
       name: string
@@ -59,7 +83,9 @@ export type AiPlanResult = {
 export type AiTemplateRecommendationRequest = Pick<
   ChatRequest,
   "messages" | "top_k" | "device_nodes"
->
+> & {
+  form_context?: RecommendationFormContext
+}
 
 export const AiTemplateRecommendationApi = {
   chat(data: {

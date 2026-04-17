@@ -86,7 +86,52 @@ When a requested tool is not explicitly listed, steer the user toward present wo
 """
 
 
-def build_chat_system_prompt(*, is_first_turn: bool, catalog_context: str) -> str:
+def build_chat_runtime_context(
+    *,
+    resource_type: str | None = None,
+    gpu_options: list[dict[str, Any]] | None = None,
+) -> str:
+    gpu_items = list(gpu_options or [])
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    gpu_lines: list[str] = []
+    for option in gpu_items[:10]:
+        mapping_id = str(option.get("mapping_id") or "").strip()
+        model = str(option.get("model") or "").strip()
+        vram = str(option.get("vram") or "").strip()
+        node = str(option.get("node") or "").strip()
+        available = _safe_int(option.get("available_count"))
+        total = _safe_int(option.get("device_count"))
+
+        label = model or str(option.get("description") or "").strip() or mapping_id or "GPU"
+        parts = [f"{label}"]
+        if vram:
+            parts.append(f"VRAM: {vram}")
+        parts.append(f"available: {available}/{total}")
+        if node:
+            parts.append(f"node: {node}")
+        if mapping_id:
+            parts.append(f"mapping_id: {mapping_id}")
+        gpu_lines.append(f"- {' | '.join(parts)}")
+
+    gpu_section = "\n".join(gpu_lines) if gpu_lines else "(none)"
+    current_resource_type = str(resource_type or "unspecified").strip() or "unspecified"
+
+    return f"""# Runtime Resource Context
+- If workload planning clearly needs GPU acceleration, prefer VM in recommendation.
+- Current form resource_type: {current_resource_type}
+
+## Current GPU Options
+{gpu_section}
+"""
+
+
+def build_chat_system_prompt(*, is_first_turn: bool, catalog_context: str, runtime_context: str = "") -> str:
     greeting_instruction = (
         '- **Greeting (First Turn)**: Since this is the start of the conversation, start with one short and warm greeting in Traditional Chinese (for example: "你好，我可以幫你整理這次要用 LXC 還是 VM。")'
         if is_first_turn
@@ -113,6 +158,9 @@ Your primary objective is to clarify the user's deployment needs through a natur
 - **Interaction Rules**: If the user's request is vague, ask 1 to 3 targeted clarifying questions. Do not overwhelm them with a wall of questions.
 - **Answer-First Rule**: If the user asks a concrete comparison or choice question, answer it directly first, then ask follow-up questions only if needed.
 - **LXC/VM Decision Rule**: Explain that LXC is preferred for fast template-based deployment of common services, while VM is preferred for Windows, GUI, custom OS behavior, driver isolation, or full-system compatibility.
+- **GPU Recommendation Rule**: If the user asks for deployment configuration and the workload indicates GPU acceleration (for example AI training/inference, CUDA compute, vision model workflows), recommend VM as the preferred path and explain briefly why.
+- **GPU Specs First Rule**: If user asks questions like "GPU有哪些", "GPU規格", "VRAM", or "哪張可用", first list available GPU options from Runtime Resource Context with model, VRAM, and available count. Then ask at most one short follow-up question if needed.
+- **GPU Accuracy Rule**: Do not invent GPU models or availability. If Runtime Resource Context has no GPU options, clearly say current visible options are empty and suggest refreshing VM GPU options in the form.
 - **Template Reality Rule**: Only mention a concrete template name if it appears in the verified catalog reference below. If the exact template is not present, say that availability still needs confirmation and do not invent names like "xxx-gpu" or "xxx-jupyter".
 - **Strict Catalog Claim Rule**: You may say "平台目前有這個模板" only when that exact template appears in the verified catalog reference below. Otherwise, use conditional wording such as "catalog 目前看起來有對應模板" or "這個模板是否存在還要再確認". Do not generalize common ecosystem tools into platform template availability.
 - **Present-Solution Rule**: Focus on current workable paths first. If a specific tool template is not verified in the catalog, do not proactively emphasize its absence. Instead, describe the existing deployable path using currently available templates, generic Linux LXC environments, or VM environments. Only discuss "沒有這個模板" or "平台尚未提供這個模板" when the user explicitly asks whether that exact template exists.
@@ -134,6 +182,8 @@ Your primary objective is to clarify the user's deployment needs through a natur
 - Do not generate JSON. Just chat normally.
 
 {catalog_context}
+
+{runtime_context}
 """
 
 
@@ -214,6 +264,7 @@ Generate a complete deployment recommendation based on the user's intent, availa
 - **Template Precision Rule**: `recommended_templates` must contain only the truly necessary core templates. `possible_needed_templates` may include up to 3 useful support templates for database, proxy, monitoring, backup, cache, or future scaling.
 - **Template Means LXC Rule**: If the user asks for a template or the workload clearly matches a service template in the catalog, treat that as an LXC-first path by default unless a higher-priority VM rule forces VM.
 - **VM Environment Rule**: VM is for operating system or environment requirements such as Windows, GUI, driver isolation, or full-system compatibility. VM is not a template choice.
+- **VM Environment Rule**: VM is for operating system or environment requirements such as Windows, GUI, driver isolation, full-system compatibility, and any GPU-accelerated workloads. VM is not a template choice.
 - **Template Output Rule**: If the final main path is VM, do not force a service template into `recommended_templates` just for completeness. In VM cases it is valid for the user-facing template recommendation to be empty.
 - **Requirement Flags Rule**: You must strictly honor `needs_public_web`, `needs_database`, `requires_gpu`, and `needs_windows` from `User Context`.
 - **Deployment Type Decision Tree**:
@@ -234,6 +285,7 @@ Generate a complete deployment recommendation based on the user's intent, availa
 - **Upgrade Rule**: `upgrade_when` must mention specific measurable thresholds, such as sustained CPU, RAM, or disk pressure.
 - **Application Target Rule**: `application_target.service_name` must be a user-facing service label, not just a slug.
 - **Form Prefill Rule**: In `form_prefill`, `service_template_slug` is only for LXC service templates. `lxc_os_image` must come from the provided real LXC OS image list. `vm_os_choice` and `vm_template_id` must come from the provided VM operating system list. Do not treat VM operating system as a service template.
+- **GPU Prefill Rule**: If the input includes GPU options and the workload needs GPU or is a VM compute workload, you may set `form_prefill.gpu_mapping_id` to one of the provided GPU `mapping_id` values. Do not invent GPU IDs.
 - **Examples**:
   Bad: `service_name = "n8n-template"`
   Bad: `resource_type = "vm"` with `service_template_slug = "n8n"`

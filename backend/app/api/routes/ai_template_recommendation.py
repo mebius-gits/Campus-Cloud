@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from datetime import datetime
+from time import monotonic
 from time import perf_counter
 from typing import Any
 
@@ -16,6 +18,7 @@ from app.ai.template_recommendation.node_service import (
 )
 from app.ai.template_recommendation.prompt import (
     build_chat_catalog_context,
+    build_chat_runtime_context,
     build_chat_system_prompt,
 )
 from app.ai.template_recommendation.recommendation_service import (
@@ -29,9 +32,14 @@ from app.ai.template_recommendation.schemas import (
     RecommendationRequest,
 )
 from app.api.deps import CurrentUser, SessionDep
+from app.repositories import vm_request as vm_request_repo
 from app.services.llm_gateway import ai_gateway_service
+from app.services.proxmox import gpu_service
 
 logger = logging.getLogger(__name__)
+
+_GPU_OPTIONS_CACHE_TTL_SECONDS = 20.0
+_gpu_options_cache: dict[str, Any] = {"at": 0.0, "items": []}
 
 router = APIRouter(
     prefix="/ai/template-recommendation",
@@ -55,6 +63,95 @@ def _apply_thinking_control(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _latest_user_text(request: ChatRequest) -> str:
+    for message in reversed(request.messages):
+        if str(message.role).strip().lower() == "user":
+            return str(message.content or "")
+    return ""
+
+
+def _should_include_gpu_runtime_context(request: ChatRequest) -> bool:
+    form_context = request.form_context
+    if form_context and (
+        (form_context.resource_type and str(form_context.resource_type).lower() == "vm")
+        or form_context.selected_gpu_mapping_id
+    ):
+        return True
+
+    text = _latest_user_text(request).lower()
+    keywords = (
+        "gpu",
+        "vram",
+        "cuda",
+        "nvidia",
+        "pytorch",
+        "tensorflow",
+        "llm",
+        "yolo",
+        "訓練",
+        "推理",
+        "顯卡",
+    )
+    return any(keyword in text for keyword in keywords)
+
+
+def _get_base_gpu_options_cached() -> list[dict[str, Any]]:
+    now = monotonic()
+    cached_at = float(_gpu_options_cache.get("at") or 0.0)
+    cached_items = list(_gpu_options_cache.get("items") or [])
+    if cached_items and (now - cached_at) <= _GPU_OPTIONS_CACHE_TTL_SECONDS:
+        return [dict(item) for item in cached_items]
+
+    fresh_items = [item.model_dump(mode="json") for item in gpu_service.list_gpu_options()]
+    _gpu_options_cache["at"] = now
+    _gpu_options_cache["items"] = fresh_items
+    return [dict(item) for item in fresh_items]
+
+
+def _resolve_chat_gpu_options(request: ChatRequest, session: SessionDep) -> list[dict[str, Any]]:
+    if not _should_include_gpu_runtime_context(request):
+        return []
+
+    options = _get_base_gpu_options_cached()
+    form_context = request.form_context
+    if not form_context or not form_context.start_at or not form_context.end_at:
+        return options
+
+    start_at = form_context.start_at
+    end_at = form_context.end_at
+    if end_at <= start_at:
+        return options
+
+    overlapping = vm_request_repo.get_approved_vm_requests_overlapping_window(
+        session=session,
+        window_start=start_at,
+        window_end=end_at,
+    )
+    reserved_counts = Counter(
+        str(item.gpu_mapping_id)
+        for item in overlapping
+        if item.gpu_mapping_id and item.vmid is None
+    )
+
+    adjusted: list[dict[str, Any]] = []
+    for option in options:
+        mapping_id = str(option.get("mapping_id") or "")
+        reserved = int(reserved_counts.get(mapping_id, 0))
+        device_count = int(option.get("device_count") or 0)
+        used_count = int(option.get("used_count") or 0)
+        available_count = int(option.get("available_count") or 0)
+        if reserved <= 0:
+            adjusted.append(dict(option))
+            continue
+
+        updated = dict(option)
+        updated["used_count"] = min(device_count, used_count + reserved)
+        updated["available_count"] = max(0, available_count - reserved)
+        adjusted.append(updated)
+
+    return adjusted
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest, current_user: CurrentUser, session: SessionDep
@@ -73,9 +170,20 @@ async def chat(
         request.messages,
         top_k=request.top_k,
     )
+    form_context = request.form_context
+    gpu_options = _resolve_chat_gpu_options(request, session)
+    runtime_context = (
+        build_chat_runtime_context(
+            resource_type=(form_context.resource_type if form_context else None),
+            gpu_options=gpu_options,
+        )
+        if gpu_options
+        else ""
+    )
     system_prompt = build_chat_system_prompt(
         is_first_turn=is_first_turn,
         catalog_context=catalog_context,
+        runtime_context=runtime_context,
     )
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
@@ -160,6 +268,11 @@ async def recommend(
 
     live_nodes = load_live_device_nodes()
     extracted_intent = await extract_intent_from_chat(request)
+    form_context = request.form_context
+    if form_context and form_context.gpu_options:
+        gpu_options = [item.model_dump() for item in form_context.gpu_options]
+    else:
+        gpu_options = [item.model_dump() for item in gpu_service.list_gpu_options()]
     merged_request = RecommendationRequest(
         goal=extracted_intent.goal_summary,
         role=extracted_intent.role,
@@ -170,11 +283,12 @@ async def recommend(
         requires_gpu=extracted_intent.requires_gpu,
         needs_windows=extracted_intent.needs_windows,
         device_nodes=live_nodes or request.device_nodes,
+        form_context=form_context,
         top_k=request.top_k,
     )
 
     catalog = get_catalog()
-    resource_options = build_resource_option_bundle()
+    resource_options = build_resource_option_bundle(gpu_options=gpu_options)
 
     try:
         ai_result, ai_metrics = await generate_ai_plan(

@@ -55,7 +55,7 @@ def summarize_device_nodes(nodes: list[DeviceNode]) -> dict[str, Any]:
     }
 
 
-def build_resource_option_bundle() -> dict[str, Any]:
+def build_resource_option_bundle(*, gpu_options: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     lxc_os_images = [
         {
             "value": template.volid,
@@ -74,4 +74,5 @@ def build_resource_option_bundle() -> dict[str, Any]:
     return {
         "lxc_os_images": lxc_os_images,
         "vm_operating_systems": vm_operating_systems,
+        "gpu_options": list(gpu_options or []),
     }

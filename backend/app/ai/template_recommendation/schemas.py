@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -90,10 +91,35 @@ class ExtractedIntent(BaseModel):
     needs_windows: bool = Field(default=False)
 
 
+class GPUOptionContext(BaseModel):
+    mapping_id: str
+    description: str = ""
+    model: str = ""
+    vram: str = ""
+    node: str = ""
+    available_count: int = 0
+    device_count: int = 0
+    used_count: int = 0
+    total_vram_mb: int = 0
+    used_vram_mb: int = 0
+    has_mdev: bool = False
+    is_sriov: bool = False
+
+
+class RecommendationFormContext(BaseModel):
+    resource_type: Literal["lxc", "vm"] | None = None
+    mode: Literal["immediate", "scheduled"] | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    selected_gpu_mapping_id: str | None = None
+    gpu_options: list[GPUOptionContext] = Field(default_factory=list)
+
+
 class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, description="List of previous chat messages.")
     top_k: int = Field(default=5, ge=1, le=10)
     device_nodes: list[DeviceNode] = Field(default_factory=list)
+    form_context: RecommendationFormContext | None = None
 
 
 
@@ -116,6 +142,7 @@ class RecommendationRequest(BaseModel):
     device_nodes: list[DeviceNode] = Field(default_factory=list)
     resource_baseline: dict[str, dict[str, int]] = Field(default_factory=dict)
     clarification_answers: list[dict[str, str]] | None = Field(default=None)
+    form_context: RecommendationFormContext | None = None
 
     @model_validator(mode="before")
     @classmethod

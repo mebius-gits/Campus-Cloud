@@ -33,6 +33,7 @@ import {
   type AiPlanResult,
   AiTemplateRecommendationApi,
   type AiChatMessage as ChatMessage,
+  type RecommendationFormContext,
   type FormPrefill,
 } from "@/services/aiTemplateRecommendation"
 
@@ -41,6 +42,7 @@ export type { AiPlanResult } from "@/services/aiTemplateRecommendation"
 interface AiChatPanelProps {
   onImportPlan?: (prefill: FormPrefill) => void
   onImportReason?: (reason: string) => void
+  recommendationContext?: RecommendationFormContext
 }
 
 type ServiceTemplateCard = {
@@ -109,7 +111,23 @@ function renderPlanMarkdown(source: string): string {
   )
 }
 
-export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
+function formatDateTimeLabel(value?: string) {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Taipei",
+  }).format(date)
+}
+
+export function AiChatPanel({
+  onImportPlan,
+  recommendationContext,
+}: AiChatPanelProps) {
   const { t } = useTranslation("applications")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [conversationHistory, setConversationHistory] = useState<ChatMessage[]>(
@@ -188,11 +206,22 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
 
     try {
       const requestMessages = buildRequestMessages(newHistory)
+      const formContextForChat = recommendationContext
+        ? {
+            resource_type: recommendationContext.resource_type,
+            mode: recommendationContext.mode,
+            start_at: recommendationContext.start_at,
+            end_at: recommendationContext.end_at,
+            selected_gpu_mapping_id:
+              recommendationContext.selected_gpu_mapping_id,
+          }
+        : undefined
       const data = await AiTemplateRecommendationApi.chat({
         requestBody: {
           messages: requestMessages,
           top_k: 5,
           device_nodes: [],
+          form_context: formContextForChat,
         },
       })
       const reply = stripThinkTags(data.reply || "")
@@ -239,6 +268,7 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
           messages: requestMessages,
           top_k: 5,
           device_nodes: [],
+          form_context: recommendationContext,
         },
       })
       setPlanInsertionIndex(messages.length)
@@ -249,6 +279,7 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
         data.summary?.trim(),
         data.final_plan?.application_target?.environment_reason?.trim(),
         data.final_plan?.form_prefill?.reason?.trim(),
+        data.final_plan?.gpu_recommendation?.reason?.trim(),
       ]
         .filter(Boolean)
         .join("\n\n")
@@ -317,6 +348,7 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
 
   const plan = latestPlan?.final_plan
   const formPrefill = plan?.form_prefill
+  const gpuRecommendation = plan?.gpu_recommendation
   const resourceType =
     String(formPrefill?.resource_type || "lxc").toLowerCase() === "vm"
       ? "vm"
@@ -325,6 +357,12 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
     resourceType === "vm"
       ? formPrefill?.vm_os_choice || formPrefill?.vm_template_id || "-"
       : formPrefill?.lxc_os_image || "-"
+  const scheduleSummary =
+    formPrefill?.start_at && formPrefill?.end_at
+      ? `${formatDateTimeLabel(formPrefill.start_at)} → ${formatDateTimeLabel(formPrefill.end_at)}`
+      : recommendationContext?.start_at && recommendationContext?.end_at
+        ? `${formatDateTimeLabel(recommendationContext.start_at)} → ${formatDateTimeLabel(recommendationContext.end_at)}`
+        : "-"
   const applicationReason =
     formPrefill?.reason || latestPlan?.summary || t("aiChat.planError")
   const serviceTemplates = useMemo<ServiceTemplateCard[]>(() => {
@@ -571,8 +609,63 @@ export function AiChatPanel({ onImportPlan }: AiChatPanelProps) {
                                 </div>
                               </div>
                             </div>
+
+                            <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+                              <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                <Sparkles className="h-3.5 w-3.5" />
+                                時段 / GPU
+                              </div>
+                              <div className="space-y-1 text-sm font-semibold">
+                                <div className="break-all">{scheduleSummary}</div>
+                                <div className="break-all text-xs text-muted-foreground">
+                                  {gpuRecommendation?.selected_gpu_label ||
+                                    gpuRecommendation?.selected_gpu_mapping_id ||
+                                    formPrefill?.gpu_mapping_id ||
+                                    "尚未建議 GPU"}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
+
+                        {gpuRecommendation && (
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                              GPU 建議
+                            </div>
+                            <div className="rounded-xl border border-border/60 bg-muted/10 px-3.5 py-3 text-sm text-muted-foreground">
+                              <div className="mb-1 font-semibold text-foreground">
+                                {gpuRecommendation.should_use_gpu
+                                  ? gpuRecommendation.selected_gpu_label ||
+                                    gpuRecommendation.selected_gpu_mapping_id ||
+                                    "建議使用 GPU"
+                                  : "目前不建議使用 GPU"}
+                              </div>
+                              {gpuRecommendation.reason && (
+                                <div className="mb-2 [&_p]:mb-1.5 [&_p:last-child]:mb-0">
+                                  <div
+                                    className="text-sm text-muted-foreground"
+                                    // biome-ignore lint/security/noDangerouslySetInnerHtml: controlled markdown
+                                    dangerouslySetInnerHTML={{
+                                      __html: renderPlanMarkdown(
+                                        gpuRecommendation.reason,
+                                      ),
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              {gpuRecommendation.candidates?.length ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {gpuRecommendation.candidates.map((item) => (
+                                    <Badge key={item.mapping_id} variant="outline">
+                                      {item.label}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
 
                         {serviceTemplates.length > 0 && (
                           <div className="space-y-2">
