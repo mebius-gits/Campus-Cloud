@@ -23,8 +23,8 @@ from app.models import (
 from app.repositories import resource as resource_repo
 from app.repositories import vm_migration_job as vm_migration_job_repo
 from app.repositories import vm_request as vm_request_repo
-from app.services.proxmox import provisioning_service, proxmox_service
 from app.services.network import ip_management_service
+from app.services.proxmox import provisioning_service, proxmox_service
 from app.services.scheduling import policy as scheduling_policy
 from app.services.scheduling import support as scheduling_support
 from app.services.user import audit_service
@@ -323,6 +323,7 @@ def _provision_via_service_template(
     synchronously via SSH then record the resulting vmid/node in our DB.
     """
     from app.core.security import decrypt_value
+    from app.models import IpAllocation
     from app.services.network import script_deploy_service
 
     request_id = request.id
@@ -352,6 +353,45 @@ def _provision_via_service_template(
         request_id, template_slug,
     )
 
+    # ── 預先分配 IP（若有設定子網）──────────────────────────────────────
+    # 使用 proxmox_service.next_vmid() 取得候選 CTID，分配 IP 後傳給 community-scripts。
+    # 若部署後實際建立的 VMID 與候選不同，稍後會更新 IpAllocation.vmid 對應。
+    candidate_vmid: int | None = None
+    allocated_ip: str | None = None
+    deploy_net: dict | None = None
+    try:
+        from app.services.network import ip_management_service
+        with Session(engine) as prep_session:
+            try:
+                net_cfg = ip_management_service.get_network_config_for_vm(prep_session)
+            except Exception as exc:
+                logger.warning(
+                    "子網未設定或讀取失敗，服務模板將使用 DHCP: %s", exc,
+                )
+                net_cfg = None
+
+            if net_cfg is not None:
+                candidate_vmid = proxmox_service.next_vmid()
+                allocated_ip = ip_management_service.allocate_ip(
+                    prep_session, candidate_vmid, "lxc",
+                )
+                prep_session.commit()
+                logger.info(
+                    "已為候選 VMID %s 預留 IP %s (服務模板 %s)",
+                    candidate_vmid, allocated_ip, template_slug,
+                )
+                deploy_net = {
+                    "ip_cidr": f"{allocated_ip}/{net_cfg['prefix_len']}",
+                    "gateway": net_cfg.get("gateway"),
+                    "bridge": net_cfg.get("bridge_name"),
+                    "nameserver": net_cfg.get("dns_servers"),
+                }
+    except Exception as exc:
+        logger.warning("預留 IP 失敗，改用 DHCP: %s", exc)
+        candidate_vmid = None
+        allocated_ip = None
+        deploy_net = None
+
     try:
         new_vmid, _task = script_deploy_service.deploy_for_vm_request_sync(
             user_id=str(request_user_id),
@@ -366,12 +406,23 @@ def _provision_via_service_template(
             ssh=True,
             environment_type=request_env_type,
             os_info=request_os_info,
+            net_config=deploy_net,
         )
     except Exception as exc:
         logger.error(
             "Script deploy failed for request %s (%s): %s",
             request_id, template_slug, exc,
         )
+        # 回收已預留的 IP
+        if candidate_vmid is not None:
+            try:
+                from app.services.network import ip_management_service
+                with Session(engine) as rb_ip:
+                    ip_management_service.release_ip(rb_ip, candidate_vmid)
+                    rb_ip.commit()
+                logger.info("已釋放部署失敗的預留 IP（候選 VMID %s）", candidate_vmid)
+            except Exception as release_exc:
+                logger.warning("釋放預留 IP 失敗: %s", release_exc)
         with Session(engine) as rb:
             req = vm_request_repo.get_vm_request_by_id(
                 session=rb, request_id=request_id, for_update=True,
@@ -387,6 +438,25 @@ def _provision_via_service_template(
         actual_node = str(info.get("node") or "")
     except Exception:
         actual_node = ""
+
+    # 若實際建立的 VMID 與候選不同，更新 IpAllocation 讓 vmid 指向真實容器
+    if candidate_vmid is not None and new_vmid != candidate_vmid:
+        try:
+            with Session(engine) as fix_session:
+                alloc = fix_session.exec(
+                    select(IpAllocation).where(IpAllocation.vmid == candidate_vmid)
+                ).first()
+                if alloc is not None:
+                    alloc.vmid = new_vmid
+                    alloc.description = f"VMID {new_vmid}"
+                    fix_session.add(alloc)
+                    fix_session.commit()
+                    logger.info(
+                        "已將 IpAllocation 從候選 VMID %s 更新為實際 VMID %s",
+                        candidate_vmid, new_vmid,
+                    )
+        except Exception as exc:
+            logger.warning("更新 IpAllocation.vmid 失敗: %s", exc)
 
     with Session(engine) as finish_session:
         req = vm_request_repo.get_vm_request_by_id(

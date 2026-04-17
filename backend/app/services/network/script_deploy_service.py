@@ -205,6 +205,56 @@ def _apply_default_firewall(vmid: int) -> None:
     logger.info("已對 VMID=%s (%s) 套用預設防火牆規則", vmid, rtype)
 
 
+def _enforce_static_network(vmid: int, net_config: dict) -> None:
+    """部署完成後強制套用我們預先分配的靜態 IP 到容器 net0。
+
+    community-scripts 雖然接受 var_net 等環境變數，但若因任何原因未套用
+    （預設值覆蓋、版本差異等），這個步驟可作為最後防線，確保 Campus Cloud
+    的 IpAllocation 紀錄與容器實際網路設定一致。
+    """
+    ip_cidr = net_config.get("ip_cidr")
+    if not ip_cidr:
+        return
+
+    resource = _find_resource_any(vmid)
+    if resource is None:
+        logger.warning("找不到 VMID=%s 的資源，略過靜態 IP 套用", vmid)
+        return
+
+    node = resource["node"]
+    rtype = resource["type"]
+    if rtype != "lxc":
+        return
+
+    bridge = net_config.get("bridge") or "vmbr0"
+    gateway = net_config.get("gateway") or ""
+    net0_parts = ["name=eth0", f"bridge={bridge}", f"ip={ip_cidr}"]
+    if gateway:
+        net0_parts.append(f"gw={gateway}")
+    net0_parts.append("firewall=1")
+    net0 = ",".join(net0_parts)
+
+    updates: dict = {"net0": net0}
+    if net_config.get("nameserver"):
+        updates["nameserver"] = net_config["nameserver"]
+
+    try:
+        proxmox_service.update_config(node, vmid, rtype, **updates)
+        logger.info("已強制套用 net0=%s 到 VMID=%s", net0, vmid)
+    except Exception as exc:
+        logger.warning("套用靜態 IP 到 VMID=%s 失敗: %s", vmid, exc)
+        return
+
+    # 重啟容器讓網路變更生效（pct set 更新設定但需重啟以套用）
+    try:
+        status = proxmox_service.get_status(node, vmid, rtype)
+        if status.get("status") == "running":
+            proxmox_service.control(node, vmid, rtype, "restart")
+            logger.info("已重啟 VMID=%s 以套用新網路設定", vmid)
+    except Exception as exc:
+        logger.warning("重啟 VMID=%s 失敗（非致命）: %s", vmid, exc)
+
+
 # ---------------------------------------------------------------------------
 # Cleanup / rollback
 # ---------------------------------------------------------------------------
@@ -268,12 +318,20 @@ def _build_inline_env(
     ssh: bool,
     template_storage: str = "local",
     container_storage: str = "local-lvm",
+    net_config: dict | None = None,
 ) -> str:
     r"""產生 inline 環境變數字串（官方 community-scripts 模式）。
 
     官方用法：var_cpu=4 var_ram=4096 ... bash -c "\$(curl ...)"
     變數以空格分隔放在 bash -c 前面，讓 shell 直接設定到同一進程。
     密碼用單引號包裹以避免特殊字元問題。
+
+    net_config（選填）支援靜態 IP 配置：
+        ip_cidr: "10.0.0.5/24" — 要指派給容器的 IPv4/CIDR
+        gateway: "10.0.0.1"    — 預設閘道
+        bridge:  "vmbr0"       — 要使用的橋接介面
+        nameserver: "1.1.1.1"  — DNS（空白分隔多個）
+    未提供時 fallback 為 DHCP。
     """
     # 密碼用單引號，內部的單引號用 '\'' 轉義
     safe_password = password.replace("'", "'\\''")
@@ -286,13 +344,26 @@ def _build_inline_env(
         f"var_ram={ram}",
         f"var_disk={disk}",
         f"var_unprivileged={1 if unprivileged else 0}",
-        "var_net='dhcp'",
         f"var_ssh={'yes' if ssh else 'no'}",
         "var_tags=''",
         "var_ipv6_method='none'",
         f"var_template_storage='{template_storage}'",
         f"var_container_storage='{container_storage}'",
     ]
+
+    if net_config and net_config.get("ip_cidr"):
+        parts.append(f"var_net='{net_config['ip_cidr']}'")
+        if net_config.get("gateway"):
+            parts.append(f"var_gateway='{net_config['gateway']}'")
+        if net_config.get("bridge"):
+            parts.append(f"var_brg='{net_config['bridge']}'")
+        if net_config.get("nameserver"):
+            parts.append(f"var_ns='{net_config['nameserver']}'")
+    else:
+        parts.append("var_net='dhcp'")
+        if net_config and net_config.get("bridge"):
+            parts.append(f"var_brg='{net_config['bridge']}'")
+
     return " ".join(parts)
 
 
@@ -337,6 +408,7 @@ def _run_deployment(task: DeploymentTask, request_data: dict) -> None:  # noqa: 
             ssh=request_data["ssh"],
             template_storage=iso_storage,
             container_storage=data_storage,
+            net_config=request_data.get("net_config"),
         )
 
         # 3. 以官方模式執行：VAR=value bash -c "$(cat script)"
@@ -393,6 +465,16 @@ def _run_deployment(task: DeploymentTask, request_data: dict) -> None:  # noqa: 
             _apply_default_firewall(new_vmid)
         except Exception as e:
             logger.warning("套用防火牆規則失敗 (非致命): %s", e)
+
+        # 8.5 強制套用靜態 IP（如果有分配）
+        net_config = request_data.get("net_config")
+        if net_config and net_config.get("ip_cidr"):
+            task.progress = "正在套用靜態 IP 設定…"
+            _store_task(task)
+            try:
+                _enforce_static_network(new_vmid, net_config)
+            except Exception as e:
+                logger.warning("套用靜態 IP 失敗 (非致命): %s", e)
 
         # 9. 清除 community-scripts 自動產生的 description
         try:
@@ -483,10 +565,12 @@ def deploy_for_vm_request_sync(
     ssh: bool = True,
     environment_type: str = "服務模板",
     os_info: str | None = None,
+    net_config: dict | None = None,
 ) -> tuple[int, DeploymentTask]:
     """同步執行 community-scripts 部署，成功回傳 (vmid, task)。
 
     用於 VM 請求自動核准後的 LXC 建立（由腳本建立容器）。
+    net_config 若提供會以靜態 IP 建立容器（參見 _build_inline_env）。
     失敗會拋出 RuntimeError 且 task 內含錯誤訊息。
     """
     task_id = str(uuid.uuid4())
@@ -509,6 +593,7 @@ def deploy_for_vm_request_sync(
         "ssh": ssh,
         "environment_type": environment_type,
         "os_info": os_info,
+        "net_config": net_config,
     }
 
     _run_deployment(task, request_data)
