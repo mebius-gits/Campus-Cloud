@@ -24,6 +24,7 @@ import {
   type RubricItem,
 } from "@/features/ai-judge/api"
 import {
+  AchievementReviewTable,
   ChatPanel,
   RubricCard,
   RubricStats,
@@ -37,7 +38,7 @@ export const Route = createFileRoute("/_layout/groups_/$groupId_/ai-judge")({
   component: AiJudgePage,
   beforeLoad: () => requireGroupManagerUser(),
   head: () => ({
-    meta: [{ title: "AI 評分助手 - Campus Cloud" }],
+    meta: [{ title: "AI 情境評估助手 - Campus Cloud" }],
   }),
 })
 
@@ -57,11 +58,21 @@ function AiJudgePage() {
   // Computed
   const items = analysis?.items ?? []
   const stats = {
-    totalScore: items.reduce((sum, item) => sum + item.max_score, 0),
+    totalItems: items.length,
     autoCount: items.filter((item) => item.detectable === "auto").length,
     partialCount: items.filter((item) => item.detectable === "partial").length,
     manualCount: items.filter((item) => item.detectable === "manual").length,
   }
+
+  const applyItemsToAnalysis = useCallback(
+    (base: RubricAnalysis, nextItems: RubricItem[]): RubricAnalysis => ({
+      ...base,
+      items: nextItems,
+      total_items: nextItems.length,
+      checked_count: nextItems.filter((item) => item.checked).length,
+    }),
+    [],
+  )
 
   // Handlers
   const handleUpload = useCallback(
@@ -72,7 +83,7 @@ function AiJudgePage() {
         setAnalysis(response.analysis)
         setMessages([])
         showSuccessToast(
-          `分析完成：${response.analysis.items.length} 個評分項目`,
+          `分析完成：${response.analysis.items.length} 題評估項目`,
         )
       } catch (err: any) {
         showErrorToast(err?.body?.detail ?? err?.message ?? "上傳失敗")
@@ -110,13 +121,10 @@ function AiJudgePage() {
         if (response.updated_items) {
           setAnalysis((prev) =>
             prev
-              ? {
-                  ...prev,
-                  items: response.updated_items as RubricItem[],
-                }
+              ? applyItemsToAnalysis(prev, response.updated_items as RubricItem[])
               : null,
           )
-          showSuccessToast("評分表已更新")
+          showSuccessToast("評估表已更新")
         }
       } catch (err: any) {
         showErrorToast(err?.body?.detail ?? err?.message ?? "對話失敗")
@@ -126,7 +134,7 @@ function AiJudgePage() {
         setIsChatting(false)
       }
     },
-    [analysis, messages, showSuccessToast, showErrorToast],
+    [analysis, messages, showSuccessToast, showErrorToast, applyItemsToAnalysis],
   )
 
   const handleItemChange = useCallback(
@@ -134,36 +142,33 @@ function AiJudgePage() {
       if (!analysis) return
       const newItems = [...analysis.items]
       newItems[index] = updatedItem
-      setAnalysis({ ...analysis, items: newItems })
+      setAnalysis(applyItemsToAnalysis(analysis, newItems))
     },
-    [analysis],
+    [analysis, applyItemsToAnalysis],
   )
 
   const handleItemDelete = useCallback(
     (index: number) => {
       if (!analysis) return
       const newItems = analysis.items.filter((_, i) => i !== index)
-      setAnalysis({ ...analysis, items: newItems })
+      setAnalysis(applyItemsToAnalysis(analysis, newItems))
     },
-    [analysis],
+    [analysis, applyItemsToAnalysis],
   )
 
   const handleAddItem = useCallback(() => {
     if (!analysis) return
     const newItem: RubricItem = {
       id: `item-${Date.now()}`,
-      title: "新評分項目",
+      title: "新評估項目",
       description: "",
-      max_score: 10,
+      checked: false,
       detectable: "manual",
       detection_method: null,
       fallback: null,
     }
-    setAnalysis({
-      ...analysis,
-      items: [...analysis.items, newItem],
-    })
-  }, [analysis])
+    setAnalysis(applyItemsToAnalysis(analysis, [...analysis.items, newItem]))
+  }, [analysis, applyItemsToAnalysis])
 
   const handleExport = useCallback(async () => {
     if (!analysis) return
@@ -196,9 +201,9 @@ function AiJudgePage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI 評分助手</h1>
+            <h1 className="text-2xl font-bold tracking-tight">AI 情境評估助手</h1>
             <p className="text-sm text-muted-foreground">
-              上傳評分表，AI 自動分析可偵測性並協助優化
+              上傳評估表，查看 AI 產生的達成審核表與偵測判斷
             </p>
           </div>
         </div>
@@ -225,7 +230,7 @@ function AiJudgePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
-              上傳評分表
+              上傳情境評估表
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -249,11 +254,21 @@ function AiJudgePage() {
               </CardContent>
             </Card>
 
+            {/* Achievement review table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>達成審核表</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AchievementReviewTable items={items} />
+              </CardContent>
+            </Card>
+
             {/* Items */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>評分項目 ({items.length})</CardTitle>
+                  <CardTitle>評估項目 ({items.length})</CardTitle>
                   <Button variant="outline" size="sm" onClick={handleAddItem}>
                     <Plus className="mr-1 h-4 w-4" />
                     新增項目
