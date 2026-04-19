@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Public base URL of the backend API as seen by desktop clients.
     # Defaults to http://localhost:8000 when unset (override in .env for deploys).
     DESKTOP_CLIENT_BACKEND_URL: str = "http://localhost:8000"
+    # External URL for the desktop client zip (e.g. GitHub Releases asset).
+    # When set, /desktop-client/download redirects here instead of serving a local file.
+    DESKTOP_CLIENT_DOWNLOAD_URL: str = ""
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
     BACKEND_CORS_ORIGINS: Annotated[
