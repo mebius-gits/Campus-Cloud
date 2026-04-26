@@ -1,11 +1,6 @@
 import { useState } from "react";
 import styles from "./ResourcesPage.module.scss";
-
-const MIcon = ({ name, size = 20 }) => (
-  <span className="material-icons-outlined" style={{ fontSize: size, lineHeight: 1 }}>
-    {name}
-  </span>
-);
+import MIcon from "../../../components/MIcon";
 
 /* ── 假資料（之後換成 API） ── */
 const MOCK_RESOURCES = [];

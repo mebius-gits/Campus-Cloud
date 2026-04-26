@@ -2,12 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./RequestsPage.module.scss";
 import { VmRequestsService } from "../../../services/vmRequests";
 import RequestFormPage from "./RequestFormPage";
-
-const MIcon = ({ name, size = 20 }) => (
-  <span className="material-icons-outlined" style={{ fontSize: size, lineHeight: 1 }}>
-    {name}
-  </span>
-);
+import MIcon from "../../../components/MIcon";
 
 /* ── Constants ── */
 const STATUS_MAP = {

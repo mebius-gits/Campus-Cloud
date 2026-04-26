@@ -8,12 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VmRequestAvailabilityService } from "../../services/vmRequestAvailability";
 import styles from "./AvailabilityPanel.module.scss";
-
-const MIcon = ({ name, size = 16 }) => (
-  <span className="material-icons-outlined" style={{ fontSize: size, lineHeight: 1 }}>
-    {name}
-  </span>
-);
+import MIcon from "../MIcon";
 
 function TimeGroup({ label, date, hours, value, onChange }) {
   return (

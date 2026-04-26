@@ -2,15 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth }  from "../../contexts/AuthContext";
 import styles from "./Sidebar.module.scss";
-
-const MIcon = ({ name, size = 22 }) => (
-  <span
-    className="material-icons-outlined"
-    style={{ fontSize: size, lineHeight: 1 }}
-  >
-    {name}
-  </span>
-);
+import MIcon from "../MIcon";
 
 const navGroups = [
   {
