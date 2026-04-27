@@ -30,7 +30,7 @@ export default function ConnectionEdge(props) {
     ? (hovered ? "#93c5fd" : "#60a5fa")
     : isOutbound
     ? (hovered ? "#6ee7b7" : "#4ade80")
-    : (hovered ? "#fcd34d" : "#f59e0b");
+    : (hovered ? "#94a3b8" : "#64748b");
 
   const showLabel = hovered || data?.showLabel;
 

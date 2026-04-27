@@ -6,7 +6,7 @@ import MIcon from "../../../components/MIcon";
 
 /* ── Constants ── */
 const STATUS_MAP = {
-  pending:      { label: "審核中", color: "warning", icon: "schedule"     },
+  pending:      { label: "審核中", color: "info",    icon: "schedule"     },
   approved:     { label: "已核准", color: "success", icon: "check_circle" },
   provisioning: { label: "佈建中", color: "info",    icon: "sync"         },
   running:      { label: "執行中", color: "success", icon: "play_circle"  },
