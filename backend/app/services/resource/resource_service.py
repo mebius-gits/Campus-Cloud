@@ -2,6 +2,7 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlmodel import Session
 
@@ -538,25 +539,66 @@ def extend_session(
     )
 
 
+EXPIRY_WARNING_HOURS = 24
+"""How long before ``resource.expiry_date`` we start warning the user. Kept as
+a module constant rather than an admin setting to keep the surface small;
+move to ProxmoxConfig if it ever needs to be admin-tunable."""
+
+
 def get_session_status(
     *,
     session: Session,
     vmid: int,
     resource_info: dict,
 ) -> SessionStatusResponse:
-    """Live session info for the student UI (polled every ~30s)."""
+    """Live session info for the student UI (polled every ~30s).
+
+    Reports whichever warning is more urgent:
+    - ``warn_reason="auto_stop"``: VM has an ``auto_stop_at`` within the
+      configured warning window (group practice quota or course-window grace).
+    - ``warn_reason="expiry"``: VM's ``expiry_date`` is within
+      :data:`EXPIRY_WARNING_HOURS` (defaults to 24h).
+
+    auto_stop wins when both apply, since it's typically minutes away while
+    expiry is at least hours.
+    """
     resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
     running = resource_info.get("status") == "running"
     auto_stop_at = resource.auto_stop_at if resource else None
     auto_stop_reason = resource.auto_stop_reason if resource else None
 
     minutes_until_stop: int | None = None
-    should_warn = False
+    auto_stop_warn = False
     if running and auto_stop_at:
         delta = auto_stop_at - _utc_now()
         minutes_until_stop = max(int(delta.total_seconds() // 60), 0)
         policy = get_schedule_policy(session=session)
-        should_warn = minutes_until_stop <= policy.practice_warning_minutes
+        auto_stop_warn = minutes_until_stop <= policy.practice_warning_minutes
+
+    # expiry_date is a date (no tz / time); warn when within 24h of midnight UTC
+    # of that day. ``hours_until_expiry`` is computed from ``end-of-expiry-day``
+    # in UTC so we don't claim 24h when the resource expires "today".
+    expiry_at: datetime | None = None
+    hours_until_expiry: int | None = None
+    expiry_warn = False
+    if running and resource and resource.expiry_date:
+        # Treat the expiry date as the END of that day in UTC (00:00 of the
+        # following day) so resources stay valid through their full last day.
+        expiry_at = datetime.combine(
+            resource.expiry_date, datetime.min.time(), tzinfo=UTC
+        ) + timedelta(days=1)
+        delta_h = (expiry_at - _utc_now()).total_seconds() / 3600
+        hours_until_expiry = max(int(delta_h), 0)
+        # Only warn while the resource is still alive (positive remaining time).
+        expiry_warn = 0 < delta_h <= EXPIRY_WARNING_HOURS
+
+    # auto_stop is more urgent (minutes vs hours), so it takes priority.
+    if auto_stop_warn:
+        warn_reason: Literal["auto_stop", "expiry"] | None = "auto_stop"
+    elif expiry_warn:
+        warn_reason = "expiry"
+    else:
+        warn_reason = None
 
     return SessionStatusResponse(
         vmid=vmid,
@@ -564,8 +606,12 @@ def get_session_status(
         auto_stop_at=auto_stop_at,
         auto_stop_reason=auto_stop_reason,
         minutes_until_stop=minutes_until_stop,
-        should_warn=should_warn,
+        expiry_at=expiry_at,
+        hours_until_expiry=hours_until_expiry,
+        should_warn=warn_reason is not None,
+        warn_reason=warn_reason,
         # Only practice-quota sessions can be extended via the button.
+        # Expiry extensions go through spec_change_requests, not this endpoint.
         can_extend=running and auto_stop_reason == "practice_quota",
     )
 

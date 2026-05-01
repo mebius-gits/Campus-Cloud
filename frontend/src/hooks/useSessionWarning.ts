@@ -72,12 +72,11 @@ export function useSessionWarning(): {
     })
   }, [warnByVmid])
 
+  // Surface any actionable warning — both auto-stop (which the student can
+  // sometimes extend) and expiry (which they can't, but still need to know).
   const active =
     sessionQueries.find(
-      (q) =>
-        q.data?.should_warn === true &&
-        q.data.can_extend &&
-        !dismissed.has(q.data.vmid),
+      (q) => q.data?.should_warn === true && !dismissed.has(q.data.vmid),
     )?.data ?? null
 
   return {
