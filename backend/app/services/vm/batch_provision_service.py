@@ -94,22 +94,31 @@ def approve_batch_job(
     reviewer_id: uuid.UUID,
     review_comment: str | None = None,
 ) -> None:
-    """Approve a pending batch job and spawn the background worker."""
-    job = bp_repo.get_job(session=session, job_id=job_id)
-    if job is None:
-        raise BadRequestError("Batch job not found")
-    if job.status != BatchProvisionJobStatus.pending_review:
-        raise BadRequestError(
-            f"Batch job is not pending review (current status: {job.status})"
-        )
+    """Approve a pending batch job and spawn the background worker.
 
-    bp_repo.mark_reviewed(
+    The status transition is atomic — if two admins click "approve" at the
+    same time, only the one whose UPDATE wins races spawns a worker; the
+    other gets a BadRequestError.
+    """
+    # First fail fast if the job doesn't exist at all (gives a clearer error
+    # than the race-loser path).
+    if bp_repo.get_job(session=session, job_id=job_id) is None:
+        raise BadRequestError("Batch job not found")
+
+    job = bp_repo.transition_pending_review(
         session=session,
         job_id=job_id,
         reviewer_id=reviewer_id,
         decision=BatchProvisionJobStatus.approved,
         review_comment=review_comment,
     )
+    if job is None:
+        # Either status changed under us (concurrent reviewer) or it wasn't
+        # in pending_review to begin with.
+        raise BadRequestError(
+            "Batch job is no longer pending review (it may have been "
+            "processed by another reviewer)."
+        )
 
     t = threading.Thread(
         target=_run_queue,
@@ -129,21 +138,23 @@ def reject_batch_job(
     reviewer_id: uuid.UUID,
     review_comment: str | None = None,
 ) -> None:
-    """Reject a pending batch job; no provisioning takes place."""
-    job = bp_repo.get_job(session=session, job_id=job_id)
-    if job is None:
+    """Reject a pending batch job; no provisioning takes place. Same atomic
+    semantics as :func:`approve_batch_job`."""
+    if bp_repo.get_job(session=session, job_id=job_id) is None:
         raise BadRequestError("Batch job not found")
-    if job.status != BatchProvisionJobStatus.pending_review:
-        raise BadRequestError(
-            f"Batch job is not pending review (current status: {job.status})"
-        )
-    bp_repo.mark_reviewed(
+
+    job = bp_repo.transition_pending_review(
         session=session,
         job_id=job_id,
         reviewer_id=reviewer_id,
         decision=BatchProvisionJobStatus.rejected,
         review_comment=review_comment,
     )
+    if job is None:
+        raise BadRequestError(
+            "Batch job is no longer pending review (it may have been "
+            "processed by another reviewer)."
+        )
     logger.info("Batch provision job %s rejected by %s", job_id, reviewer_id)
 
 

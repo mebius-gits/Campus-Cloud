@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -345,10 +345,7 @@ def get_recurrence_preview(
     from app.services.scheduling.recurrence import compute_next_window
 
     windows: list[tuple[datetime, datetime]] = []
-    after = datetime.now()
-    if after.tzinfo is None:
-        from datetime import UTC
-        after = after.replace(tzinfo=UTC)
+    after = datetime.now(UTC)
     for _i in range(max(count, 0)):
         result = compute_next_window(
             rule=job.recurrence_rule,

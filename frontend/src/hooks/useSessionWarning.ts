@@ -8,9 +8,9 @@
  * snoozing one warning doesn't suppress others.
  */
 import { useQueries, useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
-import { ResourcesService } from "@/client"
+import { type ResourcePublic, ResourcesService } from "@/client"
 import {
   type SessionStatus,
   SessionWarningService,
@@ -23,15 +23,16 @@ export function useSessionWarning(): {
   dismiss: () => void
 } {
   // Pull the current user's VMs so we know which vmids to poll.
-  const { data: myResources = [] } = useQuery({
+  const { data: myResources = [] } = useQuery<ResourcePublic[]>({
     queryKey: ["sessionStatus", "myResources"],
     queryFn: () => ResourcesService.listMyResources(),
     refetchInterval: POLL_INTERVAL_MS * 4, // less frequent than per-VM poll
   })
 
-  const runningVmids = myResources
-    .filter((r: any) => r.status === "running")
-    .map((r: any) => r.vmid as number)
+  const runningVmids = useMemo(
+    () => myResources.filter((r) => r.status === "running").map((r) => r.vmid),
+    [myResources],
+  )
 
   const sessionQueries = useQueries({
     queries: runningVmids.map((vmid) => ({
@@ -43,18 +44,33 @@ export function useSessionWarning(): {
 
   const [dismissed, setDismissed] = useState<Set<number>>(new Set())
 
-  // Reset dismissals when the corresponding warning is no longer active —
-  // otherwise the student can't see future warnings on the same VM.
+  // Reset dismissals only when the corresponding query has a fresh response
+  // explicitly saying ``should_warn=false``. Loading/error states leave the
+  // entry alone so a transient blip doesn't re-pop the dialog.
+  //
+  // ``warnByVmid`` is a stable lookup that only changes when warn flags do —
+  // letting the effect avoid re-running on every render.
+  const warnByVmid = useMemo(() => {
+    const map = new Map<number, boolean>()
+    for (const q of sessionQueries) {
+      if (q.data) map.set(q.data.vmid, q.data.should_warn)
+    }
+    return map
+  }, [sessionQueries])
+
   useEffect(() => {
     setDismissed((prev) => {
+      if (prev.size === 0) return prev
       const next = new Set(prev)
       for (const vmid of prev) {
-        const q = sessionQueries.find((q) => q.data?.vmid === vmid)
-        if (!q?.data?.should_warn) next.delete(vmid)
+        // Only clear when we have a confirmed should_warn === false.
+        if (warnByVmid.get(vmid) === false) {
+          next.delete(vmid)
+        }
       }
       return next.size === prev.size ? prev : next
     })
-  }, [sessionQueries])
+  }, [warnByVmid])
 
   const active =
     sessionQueries.find(
