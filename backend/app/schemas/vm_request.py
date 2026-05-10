@@ -55,7 +55,7 @@ class VMRequestCreate(BaseModel):
     environment_type: str = "Custom"
     os_info: str | None = None
     expiry_date: date | None = None
-    mode: Literal["immediate", "scheduled"] = "scheduled"
+    mode: Literal["quick_template", "immediate", "scheduled"] = "scheduled"
     start_at: datetime | None = None
     end_at: datetime | None = None
 
@@ -83,6 +83,7 @@ class VMRequestPublic(BaseModel):
     user_full_name: str | None = None
     reason: str
     resource_type: str
+    request_kind: str = "research"
     hostname: str
     cores: int
     memory: int
@@ -120,6 +121,12 @@ class VMRequestPublic(BaseModel):
     rebalance_epoch: int = 0
     last_rebalanced_at: datetime | None = None
     last_migrated_at: datetime | None = None
+    recurrence_rule: str | None = None
+    recurrence_duration_minutes: int | None = None
+    schedule_timezone: str | None = None
+    next_window_start: datetime | None = None
+    next_window_end: datetime | None = None
+    batch_job_id: uuid.UUID | None = None
     created_at: datetime
 
 

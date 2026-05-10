@@ -22,6 +22,10 @@ def create_job(
     hostname_prefix: str,
     template_params: str,
     member_user_ids: list[uuid.UUID],
+    initial_status: BatchProvisionJobStatus = BatchProvisionJobStatus.pending_review,
+    recurrence_rule: str | None = None,
+    recurrence_duration_minutes: int | None = None,
+    schedule_timezone: str | None = None,
 ) -> BatchProvisionJob:
     now = datetime.now(UTC)
     job = BatchProvisionJob(
@@ -30,11 +34,14 @@ def create_job(
         resource_type=resource_type,
         hostname_prefix=hostname_prefix,
         template_params=template_params,
-        status=BatchProvisionJobStatus.pending,
+        status=initial_status,
         total=len(member_user_ids),
         done=0,
         failed_count=0,
         created_at=now,
+        recurrence_rule=recurrence_rule,
+        recurrence_duration_minutes=recurrence_duration_minutes,
+        schedule_timezone=schedule_timezone,
     )
     session.add(job)
     session.flush()  # 取得 job.id
@@ -51,6 +58,82 @@ def create_job(
     session.commit()
     session.refresh(job)
     return job
+
+
+def transition_pending_review(
+    *,
+    session: Session,
+    job_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    decision: BatchProvisionJobStatus,
+    review_comment: str | None = None,
+) -> BatchProvisionJob | None:
+    """Atomically transition a job from ``pending_review`` to ``decision``.
+
+    Uses a conditional UPDATE so two concurrent admin requests can't both
+    see ``pending_review`` and each spawn a worker. Returns the refreshed job
+    on success, or ``None`` if the job doesn't exist or is no longer pending
+    (i.e. another reviewer already won the race).
+    """
+    import sqlalchemy as sa
+
+    now = datetime.now(UTC)
+    result = session.exec(
+        sa.update(BatchProvisionJob)
+        .where(
+            BatchProvisionJob.id == job_id,
+            BatchProvisionJob.status == BatchProvisionJobStatus.pending_review,
+        )
+        .values(
+            status=decision,
+            reviewer_id=reviewer_id,
+            reviewed_at=now,
+            review_comment=(review_comment or None),
+        )
+    )
+    if result.rowcount == 0:
+        return None
+    session.commit()
+    job = session.get(BatchProvisionJob, job_id)
+    if job is not None:
+        session.refresh(job)
+    return job
+
+
+def mark_reviewed(
+    *,
+    session: Session,
+    job_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
+    decision: BatchProvisionJobStatus,
+    review_comment: str | None = None,
+) -> BatchProvisionJob | None:
+    """Backwards-compat wrapper that delegates to the atomic transition."""
+    return transition_pending_review(
+        session=session,
+        job_id=job_id,
+        reviewer_id=reviewer_id,
+        decision=decision,
+        review_comment=review_comment,
+    )
+
+
+def list_pending_review_jobs(*, session: Session) -> list[BatchProvisionJob]:
+    stmt = (
+        select(BatchProvisionJob)
+        .where(BatchProvisionJob.status == BatchProvisionJobStatus.pending_review)
+        .order_by(BatchProvisionJob.created_at)
+    )
+    return list(session.exec(stmt).all())
+
+
+def list_jobs_with_recurrence(*, session: Session) -> list[BatchProvisionJob]:
+    """Jobs that the scheduler must inspect for window-based start/stop."""
+    stmt = select(BatchProvisionJob).where(
+        BatchProvisionJob.recurrence_rule.isnot(None),  # type: ignore[union-attr]
+        BatchProvisionJob.status == BatchProvisionJobStatus.completed,
+    )
+    return list(session.exec(stmt).all())
 
 
 def get_job(*, session: Session, job_id: uuid.UUID) -> BatchProvisionJob | None:
