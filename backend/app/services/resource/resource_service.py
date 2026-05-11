@@ -151,36 +151,90 @@ def list_all(
         raise ProxmoxError(f"Failed to get resources: {e}")
 
 
+DELETED_TOMBSTONE_DAYS = 30
+"""How long after a user-initiated deletion to keep showing the tombstone on
+their resources page. Keep it short enough that the list doesn't grow
+forever; long enough that the user notices the change after returning from
+a few days off."""
+
+
 def list_by_user(
     *, session: Session, user_id: uuid.UUID
 ) -> list[ResourcePublic]:
     try:
+        result: list[ResourcePublic] = []
+
+        # 1. Live resources owned by the user (from Proxmox + DB join).
         user_resources = resource_repo.get_resources_by_user(
             session=session, user_id=user_id
         )
-        if not user_resources:
-            return []
-
-        owned_vmids = {r.vmid: r for r in user_resources}
-        resources = proxmox_service.list_all_resources()
-        result = []
-        for r in resources:
-            if r.get("template") == 1:
-                continue
-            vmid = r.get("vmid")
-            if vmid not in owned_vmids:
-                continue
-            vm_type = r.get("type")
-            vm_node = r.get("node")
-            result.append(
-                _build_resource_public(
-                    r, owned_vmids[vmid], vm_node, vm_type, session
+        if user_resources:
+            owned_vmids = {r.vmid: r for r in user_resources}
+            resources = proxmox_service.list_all_resources()
+            for r in resources:
+                if r.get("template") == 1:
+                    continue
+                vmid = r.get("vmid")
+                if vmid not in owned_vmids:
+                    continue
+                vm_type = r.get("type")
+                vm_node = r.get("node")
+                result.append(
+                    _build_resource_public(
+                        r, owned_vmids[vmid], vm_node, vm_type, session
+                    )
                 )
-            )
+
+        # 2. Tombstones for the user's own recent completed deletions, so the
+        # RequestsPage can show a "已刪除" badge. Admin-initiated deletions
+        # are intentionally excluded — the snapshot's user_id matches the
+        # owner, but ``user_id`` on DeletionRequest is whoever submitted the
+        # delete (could be admin); we only want the user-self case here.
+        result.extend(
+            _list_user_deletion_tombstones(session=session, user_id=user_id)
+        )
+
         return result
     except Exception as e:
         logger.error(f"Failed to get user resources: {e}")
         raise ProxmoxError(f"Failed to get user resources: {e}")
+
+
+def _list_user_deletion_tombstones(
+    *, session: Session, user_id: uuid.UUID
+) -> list[ResourcePublic]:
+    """Build ResourcePublic tombstones for the user's recent self-initiated
+    deletions, so the resources page can render a "已刪除" badge alongside
+    live resources."""
+    from sqlmodel import select
+
+    from app.models.deletion_request import (
+        DeletionRequest,
+        DeletionRequestStatus,
+    )
+
+    cutoff = _utc_now() - timedelta(days=DELETED_TOMBSTONE_DAYS)
+    rows = list(
+        session.exec(
+            select(DeletionRequest)
+            .where(
+                DeletionRequest.user_id == user_id,
+                DeletionRequest.status == DeletionRequestStatus.completed,
+                DeletionRequest.completed_at >= cutoff,  # type: ignore[arg-type]
+            )
+            .order_by(DeletionRequest.completed_at.desc())  # type: ignore[union-attr]
+        ).all()
+    )
+    return [
+        ResourcePublic(
+            vmid=req.vmid,
+            name=req.name or f"vm-{req.vmid}",
+            status="deleted",
+            node=req.node or "",
+            type=req.resource_type or "",
+        )
+        for req in rows
+    ]
 
 
 def get_config(*, vmid: int, resource_info: dict) -> dict:
