@@ -37,7 +37,8 @@ export default defineComponent({
         } else if (!warning) {
           warningVisible.value = false;
         }
-      }
+      },
+      { immediate: true }
     );
 
     function handleConfirm() {
@@ -77,9 +78,7 @@ export default defineComponent({
       doNotShow,
       handleConfirm,
       handleLater,
-      t,
-      currentLocale: () =>
-        useAppStore().language === "zh-CN" ? zhCn : en
+      t
     };
   },
   computed: {
