@@ -38,8 +38,10 @@ def demo_sync():
     # 範例 3: 流式輸出
     print("[範例3] 流式輸出")
     print("回應: ", end="")
-    for chunk in client.chat_stream("請簡述深度學習的三大要素", max_tokens=2048):
-        print(chunk, end="", flush=True)
+    stream = client.chat_stream("請簡述深度學習的三大要素", max_tokens=2048)
+    if stream:
+        for chunk in stream:
+            print(chunk, end="", flush=True)
     print("\n")
 
 
@@ -77,8 +79,10 @@ async def demo_async():
     # 範例 6: 異步流式
     print("[範例6] 異步流式輸出")
     print("回應: ", end="")
-    async for chunk in client.achat_stream("什麼是連續批次處理？", max_tokens=2048):
-        print(chunk, end="", flush=True)
+    stream = await client.achat_stream("什麼是連續批次處理？", max_tokens=2048)
+    if stream:
+        async for chunk in stream:
+            print(chunk, end="", flush=True)
     print("\n")
 
     await client.aclose()

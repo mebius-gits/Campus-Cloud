@@ -93,6 +93,7 @@ def _wait_gateway_ready(
                     logger.success(f"Gateway 已就緒: {health_url}")
                     return
         except Exception:
+            # Ignore health check failures during probe
             pass
 
         time.sleep(1)
