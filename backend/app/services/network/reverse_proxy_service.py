@@ -149,6 +149,7 @@ def resolve_vmid_ip(*, vmid: int, session: object | None = None) -> str | None:
         resource_type = resource["type"]
         ip = proxmox_service.get_ip_address(node, vmid, resource_type)
     except Exception:
+        # Fallback to DB cache if PVE API fails
         pass
 
     if ip and session is not None:

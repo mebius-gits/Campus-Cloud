@@ -245,6 +245,7 @@ def upsert_reverse_proxy_dns_record(
             )
             return _to_dns_record_public(clean_zone_id, record)
         except NotFoundError:
+            # Record already deleted or does not exist
             pass
 
     if existing_record_id and existing_zone_id and existing_zone_id != clean_zone_id:
@@ -254,6 +255,7 @@ def upsert_reverse_proxy_dns_record(
                 record_id=_require_identifier(existing_record_id, "existing_record_id"),
             )
         except NotFoundError:
+            # Record already deleted or does not exist
             pass
 
     existing_records = list_dns_records(

@@ -282,6 +282,7 @@ async def chat_with_rubric(
                     )
             updated_items = [item.model_dump() for item in normalized_updated]
     except (json.JSONDecodeError, TypeError):
+        # Ignore malformed AI response for rubric updates
         pass
 
     return reply_text, updated_items, metrics

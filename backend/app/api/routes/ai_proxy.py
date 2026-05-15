@@ -190,6 +190,7 @@ async def chat_completions(
                 error_message=f"HTTP {e.response.status_code}: {e.response.text[:500]}",
             )
         except Exception:
+            # Ignore failures when recording usage to avoid masking the main error
             pass
         raise HTTPException(
             status_code=e.response.status_code,
@@ -209,6 +210,7 @@ async def chat_completions(
                 error_message=f"Connection error: {str(e)[:500]}",
             )
         except Exception:
+            # Ignore failures when recording usage to avoid masking the main error
             pass
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -228,6 +230,7 @@ async def chat_completions(
                 error_message=f"Unexpected: {str(e)[:500]}",
             )
         except Exception:
+            # Ignore failures when recording usage to avoid masking the main error
             pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
