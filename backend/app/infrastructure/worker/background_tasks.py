@@ -330,6 +330,7 @@ def _close_quietly(coro: Awaitable[Any]) -> None:
     try:
         coro.close()  # type: ignore[union-attr]
     except Exception:
+        # Ignore errors when closing an already closed or non-closable coroutine
         pass
 
 

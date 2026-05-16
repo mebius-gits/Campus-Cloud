@@ -174,10 +174,11 @@ class ModelClient:
         """
         messages = [{"role": "user", "content": prompt}]
         stream = self.chat(messages, stream=True, **kwargs)
-        for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+        if stream:
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
 
     def complete(
         self,

@@ -505,6 +505,7 @@ class ModelClient:
                 try:
                     os.remove(f)
                 except OSError:
+                    # Ignore errors when deleting temporary video chunks
                     pass
 
         # 彙整段
@@ -926,6 +927,7 @@ class ModelClient:
                 try:
                     os.remove(f)
                 except OSError:
+                    # Ignore errors when deleting temporary video chunks
                     pass
 
         # 彙整段

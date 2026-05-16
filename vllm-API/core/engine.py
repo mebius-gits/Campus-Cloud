@@ -226,6 +226,7 @@ class VLLMEngine:
                     try:
                         os.killpg(os.getpgid(pid), signal.SIGKILL)
                     except ProcessLookupError:
+                        # Process already terminated
                         pass
                 else:
                     self._process.kill()

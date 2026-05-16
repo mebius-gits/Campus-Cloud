@@ -133,6 +133,7 @@ def chat_stream(model: str):
                     print(delta, end="", flush=True)
                     char_count += len(delta)
                 except (json.JSONDecodeError, KeyError):
+                    # Ignore malformed chunks during streaming
                     pass
 
     except httpx.RequestError as e:

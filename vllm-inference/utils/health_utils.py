@@ -112,8 +112,10 @@ def check_system_health() -> SystemHealth:
                     util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                     gpu_utilization.append(util.gpu)
                 except (ImportError, Exception):
+                    # NVML not available, fallback to 0.0
                     gpu_utilization.append(0.0)
     except (ImportError, Exception):
+        # Torch or CUDA not available
         pass
     
     return SystemHealth(
@@ -229,7 +231,8 @@ if __name__ == "__main__":
         logger.success("系統健康狀態良好")
     else:
         logger.warning("系統健康狀態異常")
-        for warning in health.get_warnings():
+        warnings = health.get_warnings() or []
+        for warning in warnings:
             logger.warning(f"  - {warning}")
     
     # 快取檢查示例
