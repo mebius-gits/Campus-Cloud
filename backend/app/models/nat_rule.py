@@ -15,6 +15,14 @@ class NatRule(SQLModel, table=True):
     """
 
     __tablename__ = "nat_rule"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "ssh_host",
+            "external_port",
+            "protocol",
+            name="uq_nat_rule_host_external_port_protocol",
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
 
@@ -22,7 +30,15 @@ class NatRule(SQLModel, table=True):
     ssh_host: str = Field(max_length=255, description="PVE 主機 IP，規則套用目標")
 
     # VM 資訊
-    vmid: int = Field(index=True, description="目標 VM ID")
+    vmid: int = Field(
+        sa_column=sa.Column(
+            sa.Integer,
+            sa.ForeignKey("resources.vmid", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+        description="目標 VM ID",
+    )
     vm_ip: str = Field(max_length=64, description="目標 VM 內網 IP")
 
     # Port mapping

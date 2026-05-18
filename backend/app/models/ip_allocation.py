@@ -21,7 +21,10 @@ class IpAllocation(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     ip_address: str = Field(max_length=50, unique=True, index=True)
     purpose: str = Field(max_length=30)
-    vmid: int | None = Field(default=None, index=True)
+    vmid: int | None = Field(
+        default=None,
+        index=True,
+    )
     description: str | None = Field(default=None, max_length=255)
     allocated_at: datetime = Field(
         default_factory=get_datetime_utc,

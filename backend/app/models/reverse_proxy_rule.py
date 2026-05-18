@@ -20,7 +20,15 @@ class ReverseProxyRule(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
 
     # VM 資訊
-    vmid: int = Field(index=True, description="目標 VM ID")
+    vmid: int = Field(
+        sa_column=sa.Column(
+            sa.Integer,
+            sa.ForeignKey("resources.vmid", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+        description="目標 VM ID",
+    )
     vm_ip: str = Field(max_length=64, description="目標 VM 內網 IP")
 
     # 網域對應
@@ -29,14 +37,18 @@ class ReverseProxyRule(SQLModel, table=True):
         sa_column_kwargs={"unique": True},
         description="對外網域名稱（如 mysite.campus.edu）",
     )
-    zone_id: str | None = Field(default=None, max_length=64, description="Cloudflare Zone ID")
+    zone_id: str | None = Field(
+        default=None, max_length=64, description="Cloudflare Zone ID"
+    )
     cloudflare_record_id: str | None = Field(
         default=None,
         max_length=64,
         description="由 Campus Cloud 自動管理的 Cloudflare DNS record ID",
     )
     internal_port: int = Field(ge=1, le=65535, description="VM 內部 port")
-    enable_https: bool = Field(default=True, description="是否啟用 HTTPS（Let's Encrypt）")
+    enable_https: bool = Field(
+        default=True, description="是否啟用 HTTPS（Let's Encrypt）"
+    )
 
     # 預留 DNS provider 欄位（未來 Cloudflare 對接用）
     dns_provider: str = Field(
