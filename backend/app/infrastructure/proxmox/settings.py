@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROXMOX_POOL_NAME = "CampusCloud"
+DEFAULT_PROXMOX_POOL_NAME = "SkyLab"
 
 
 @dataclass

@@ -1,4 +1,4 @@
-import { QueryClientProvider } from "@tanstack/react-query"
+﻿import { QueryClientProvider } from "@tanstack/react-query"
 import { createRouter, RouterProvider } from "@tanstack/react-router"
 import type { AxiosError } from "axios"
 import { StrictMode } from "react"
@@ -84,7 +84,7 @@ ReactDOM.createRoot(rootElement).render(
   <StrictMode>
     <LanguageProvider
       defaultLanguage="zh-TW"
-      storageKey="campus-cloud-language"
+      storageKey="SkyLab-language"
     >
       <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
         <QueryClientProvider client={queryClient}>

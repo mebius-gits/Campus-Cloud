@@ -1,4 +1,4 @@
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+﻿import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import type { RowSelectionState } from "@tanstack/react-table"
 import { Download, Monitor, RefreshCw } from "lucide-react"
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_layout/my-resources")({
   head: () => ({
     meta: [
       {
-        title: "My Resources - Campus Cloud",
+        title: "My Resources - SkyLab",
       },
     ],
   }),
@@ -159,7 +159,7 @@ function DownloadDesktopClientButton() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = "campus-cloud-connect.zip"
+      a.download = "SkyLab-connect.zip"
       a.click()
       URL.revokeObjectURL(url)
     } catch (error) {

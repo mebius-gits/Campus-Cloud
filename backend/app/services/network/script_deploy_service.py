@@ -1,4 +1,4 @@
-"""服務模板腳本部署服務
+﻿"""服務模板腳本部署服務
 
 透過 SSH 連線到 Proxmox 節點，下載並以無人值守方式執行 community-scripts 腳本。
 部署完成後自動刪除腳本；失敗時完全回滾（銷毀已建立的容器）。
@@ -325,7 +325,7 @@ def _find_resource_any(vmid: int) -> dict | None:
 
 
 def _add_to_pool(vmid: int) -> None:
-    """將容器加入 Campus Cloud Pool。"""
+    """將容器加入 SkyLab Pool。"""
     pool_name = get_proxmox_settings().pool_name
     proxmox = get_proxmox_api()
     proxmox.pools(pool_name).put(vms=str(vmid))
@@ -695,7 +695,7 @@ def _build_inline_env(
 def _run_deployment(task: DeploymentTask, request_data: dict) -> None:  # noqa: C901
     """在背景執行緒中執行腳本部署。"""
     client = None
-    temp_script = f"/tmp/campus-cloud-deploy-{task.task_id}.sh"
+    temp_script = f"/tmp/SkyLab-deploy-{task.task_id}.sh"
     vmids_before = _get_all_vmids()
     new_vmid: int | None = None
 
@@ -796,8 +796,8 @@ def _run_deployment(task: DeploymentTask, request_data: dict) -> None:  # noqa: 
                 "腳本執行完成但無法找到新建的容器。請檢查 Proxmox 控制台。"
             )
 
-        # 7. 加入 Campus Cloud Pool
-        task.progress = "正在加入 Campus Cloud 集區…"
+        # 7. 加入 SkyLab Pool
+        task.progress = "正在加入 SkyLab 集區…"
         _store_task(task)
         try:
             _add_to_pool(new_vmid)

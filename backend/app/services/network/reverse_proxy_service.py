@@ -1,4 +1,4 @@
-"""反向代理服務 — 透過 Gateway VM 的 Traefik 管理 domain → VM 映射。
+﻿"""反向代理服務 — 透過 Gateway VM 的 Traefik 管理 domain → VM 映射。
 
 設計原則：
 - DB 為 source of truth
@@ -219,8 +219,8 @@ def _build_traefik_dynamic_config(rules: list) -> str:
     }
 
     header = (
-        "# Campus Cloud 自動管理的反向代理設定\n"
-        "# 此檔案由 Campus Cloud 自動維護，請勿手動修改\n\n"
+        "# SkyLab 自動管理的反向代理設定\n"
+        "# 此檔案由 SkyLab 自動維護，請勿手動修改\n\n"
     )
     return header + yaml.dump(config, default_flow_style=False, allow_unicode=True)
 

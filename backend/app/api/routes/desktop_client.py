@@ -1,4 +1,4 @@
-"""Desktop client download & device auth endpoints.
+﻿"""Desktop client download & device auth endpoints.
 
 The desktop client authenticates via a "device auth" flow:
 1. Client calls POST /auth/device-code  -> gets a device_code
@@ -131,12 +131,12 @@ def download_desktop_client(session: SessionDep, current_user: CurrentUser):
     if settings.DESKTOP_CLIENT_DOWNLOAD_URL:
         return RedirectResponse(settings.DESKTOP_CLIENT_DOWNLOAD_URL, status_code=302)
 
-    zip_path = _STATIC_DIR / "campus-cloud-connect.zip"
+    zip_path = _STATIC_DIR / "SkyLab-connect.zip"
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="Desktop client zip not found")
 
     return FileResponse(
         zip_path,
         media_type="application/zip",
-        filename="campus-cloud-connect.zip",
+        filename="SkyLab-connect.zip",
     )

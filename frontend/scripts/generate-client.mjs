@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Wrapper around `openapi-ts -f openapi-ts.config.ts` that preserves the
  * hand-maintained compatibility shims under `src/client/`.
@@ -118,7 +118,7 @@ function main() {
   }
 
   const snapshotDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "campuscloud-client-"),
+    path.join(os.tmpdir(), "SkyLab-client-"),
   )
 
   let exitCode = 0

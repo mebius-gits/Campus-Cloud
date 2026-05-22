@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import select
@@ -38,7 +38,7 @@ def ensure_ssh_backend() -> None:
         )
 
 
-def generate_ed25519_keypair(*, comment: str = "campus-cloud-gateway") -> tuple[str, str]:
+def generate_ed25519_keypair(*, comment: str = "SkyLab-gateway") -> tuple[str, str]:
     ensure_ssh_backend()
     private_key = Ed25519PrivateKey.generate()
     private_key_pem = private_key.private_bytes(

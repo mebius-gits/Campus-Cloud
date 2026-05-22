@@ -1,4 +1,4 @@
-import { FaGithub, FaLinkedinIn } from "react-icons/fa"
+﻿import { FaGithub, FaLinkedinIn } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6"
 import { cn } from "@/lib/utils"
 
@@ -29,7 +29,7 @@ export function Footer({
     >
       <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
         <p className="text-muted-foreground text-sm">
-          Campus Cloud - {currentYear}
+          SkyLab - {currentYear}
         </p>
         <div className="flex items-center gap-4">
           {socialLinks.map(({ icon: Icon, href, label }) => (
