@@ -2,9 +2,15 @@ import asyncio
 import sys
 from contextlib import asynccontextmanager
 
-# Windows ProactorEventLoop 會在 WebSocket 空閒時觸發 WinError 121（IOCP 信號逾時）。
-# 改用 SelectorEventLoop 可避免此問題，且對 FastAPI/uvicorn 功能無影響。
+# uvicorn 0.36+ 使用 loop_factory 參數直接建立 event loop，繞過 asyncio policy。
+# 其 asyncio_loop_factory 在 Windows 單 worker 模式下固定回傳 ProactorEventLoop，
+# 導致 WebSocket 空閒時觸發 WinError 121（IOCP 信號逾時）。
+# 解法：在 uvicorn 載入 app 之前 patch 其 loop factory，強制回傳 SelectorEventLoop。
 if sys.platform == "win32":
+    import uvicorn.loops.asyncio as _uvicorn_asyncio_loop
+    def _win_selector_factory(use_subprocess: bool = False) -> type[asyncio.SelectorEventLoop]:
+        return asyncio.SelectorEventLoop
+    _uvicorn_asyncio_loop.asyncio_loop_factory = _win_selector_factory
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import sentry_sdk
