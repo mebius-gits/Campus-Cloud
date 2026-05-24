@@ -6,9 +6,6 @@ import MIcon from "../../../components/MIcon";
 
 /* ── Constants ── */
 const STATUS_MAP = {
-  scheduled: { label: "已排程", color: "info", icon: "event" },
-  provisioning: { label: "建立中", color: "info", icon: "settings" },
-  running: { label: "執行中", color: "success", icon: "play_circle" },
   pending:   { label: "審核中", color: "info",    icon: "schedule"     },
   approved:  { label: "已核准", color: "success", icon: "check_circle" },
   rejected:  { label: "已拒絕", color: "danger",  icon: "cancel"       },
@@ -20,7 +17,7 @@ const RESOURCE_TYPE_MAP = {
   vm:  { label: "虛擬機 (VM)", icon: "computer" },
 };
 
-const CANCELLABLE = new Set(["pending", "approved", "provisioning"]);
+const CANCELLABLE = new Set(["pending", "approved"]);
 const RETRYABLE   = new Set(["approved"]);
 
 const VIEW_LIST   = "list";

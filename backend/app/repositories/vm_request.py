@@ -139,10 +139,9 @@ def count_quick_template_requests_for_user(
                 (
                     VMRequestStatus.pending,
                     VMRequestStatus.approved,
-                    VMRequestStatus.provisioning,
-                    VMRequestStatus.running,
                 )
             ),
+            VMRequest.migration_status != VMMigrationStatus.failed,
             VMRequest.start_at.is_not(None),
             VMRequest.start_at <= active_at,
             sa.or_(VMRequest.end_at.is_(None), VMRequest.end_at > active_at),
@@ -152,8 +151,6 @@ def count_quick_template_requests_for_user(
 
 _ACTIVE_STATUSES = (
     VMRequestStatus.approved,
-    VMRequestStatus.provisioning,
-    VMRequestStatus.running,
 )
 
 
@@ -167,6 +164,7 @@ def get_approved_vm_requests_overlapping_window(
         select(VMRequest)
         .where(
             VMRequest.status.in_(_ACTIVE_STATUSES),
+            VMRequest.migration_status != VMMigrationStatus.failed,
             VMRequest.start_at.is_not(None),
             VMRequest.desired_node.is_not(None),
             VMRequest.start_at < window_end,
@@ -186,14 +184,13 @@ def lock_overlapping_vm_requests_for_window(
     statuses: tuple[VMRequestStatus, ...] = (
         VMRequestStatus.pending,
         VMRequestStatus.approved,
-        VMRequestStatus.provisioning,
-        VMRequestStatus.running,
     ),
 ) -> list[VMRequest]:
     statement = (
         select(VMRequest)
         .where(
             VMRequest.status.in_(statuses),
+            VMRequest.migration_status != VMMigrationStatus.failed,
             VMRequest.start_at.is_not(None),
             VMRequest.start_at < window_end,
             sa.or_(VMRequest.end_at.is_(None), VMRequest.end_at > window_start),
@@ -315,9 +312,6 @@ def clear_vm_request_provisioning(
     db_request.placement_strategy_used = None
     db_request.migration_status = VMMigrationStatus.idle
     db_request.migration_error = None
-    # Reset to approved so the scheduler can re-provision.
-    if db_request.status in (VMRequestStatus.provisioning, VMRequestStatus.running):
-        db_request.status = VMRequestStatus.approved
     session.add(db_request)
     if stale_vmid is not None:
         resource_repo.delete_resource(
@@ -357,6 +351,7 @@ def list_active_approved_vm_requests(
         select(VMRequest)
         .where(
             VMRequest.status.in_(_ACTIVE_STATUSES),
+            VMRequest.migration_status != VMMigrationStatus.failed,
             VMRequest.start_at.is_not(None),
             VMRequest.start_at <= at_time,
             sa.or_(VMRequest.end_at.is_(None), VMRequest.end_at > at_time),
@@ -382,6 +377,7 @@ def list_due_for_rebalance_vm_requests(
         select(VMRequest)
         .where(
             VMRequest.status.in_(_ACTIVE_STATUSES),
+            VMRequest.migration_status != VMMigrationStatus.failed,
             VMRequest.start_at.is_not(None),
             VMRequest.start_at <= at_time,
             sa.or_(VMRequest.end_at.is_(None), VMRequest.end_at > at_time),

@@ -139,9 +139,6 @@ def _adopt_existing_resource(
         migration_error=None,
         commit=False,
     )
-    request.status = VMRequestStatus.running
-    session.add(request)
-
     status = proxmox_service.get_status(actual_node, vmid, resource_type)
     started = False
     if str(status.get("status") or "").lower() != "running":
@@ -184,15 +181,15 @@ def _provision_new_resource(
     session: Session,
     request: VMRequest,
 ) -> tuple[int, str, str | None]:
-    """Lock → mark provisioning → clone outside txn → mark running.
+    """Lock, mark migration running, clone outside txn, then record VMID.
 
     This is the core anti-duplication pattern:
-    1. SELECT FOR UPDATE SKIP LOCKED — if locked, bail
-    2. status = provisioning, commit  (visible to other sessions)
-    3. plan_provision (resolve storage etc.)  — still in a short txn
+    1. SELECT FOR UPDATE SKIP LOCKED; if locked, bail
+    2. migration_status = running, commit (visible to other sessions)
+    3. plan_provision (resolve storage etc.) in a short txn
     4. commit / close session
-    5. execute_provision (clone VM) — NO open transaction
-    6. Open new session → record vmid + status=running, commit
+    5. execute_provision (clone VM) with no open transaction
+    6. Open new session, record vmid and migration_status, commit
     """
     resource_type = _resource_type_for_request(request)
     desired_node = str(request.desired_node or request.assigned_node or "")
@@ -202,8 +199,9 @@ def _provision_new_resource(
     if resource_type == "lxc" and request.service_template_slug:
         return _provision_via_service_template(session=session, request=request)
 
-    # --- Phase 1: mark as provisioning + plan (short txn) -----------------
-    request.status = VMRequestStatus.provisioning
+    # --- Phase 1: mark migration running + plan (short txn) ---------------
+    request.migration_status = VMMigrationStatus.running
+    request.migration_error = None
     session.add(request)
     session.commit()
     logger.info("Marked request %s as provisioning", request.id)
@@ -222,7 +220,8 @@ def _provision_new_resource(
             session=session, request_id=request.id, for_update=True,
         )
         if request:
-            request.status = VMRequestStatus.approved
+            request.migration_status = VMMigrationStatus.failed
+            request.migration_error = "Failed to plan provisioning"
             session.add(request)
             session.commit()
         raise
@@ -256,8 +255,9 @@ def _provision_new_resource(
             req = vm_request_repo.get_vm_request_by_id(
                 session=rollback_session, request_id=request_id, for_update=True,
             )
-            if req and req.status == VMRequestStatus.provisioning:
-                req.status = VMRequestStatus.approved
+            if req and req.vmid is None:
+                req.migration_status = VMMigrationStatus.failed
+                req.migration_error = "Failed to execute provisioning"
                 rollback_session.add(req)
                 rollback_session.commit()
                 logger.warning("Reverted request %s to approved after provision failure", request_id)
@@ -302,7 +302,6 @@ def _provision_new_resource(
             migration_error=None,
             commit=False,
         )
-        req.status = VMRequestStatus.running
         finish_session.add(req)
 
         audit_service.log_action(
@@ -375,7 +374,8 @@ def _provision_via_service_template(
         raise
 
     # Mark provisioning and close txn before the long-running SSH deploy.
-    request.status = VMRequestStatus.provisioning
+    request.migration_status = VMMigrationStatus.running
+    request.migration_error = None
     session.add(request)
     session.commit()
     logger.info(
@@ -399,8 +399,9 @@ def _provision_via_service_template(
                 req = vm_request_repo.get_vm_request_by_id(
                     session=rb, request_id=request_id, for_update=True,
                 )
-                if req and req.status == VMRequestStatus.provisioning:
-                    req.status = VMRequestStatus.approved
+                if req and req.vmid is None:
+                    req.migration_status = VMMigrationStatus.failed
+                    req.migration_error = "Failed to allocate candidate VMID"
                     rb.add(req)
                     rb.commit()
             raise RuntimeError(
@@ -423,8 +424,9 @@ def _provision_via_service_template(
                 req = vm_request_repo.get_vm_request_by_id(
                     session=rb, request_id=request_id, for_update=True,
                 )
-                if req and req.status == VMRequestStatus.provisioning:
-                    req.status = VMRequestStatus.approved
+                if req and req.vmid is None:
+                    req.migration_status = VMMigrationStatus.failed
+                    req.migration_error = "Failed to allocate static IP"
                     rb.add(req)
                     rb.commit()
             raise RuntimeError(f"無法分配靜態 IP：{exc}") from exc
@@ -478,8 +480,9 @@ def _provision_via_service_template(
             req = vm_request_repo.get_vm_request_by_id(
                 session=rb, request_id=request_id, for_update=True,
             )
-            if req and req.status == VMRequestStatus.provisioning:
-                req.status = VMRequestStatus.approved
+            if req and req.vmid is None:
+                req.migration_status = VMMigrationStatus.failed
+                req.migration_error = "Script deploy failed"
                 rb.add(req)
                 rb.commit()
         raise
@@ -558,7 +561,6 @@ def _provision_via_service_template(
             migration_error=None,
             commit=False,
         )
-        req.status = VMRequestStatus.running
         finish_session.add(req)
 
         audit_service.log_action(
@@ -701,7 +703,10 @@ def _adopt_or_provision_due_request(
     if locked is None:
         return None
     # Re-check: another process may have set vmid or changed status.
-    if locked.vmid is not None or locked.status == VMRequestStatus.provisioning:
+    if (
+        locked.vmid is not None
+        or locked.migration_status == VMMigrationStatus.running
+    ):
         return None
 
     # Try adopting an existing Proxmox resource first.
@@ -720,9 +725,9 @@ def _adopt_or_provision_due_request(
     )
     if refreshed is None or refreshed.vmid is None:
         return None
-    started = refreshed.status in (
-        VMRequestStatus.provisioning,
-        VMRequestStatus.running,
+    started = (
+        refreshed.vmid is not None
+        or refreshed.migration_status == VMMigrationStatus.running
     )
     return (
         refreshed.vmid,
@@ -740,9 +745,9 @@ def _ensure_request_running(
     policy: _MigrationPolicy,
     migrations_used: int,
 ) -> tuple[bool, int]:
-    """Make sure an approved/running request has a live VM.
+    """Make sure an approved request has a live VM.
 
-    For requests without a vmid: lock → mark provisioning → clone → mark running.
+    For requests without a vmid: lock, mark migration running, clone, record VMID.
     For requests with a vmid: ensure the VM is started.
     """
     resource_type = _resource_type_for_request(request)
@@ -803,10 +808,6 @@ def _ensure_request_running(
     if not is_running:
         proxmox_service.control(actual_node, request.vmid, resource_type, "start")
 
-    # Ensure status is 'running' in DB.
-    if request.status != VMRequestStatus.running:
-        request.status = VMRequestStatus.running
-        session.add(request)
     vm_request_repo.update_vm_request_provisioning(
         session=session,
         db_request=request,
@@ -923,10 +924,7 @@ def process_single_request_start(request_id: uuid.UUID) -> bool:
             for_update=True,
             skip_locked=True,
         )
-        if not request or request.status not in (
-            VMRequestStatus.approved,
-            VMRequestStatus.running,
-        ):
+        if not request or request.status != VMRequestStatus.approved:
             return False
         try:
             started, _ = _ensure_request_running(
@@ -1061,15 +1059,10 @@ def process_due_request_stops() -> int:
     now = _utc_now()
 
     with Session(engine) as session:
-        _stop_statuses = (
-            VMRequestStatus.approved,
-            VMRequestStatus.provisioning,
-            VMRequestStatus.running,
-        )
         due_requests = list(
             session.exec(
                 select(VMRequest).where(
-                    VMRequest.status.in_(_stop_statuses),
+                    VMRequest.status == VMRequestStatus.approved,
                     VMRequest.vmid.is_not(None),
                     VMRequest.end_at.is_not(None),
                     VMRequest.end_at <= now,

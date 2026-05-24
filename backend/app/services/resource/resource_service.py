@@ -175,7 +175,7 @@ a few days off."""
 def list_by_user(
     *, session: Session, user_id: uuid.UUID
 ) -> list[ResourcePublic]:
-    from sqlmodel import col, select
+    from sqlmodel import select
 
     from app.models.vm_request import VMRequest
 
@@ -241,18 +241,13 @@ def list_by_user(
                         )
                         shown_vmids.add(db_r.vmid)
 
-        # 2. Approved or legacy runtime requests not yet visible in Proxmox.
+        # 2. Approved requests not yet visible in Proxmox.
         now = _utc_now()
         pending_requests = list(
             session.exec(
                 select(VMRequest).where(
                     VMRequest.user_id == user_id,
-                    col(VMRequest.status).in_([
-                        VMRequestStatus.scheduled,
-                        VMRequestStatus.provisioning,
-                        VMRequestStatus.running,
-                        VMRequestStatus.approved,
-                    ]),
+                    VMRequest.status == VMRequestStatus.approved,
                 )
             ).all()
         )
@@ -261,17 +256,13 @@ def list_by_user(
                 continue
             if req.migration_status == VMMigrationStatus.failed or req.migration_error:
                 display_status = "failed"
-            elif req.status == VMRequestStatus.approved:
+            else:
                 start_at = _ensure_utc(req.start_at)
                 display_status = (
                     "scheduled"
                     if start_at is not None and start_at > now
                     else "provisioning"
                 )
-            elif req.status == VMRequestStatus.running:
-                display_status = "unknown"
-            else:
-                display_status = req.status.value
 
             result.append(
                 ResourcePublic(
