@@ -329,7 +329,13 @@ def apply_reverse_proxy_rule(
     from app.repositories import reverse_proxy as rp_repo  # noqa: PLC0415
     from app.services.network import cloudflare_service  # noqa: PLC0415
 
+    from app.models import Resource  # noqa: PLC0415
+
     ensure_reverse_proxy_ready(session)
+
+    if getattr(session, "get", lambda *_: None)(Resource, vmid) is None:
+        raise BadRequestError(f"VMID {vmid} 不在 SkyLab 資源清單中，無法建立反向代理規則")
+
     zone = cloudflare_service.get_zone(session=session, zone_id=zone_id)  # type: ignore[arg-type]
     domain = build_full_domain(zone_name=zone.name, hostname_prefix=hostname_prefix)
 

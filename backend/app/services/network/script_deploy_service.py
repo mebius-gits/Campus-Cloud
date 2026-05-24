@@ -896,6 +896,22 @@ def _run_deployment(task: DeploymentTask, request_data: dict) -> None:  # noqa: 
             f"服務 {request_data['template_slug']} 已成功部署，"
             f"VMID: {new_vmid}，主機名稱: {request_data['hostname']}"
         )
+
+        try:
+            from app.core.db import engine as _engine  # noqa: PLC0415
+            from app.repositories import resource as _resource_repo  # noqa: PLC0415
+            with Session(_engine) as _s:
+                _resource_repo.create_resource(
+                    session=_s,
+                    vmid=new_vmid,
+                    user_id=uuid.UUID(task.user_id),
+                    environment_type=task.template_slug or "服務模板",
+                    service_template_slug=task.template_slug or None,
+                )
+            logger.info("已自動將 VMID=%s 註冊至 resources 表", new_vmid)
+        except Exception as _reg_exc:
+            logger.warning("自動註冊 VMID=%s 至 resources 失敗: %s", new_vmid, _reg_exc)
+
         _store_task(task)
         logger.info(
             "部署成功: template=%s, vmid=%s",

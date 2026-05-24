@@ -981,6 +981,10 @@ def test_create_vm_prefers_admin_selected_storage(
         "app.services.proxmox.provisioning_service.audit_service.log_action",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "app.services.proxmox.provisioning_service.get_proxmox_settings",
+        lambda: SimpleNamespace(pool_name="SkyLab"),
+    )
 
     provisioning_service.create_vm(
         session=db,
@@ -2600,6 +2604,10 @@ def test_create_vm_uses_template_node_and_normalizes_disk_size(
         "app.services.proxmox.provisioning_service.audit_service.log_action",
         lambda *args, **kwargs: None,
     )
+    monkeypatch.setattr(
+        "app.services.proxmox.provisioning_service.get_proxmox_settings",
+        lambda: SimpleNamespace(pool_name="SkyLab"),
+    )
 
     result = provisioning_service.create_vm(
         session=db,
@@ -2683,6 +2691,10 @@ def test_create_vm_falls_back_when_requested_storage_is_unavailable(
     monkeypatch.setattr(
         "app.services.proxmox.provisioning_service.audit_service.log_action",
         lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.proxmox.provisioning_service.get_proxmox_settings",
+        lambda: SimpleNamespace(pool_name="SkyLab"),
     )
 
     provisioning_service.create_vm(

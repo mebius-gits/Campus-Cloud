@@ -131,8 +131,10 @@ def _recover_orphan_running_deploys() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(
-        level=getattr(settings, "LOG_LEVEL", "INFO"),
-        json_output=getattr(settings, "LOG_JSON", True),
+        level=settings.LOG_LEVEL,
+        json_output=settings.LOG_JSON,
+        log_dir=settings.LOG_DIR,
+        file_enabled=settings.LOG_FILE_ENABLED,
     )
     await init_redis()
     _recover_orphan_running_deploys()

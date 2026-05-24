@@ -223,7 +223,7 @@ def _execute_deletion(session: Session, req: DeletionRequest) -> None:
         session.refresh(req)
     # else: already running → retry path; reuse existing started_at
 
-    resource = session.exec(
+    session.exec(
         select(Resource).where(Resource.vmid == req.vmid)
     ).first()
     # resource may be None for admin-initiated deletion of orphan resources

@@ -63,7 +63,10 @@ function MyResourcesTableContent({
   const handleRowClick = useCallback(
     (row: ResourceRow) => {
       if (row._deleting) return
-      navigate({ to: "/my-resources/$vmid", params: { vmid: row.vmid.toString() } })
+      navigate({
+        to: "/my-resources/$vmid",
+        params: { vmid: row.vmid.toString() },
+      })
     },
     [navigate],
   )
@@ -98,7 +101,9 @@ function MyResourcesTableContent({
       rowSelection={rowSelection}
       onRowSelectionChange={onRowSelectionChange}
       getRowId={(row) =>
-        row._deleting ? `deleting:${row._deleting.request_id}` : String(row.vmid)
+        row._deleting
+          ? `deleting:${row._deleting.request_id}`
+          : String(row.vmid)
       }
     />
   )

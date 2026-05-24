@@ -78,8 +78,7 @@ export const createMyRequestColumns = (
     },
     rejected: {
       label: t("applications:status.rejected"),
-      className:
-        "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
     },
     cancelled: {
       label: t("applications:status.cancelled"),
