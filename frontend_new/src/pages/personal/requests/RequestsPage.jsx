@@ -6,6 +6,9 @@ import MIcon from "../../../components/MIcon";
 
 /* ── Constants ── */
 const STATUS_MAP = {
+  scheduled: { label: "已排程", color: "info", icon: "event" },
+  provisioning: { label: "建立中", color: "info", icon: "settings" },
+  running: { label: "執行中", color: "success", icon: "play_circle" },
   pending:   { label: "審核中", color: "info",    icon: "schedule"     },
   approved:  { label: "已核准", color: "success", icon: "check_circle" },
   rejected:  { label: "已拒絕", color: "danger",  icon: "cancel"       },
@@ -331,7 +334,7 @@ export default function RequestsPage() {
       const res = await VmRequestsService.list();
       setRequests(
         (res.data ?? []).filter(
-          (r) => r.status in STATUS_MAP && r.review_comment !== "Resource deleted by user"
+          (r) => r.review_comment !== "Resource deleted by user"
         )
       );
     } catch {
