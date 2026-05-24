@@ -128,8 +128,8 @@
   padding: 2px 10px;
 }
 
-.badge_active   { background: color-mix(in srgb, #28a745 12%, transparent); color: #28a745; }
-.badge_inactive { background: color-mix(in srgb, #dc3545 12%, transparent); color: #dc3545; }
+.badge_active   { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); }
+.badge_inactive { background: color-mix(in srgb, var(--color-danger)  12%, transparent); color: var(--color-danger); }
 
 /* ── Action ── */
 .actionBtn {
@@ -140,8 +140,8 @@
   color: var(--color-text-secondary);
   transition: background $transition-base, color $transition-base;
 
-  &.actionBtnDanger:hover {
-    background: color-mix(in srgb, #dc3545 10%, transparent);
-    color: #dc3545;
+  &.actionBtnDanger {
+    color: var(--color-danger);
+    &:hover { background: color-mix(in srgb, var(--color-danger) 10%, transparent); }
   }
 }
