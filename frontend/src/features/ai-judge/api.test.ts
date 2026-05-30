@@ -56,6 +56,75 @@ describe("AiJudgeService.downloadExcel", () => {
     )
   })
 
+  it("creates teacher judge script artifacts under a group", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve({}) as any)
+
+    await AiJudgeService.createScript({
+      groupId: "group-1",
+      name: "rubric.pdf",
+      template_key: "n8n",
+      rubric_snapshot: {
+        items: [],
+        total_items: 0,
+        checked_count: 0,
+        auto_count: 0,
+        partial_count: 0,
+        manual_count: 0,
+        summary: "",
+        raw_text: "",
+      },
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "POST",
+        url: "/api/v1/groups/{groupId}/judge/scripts/",
+        path: { groupId: "group-1" },
+        body: expect.objectContaining({
+          name: "rubric.pdf",
+          template_key: "n8n",
+        }),
+      }),
+    )
+  })
+
+  it("approves teacher judge script artifacts", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve({}) as any)
+
+    await AiJudgeService.approveScript({
+      groupId: "group-1",
+      scriptId: "script-1",
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "POST",
+        url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}/approve",
+        path: { groupId: "group-1", scriptId: "script-1" },
+      }),
+    )
+  })
+
+  it("deletes teacher judge script artifacts", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve(undefined) as any)
+
+    await AiJudgeService.deleteScript({
+      groupId: "group-1",
+      scriptId: "script-1",
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "DELETE",
+        url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}",
+        path: { groupId: "group-1", scriptId: "script-1" },
+      }),
+    )
+  })
+
   it("passes endpoint url to token resolver", async () => {
     const tokenResolver = vi.fn(async (options: { url: string }) => {
       expect(options.url).toBe("/api/v1/rubric/download-excel")

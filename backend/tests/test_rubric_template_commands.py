@@ -110,6 +110,7 @@ async def test_analyze_rubric_injects_catalog_and_normalizes_check_steps(
     system_prompt = captured_payload["messages"][0]["content"]
     assert "目前選定 template：n8n" in system_prompt
     assert "n8n.port_check" in system_prompt
+    assert "ss -lntp" not in system_prompt
     assert "不得自行發明" in system_prompt
     assert analysis.items[0].check_steps[0].command_key == "n8n.port_check"
     assert analysis.items[0].check_steps[0].command_label == "n8n 連接埠檢查"
@@ -129,8 +130,10 @@ async def test_chat_with_rubric_validates_returned_check_steps(
         command_template="curl -I --max-time 5 http://127.0.0.1:5678",
         description="檢查本機 n8n Web 服務是否有 HTTP 回應。",
     )
+    captured_payload = {}
 
     async def fake_call_vllm(payload, timeout=60.0):
+        captured_payload.update(payload)
         return (
             json.dumps(
                 {
@@ -167,6 +170,10 @@ async def test_chat_with_rubric_validates_returned_check_steps(
     )
 
     assert updated_items is not None
+    system_prompt = captured_payload["messages"][0]["content"]
+    assert "目前選定 template：n8n" in system_prompt
+    assert "n8n.http_check" in system_prompt
+    assert "curl -I" not in system_prompt
     assert updated_items[0]["check_steps"] == [
         {
             "template_key": "n8n",
@@ -248,3 +255,21 @@ async def test_upload_rubric_rejects_unknown_template() -> None:
 
 def test_prompt_formatter_handles_empty_catalog() -> None:
     assert "沒有 template command catalog" in format_template_commands_for_prompt([])
+
+
+def test_prompt_formatter_does_not_expose_raw_shell_command() -> None:
+    formatted = format_template_commands_for_prompt(
+        [
+            TeacherJudgeTemplateCommand(
+                template_key="n8n",
+                command_key="n8n.http_check",
+                command_label="n8n HTTP 檢查",
+                category="service",
+                command_template="curl -I --max-time 5 http://127.0.0.1:5678",
+                description="檢查本機 n8n Web 服務是否有 HTTP 回應。",
+            )
+        ]
+    )
+
+    assert "n8n.http_check" in formatted
+    assert "curl -I" not in formatted

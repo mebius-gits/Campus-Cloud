@@ -70,6 +70,33 @@ export type RubricHealthResponse = {
   vllm_configured: boolean
 }
 
+export type TeacherJudgeScriptStatus =
+  | "draft"
+  | "review_failed"
+  | "reviewed"
+  | "approved"
+  | "archived"
+
+export type TeacherJudgeScriptArtifact = {
+  id: string
+  group_id: string
+  name: string
+  template_key: string
+  rubric_snapshot_json: Record<string, unknown>
+  script_language: "python" | "shell" | "bat"
+  script_content: string
+  source: "ai_generated" | "regenerated"
+  version: number
+  status: TeacherJudgeScriptStatus
+  policy_check_result_json: Record<string, any>
+  ai_review_result_json: Record<string, any>
+  created_by: string | null
+  approved_by: string | null
+  created_at: string
+  updated_at: string
+  approved_at: string | null
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const AiJudgeService = {
@@ -156,6 +183,71 @@ export const AiJudgeService = {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/rubric/health",
+    })
+  },
+
+  listScripts(data: {
+    groupId: string
+  }): CancelablePromise<TeacherJudgeScriptArtifact[]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/groups/{groupId}/judge/scripts/",
+      path: { groupId: data.groupId },
+    })
+  },
+
+  createScript(data: {
+    groupId: string
+    name: string
+    template_key: TemplateKey
+    rubric_snapshot: RubricAnalysis
+  }): CancelablePromise<TeacherJudgeScriptArtifact> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/groups/{groupId}/judge/scripts/",
+      path: { groupId: data.groupId },
+      body: {
+        name: data.name,
+        template_key: data.template_key,
+        rubric_snapshot: data.rubric_snapshot,
+      },
+      mediaType: "application/json",
+    })
+  },
+
+  regenerateScript(data: {
+    groupId: string
+    scriptId: string
+    rubric_snapshot?: RubricAnalysis | null
+  }): CancelablePromise<TeacherJudgeScriptArtifact> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}/regenerate",
+      path: { groupId: data.groupId, scriptId: data.scriptId },
+      body: { rubric_snapshot: data.rubric_snapshot ?? null },
+      mediaType: "application/json",
+    })
+  },
+
+  approveScript(data: {
+    groupId: string
+    scriptId: string
+  }): CancelablePromise<TeacherJudgeScriptArtifact> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}/approve",
+      path: { groupId: data.groupId, scriptId: data.scriptId },
+    })
+  },
+
+  deleteScript(data: {
+    groupId: string
+    scriptId: string
+  }): CancelablePromise<void> {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}",
+      path: { groupId: data.groupId, scriptId: data.scriptId },
     })
   },
 }

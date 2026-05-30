@@ -12,6 +12,7 @@ import uuid
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "tjtc01_template_commands"
 down_revision = "vmr01_normalize_vmrequest_status"
@@ -136,57 +137,67 @@ COMMANDS = [
 
 
 def upgrade() -> None:
-    op.create_table(
-        "teacher_judge_template_commands",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("template_key", sa.String(length=50), nullable=False),
-        sa.Column("command_key", sa.String(length=100), nullable=False),
-        sa.Column("command_label", sa.String(length=100), nullable=False),
-        sa.Column("category", sa.String(length=50), nullable=False),
-        sa.Column("command_template", sa.Text(), nullable=False),
-        sa.Column("description", sa.Text(), nullable=False),
-        sa.Column(
-            "risk_level",
-            sa.String(length=30),
-            nullable=False,
-            server_default="read_only",
-        ),
-        sa.Column(
-            "requires_confirmation",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.true(),
-        ),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "template_key",
-            "command_key",
-            name="uq_teacher_judge_template_command_key",
-        ),
-    )
-    op.create_index(
-        op.f("ix_teacher_judge_template_commands_template_key"),
-        "teacher_judge_template_commands",
-        ["template_key"],
-    )
-    op.create_index(
-        op.f("ix_teacher_judge_template_commands_enabled"),
-        "teacher_judge_template_commands",
-        ["enabled"],
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("teacher_judge_template_commands"):
+        op.create_table(
+            "teacher_judge_template_commands",
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("template_key", sa.String(length=50), nullable=False),
+            sa.Column("command_key", sa.String(length=100), nullable=False),
+            sa.Column("command_label", sa.String(length=100), nullable=False),
+            sa.Column("category", sa.String(length=50), nullable=False),
+            sa.Column("command_template", sa.Text(), nullable=False),
+            sa.Column("description", sa.Text(), nullable=False),
+            sa.Column(
+                "risk_level",
+                sa.String(length=30),
+                nullable=False,
+                server_default="read_only",
+            ),
+            sa.Column(
+                "requires_confirmation",
+                sa.Boolean(),
+                nullable=False,
+                server_default=sa.true(),
+            ),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("now()"),
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("now()"),
+            ),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint(
+                "template_key",
+                "command_key",
+                name="uq_teacher_judge_template_command_key",
+            ),
+        )
+
+    existing_indexes = {
+        index["name"]
+        for index in sa.inspect(bind).get_indexes("teacher_judge_template_commands")
+    }
+    if op.f("ix_teacher_judge_template_commands_template_key") not in existing_indexes:
+        op.create_index(
+            op.f("ix_teacher_judge_template_commands_template_key"),
+            "teacher_judge_template_commands",
+            ["template_key"],
+        )
+    if op.f("ix_teacher_judge_template_commands_enabled") not in existing_indexes:
+        op.create_index(
+            op.f("ix_teacher_judge_template_commands_enabled"),
+            "teacher_judge_template_commands",
+            ["enabled"],
+        )
 
     command_table = sa.table(
         "teacher_judge_template_commands",
@@ -201,8 +212,7 @@ def upgrade() -> None:
         sa.column("requires_confirmation", sa.Boolean()),
         sa.column("enabled", sa.Boolean()),
     )
-    op.bulk_insert(
-        command_table,
+    insert_stmt = postgresql.insert(command_table).values(
         [
             {
                 "id": uuid.uuid4(),
@@ -224,7 +234,12 @@ def upgrade() -> None:
                 command_template,
                 description,
             ) in COMMANDS
-        ],
+        ]
+    )
+    op.execute(
+        insert_stmt.on_conflict_do_nothing(
+            index_elements=["template_key", "command_key"],
+        )
     )
 
 

@@ -25,7 +25,13 @@ import useCustomToast from "@/hooks/useCustomToast"
 /**
  * AI Judge Content Block - extracted from Page
  */
-export function AiJudgeContent({ groupId: _groupId }: { groupId: string }) {
+export function AiJudgeContent({
+  groupId,
+  onScriptCreated,
+}: {
+  groupId: string
+  onScriptCreated?: () => void
+}) {
   const { showSuccessToast, showErrorToast } = useCustomToast()
 
   // State
@@ -34,6 +40,8 @@ export function AiJudgeContent({ groupId: _groupId }: { groupId: string }) {
   const [isUploading, setIsUploading] = useState(false)
   const [isChatting, setIsChatting] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isCreatingScript, setIsCreatingScript] = useState(false)
+  const [uploadedFileName, setUploadedFileName] = useState("rubric")
   const [selectedTemplateKey, setSelectedTemplateKey] =
     useState<TemplateKey>("linux")
   const [analysisTemplateKey, setAnalysisTemplateKey] =
@@ -68,6 +76,7 @@ export function AiJudgeContent({ groupId: _groupId }: { groupId: string }) {
           selectedTemplateKey,
         )
         setAnalysis(response.analysis)
+        setUploadedFileName(file.name || "rubric")
         setAnalysisTemplateKey(response.template_key ?? selectedTemplateKey)
         setMessages([])
         showSuccessToast(
@@ -187,6 +196,38 @@ export function AiJudgeContent({ groupId: _groupId }: { groupId: string }) {
     }
   }, [analysis, showSuccessToast, showErrorToast])
 
+  const handleCreateScript = useCallback(async () => {
+    if (!analysis) return
+
+    setIsCreatingScript(true)
+    try {
+      const artifact = await AiJudgeService.createScript({
+        groupId,
+        name: uploadedFileName,
+        template_key: analysisTemplateKey,
+        rubric_snapshot: analysis,
+      })
+      showSuccessToast(
+        artifact.status === "reviewed"
+          ? "檢測腳本已產生並通過審查"
+          : "檢測腳本已產生，請查看審查結果",
+      )
+      onScriptCreated?.()
+    } catch (err: any) {
+      showErrorToast(err?.body?.detail ?? err?.message ?? "製作檢測腳本失敗")
+    } finally {
+      setIsCreatingScript(false)
+    }
+  }, [
+    analysis,
+    groupId,
+    uploadedFileName,
+    analysisTemplateKey,
+    showSuccessToast,
+    showErrorToast,
+    onScriptCreated,
+  ])
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -198,21 +239,59 @@ export function AiJudgeContent({ groupId: _groupId }: { groupId: string }) {
           </p>
         </div>
         {analysis && (
-          <Button onClick={handleExport} disabled={isExporting}>
-            {isExporting ? (
-              <>
-                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                匯出中...
-              </>
-            ) : (
-              <>
-                <Download className="mr-2 h-4 w-4" />
-                匯出 Excel
-              </>
-            )}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              onClick={handleCreateScript}
+              disabled={isCreatingScript || isChatting}
+            >
+              {isCreatingScript ? (
+                <>
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  製作中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  製作檢測腳本
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <>
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  匯出中...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  匯出 Excel
+                </>
+              )}
+            </Button>
+          </div>
         )}
       </div>
+
+      {isCreatingScript && (
+        <Card className="border-primary/30 bg-primary/5 shadow-sm">
+          <CardContent className="flex items-start gap-3 py-4 text-sm">
+            <span className="mt-0.5 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <div className="space-y-1">
+              <p className="font-medium text-foreground">
+                正在生成受管檢測腳本
+              </p>
+              <p className="text-muted-foreground">
+                AI 正在依目前評分項目與環境命令產生 Python 腳本，系統會接著執行 hard policy 與 AI reviewer 審查。
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main content */}
       {!analysis ? (

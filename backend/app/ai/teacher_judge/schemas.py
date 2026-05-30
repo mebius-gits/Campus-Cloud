@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class RubricCheckStep(BaseModel):
@@ -104,3 +106,55 @@ class RubricExportRequest(BaseModel):
 
     items: list[dict] = Field(..., min_length=1)
     summary: str = Field(default="")
+
+
+ScriptLanguage = Literal["python", "shell", "bat"]
+ScriptSource = Literal["ai_generated", "regenerated"]
+ScriptStatus = Literal["draft", "review_failed", "reviewed", "approved", "archived"]
+
+
+class TeacherJudgeScriptCreateRequest(BaseModel):
+    """Create a managed script artifact from the current rubric analysis."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    template_key: str = Field(default="linux", max_length=50)
+    rubric_snapshot: RubricAnalysis
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("name must not be blank")
+        return name
+
+    @field_validator("template_key")
+    @classmethod
+    def normalize_template_key(cls, value: str) -> str:
+        return value.strip().lower() or "linux"
+
+
+class TeacherJudgeScriptRegenerateRequest(BaseModel):
+    """Regenerate a managed script artifact."""
+
+    rubric_snapshot: RubricAnalysis | None = None
+
+
+class TeacherJudgeScriptArtifactPublic(BaseModel):
+    id: str
+    group_id: str
+    name: str
+    template_key: str
+    rubric_snapshot_json: dict[str, Any]
+    script_language: ScriptLanguage
+    script_content: str
+    source: ScriptSource
+    version: int
+    status: ScriptStatus
+    policy_check_result_json: dict[str, Any]
+    ai_review_result_json: dict[str, Any]
+    created_by: str | None
+    approved_by: str | None
+    created_at: str
+    updated_at: str
+    approved_at: str | None

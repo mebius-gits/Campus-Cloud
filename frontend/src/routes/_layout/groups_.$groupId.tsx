@@ -11,6 +11,7 @@ import {
   Brain,
   CheckCircle2,
   Circle,
+  FileCode2,
   Loader2,
   MessageSquare,
   Monitor,
@@ -68,6 +69,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AiJudgeContent } from "@/features/ai-judge/components/AiJudgeContent"
+import { AiJudgeScriptsContent } from "@/features/ai-judge/components/AiJudgeScriptsContent"
 import { AiPveMessageContent } from "@/features/ai-pve-log/components/AiPveMessageContent"
 import { requireGroupManagerUser } from "@/features/auth/guards"
 import { GroupFeatureService, type TaskStatus } from "@/features/groups/api"
@@ -1064,7 +1066,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
     currentUser?.role === "admin" || currentUser?.is_superuser || false
 
   const [activeView, setActiveView] = useState<
-    "members" | "ai-judge" | "ai-pve-message"
+    "members" | "ai-judge" | "ai-judge-scripts" | "ai-pve-message"
   >("members")
 
   const { data: group } = useSuspenseQuery(groupDetailQueryOptions(groupId))
@@ -1145,6 +1147,16 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
               AI 情境分析
             </Button>
             <Button
+              variant={
+                activeView === "ai-judge-scripts" ? "secondary" : "ghost"
+              }
+              className="w-full justify-start transition-all hover:bg-accent hover:text-accent-foreground border-border/50"
+              onClick={() => setActiveView("ai-judge-scripts")}
+            >
+              <FileCode2 className="mr-2 h-4 w-4 text-cyan-500" />
+              AI 檢測腳本
+            </Button>
+            <Button
               variant={activeView === "ai-pve-message" ? "secondary" : "ghost"}
               className="w-full justify-start transition-all hover:bg-accent hover:text-accent-foreground border-border/50"
               onClick={() => setActiveView("ai-pve-message")}
@@ -1157,7 +1169,15 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
 
         {/* 內容區塊 */}
         <div className="flex-1 min-w-0 flex flex-col gap-6">
-          {activeView === "ai-judge" && <AiJudgeContent groupId={groupId} />}
+          {activeView === "ai-judge" && (
+            <AiJudgeContent
+              groupId={groupId}
+              onScriptCreated={() => setActiveView("ai-judge-scripts")}
+            />
+          )}
+          {activeView === "ai-judge-scripts" && (
+            <AiJudgeScriptsContent groupId={groupId} />
+          )}
           {activeView === "ai-pve-message" && (
             <AiPveMessageContent groupId={groupId} />
           )}

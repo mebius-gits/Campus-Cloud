@@ -26,6 +26,7 @@ from app.ai.teacher_judge.schemas import (
 )
 from app.ai.teacher_judge.template_command_service import (
     format_template_commands_for_prompt,
+    validate_check_steps,
 )
 from app.ai.utils import apply_thinking_control, strip_think_tags
 from app.infrastructure.ai.teacher_judge import client as teacher_judge_client
@@ -61,11 +62,17 @@ def _normalize_check_steps(
     if not isinstance(raw_steps, list):
         return []
 
-    command_by_key = (
-        {command.command_key: command for command in template_commands}
-        if template_commands is not None
-        else None
-    )
+    if template_commands is not None:
+        validated_items = validate_check_steps(
+            template_key or "",
+            [{"check_steps": raw_steps}],
+            template_commands,
+        )
+        return [
+            RubricCheckStep(**step)
+            for step in validated_items[0].get("check_steps", [])
+        ]
+
     normalized: list[RubricCheckStep] = []
     for raw_step in raw_steps:
         if not isinstance(raw_step, dict):
@@ -77,12 +84,6 @@ def _normalize_check_steps(
             continue
 
         command_label = raw_step.get("command_label")
-        if command_by_key is not None:
-            command = command_by_key.get(command_key)
-            if command is None or step_template_key != template_key:
-                continue
-            command_label = command.command_label
-            step_template_key = command.template_key
 
         normalized.append(
             RubricCheckStep(
@@ -328,6 +329,15 @@ async def chat_with_rubric(
         )
         .replace("{rubric_item_count}", str(context_item_count))
         .replace("{situation_instruction}", situation)
+        .replace(
+            "{template_command_context}",
+            TEMPLATE_COMMAND_CONTEXT_TEMPLATE.format(
+                template_key=template_key,
+                template_commands=format_template_commands_for_prompt(
+                    template_commands or []
+                ),
+            ),
+        )
     )
 
     formatted = [{"role": "system", "content": system_prompt}]

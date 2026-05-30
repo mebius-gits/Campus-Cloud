@@ -43,7 +43,6 @@ def format_template_commands_for_prompt(
                     f"- command_key: {command.command_key}",
                     f"  command_label: {command.command_label}",
                     f"  category: {command.category}",
-                    f"  command_template: {command.command_template}",
                     f"  description: {command.description}",
                     f"  risk_level: {command.risk_level}",
                     f"  requires_confirmation: {command.requires_confirmation}",
@@ -74,8 +73,8 @@ def validate_check_steps(
             for raw_step in raw_steps:
                 if not isinstance(raw_step, dict):
                     continue
-                step_template_key = str(raw_step.get("template_key") or template_key)
-                command_key = str(raw_step.get("command_key") or "")
+                step_template_key = str(raw_step.get("template_key") or template_key).strip()
+                command_key = str(raw_step.get("command_key") or "").strip()
                 command = valid_commands.get(command_key)
                 if step_template_key != template_key or command is None:
                     continue

@@ -11,7 +11,7 @@ ANALYZE_SYSTEM_PROMPT = """
 - Proxmox 虛擬機器（VM）或 LXC 容器
 - 本地部署，不使用公有雲（AWS/GCP/Azure）
 
-## 系統可以自動偵測的資訊（透過 Proxmox Agent / API）
+## 系統後續可支援檢查的資訊（透過 Proxmox Agent / API 或 template command catalog）
 - 特定 TCP Port 是否正在監聽（e.g., Port 80/443/3306/5432）
 - Linux 服務狀態（`systemctl status nginx` 等）
 - 進程是否存在（`ps aux`）
@@ -33,10 +33,10 @@ ANALYZE_SYSTEM_PROMPT = """
 # 任務
 根據以下評分表原始文字，完成兩件事：
 1. 萃取所有評分項目，轉為 JSON 列表。
-2. 針對每一個評分項目，依據上述平台能力，判斷其「可自動偵測性」：
-   - "auto"：可完全透過系統自動偵測，無需人工介入
-   - "partial"：需要部分人工輔助或額外授權才能偵測
-   - "manual"：完全需要人工評閱，系統無法偵測
+2. 針對每一個評分項目，依據上述平台能力與本次 catalog，判斷其「後續可檢查性」：
+   - "auto"：有足夠 catalog command 支援後續自動檢查，仍尚未實際執行
+   - "partial"：只有部分 catalog command 可輔助判斷，仍需要人工輔助或額外授權
+   - "manual"：目前沒有合適 catalog command，主要需要人工評閱
 
 # 輸出格式
 只輸出合法的 JSON，不要有任何說明文字或 markdown。結構如下：
@@ -46,9 +46,9 @@ ANALYZE_SYSTEM_PROMPT = """
       "id": "item-1",
       "title": "評分項目名稱",
       "description": "評分說明（從原文萃取或精簡改寫）",
-            "checked": 布林值（true 代表「已達成」、false 代表「未達成」，若無明確達成證據請填 false）,
+      "checked": false,
       "detectable": "auto | partial | manual",
-      "detection_method": "若 auto/partial，具體說明偵測方式（e.g., TCP Port 80 探測）；否則 null",
+      "detection_method": "若 auto/partial，說明後續可用哪些 catalog command 輔助檢查；否則 null",
       "check_steps": [
         {
           "template_key": "本次選定 template key",
@@ -65,6 +65,7 @@ ANALYZE_SYSTEM_PROMPT = """
 - 本階段只產生評分計劃書，尚未執行任何檢查；`checked` 預設保持 false。
 - `check_steps` 只能引用上方 catalog 已列出的 `command_key`。
 - 不得自行發明 `command_key`，不得輸出 shell command。
+- 不得寫成已完成檢查、已確認服務正常、已達成；只能描述後續可如何檢查。
 - 若沒有適合的 catalog command，請輸出空陣列 `[]`，並將 `detectable` 設為 "partial" 或 "manual"。
 """.strip()
 
@@ -89,7 +90,11 @@ CHAT_SYSTEM_TEMPLATE = """
 
 # 可用資訊來源
 - 評分表結構（見下方 JSON）
+- 本次選定評分環境與可用 command catalog（見下方）
 - 未來將支援讀取學生 README、程式碼片段以輔助判斷（功能開發中）
+
+# 本次選定評分環境與可用檢查指令
+{template_command_context}
 
 # 目前評分表（JSON 格式）
 {rubric_context}
@@ -169,10 +174,12 @@ IMPORTANT RULES - 意圖識別（極為重要）
 如果老師滿意你的建議，會明確說「好，請修改」或「就這樣做」。
 
 ## 輸出結構約束
-- 每個 item 需有：id, title, description, checked, detectable, detection_method, fallback。
+- 每個 item 需有：id, title, description, checked, detectable, detection_method, check_steps, fallback。
 - 若修改表單（updated_items 不為 null），必須包含「完整列表」，未被要求變更的項目必須原樣保留，不得省略。
 - `checked` 表示「是否已達成」：除非老師明確要求調整，或對話中提供了可判斷的直接證據，否則維持原值。
 - 若缺乏明確證據，`checked` 預設應為 false，不可自行假設為已達成。
+- `check_steps` 只能引用上方 catalog 已列出的 `command_key`，不得自行發明，也不得輸出 shell command。
+- 若沒有適合的 catalog command，`check_steps` 請輸出空陣列 `[]`。
 
 ## ⚠️ 極為重要：完整列表規則
 當你需要修改評分表時（updated_items 不為 null）：

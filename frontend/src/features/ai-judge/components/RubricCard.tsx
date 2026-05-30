@@ -165,7 +165,7 @@ export function RubricCard({
           {checkSteps.length > 0 && (
             <div className="space-y-1">
               <span className="text-[11px] font-medium text-muted-foreground">
-                評分計劃書
+                評分計劃書（未執行）
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {checkSteps.map((step) => (
