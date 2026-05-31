@@ -262,3 +262,206 @@
   font-size: $font-size-14;
   font-weight: $font-weight-700;
 }
+
+/* ────────────────────────────────────────────
+   Quick start (filter chips + card grid)
+   ──────────────────────────────────────────── */
+
+/* ── Filter chips ── */
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-8;
+  margin-top: $spacing-8;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: $font-size-14;
+  font-weight: $font-weight-500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    background $transition-base,
+    color $transition-base,
+    border-color $transition-base;
+  white-space: nowrap;
+
+  &:hover:not(.filterChipActive) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  }
+}
+
+.filterChipActive {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.filterCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 11px;
+  font-weight: $font-weight-700;
+  line-height: 1;
+}
+
+/* ── Template grid ── */
+.templateGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+  margin-top: 12px;
+
+  @include respond-to(sm) {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  @include respond-to(lg) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ── Template card ── */
+.templateCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: $spacing-16;
+  border-radius: $radius-12;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform $transition-base,
+    border-color $transition-base,
+    box-shadow $transition-base;
+
+  /* Decorative corner glow */
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--accent-color) 12%, transparent),
+      transparent 70%
+    );
+    pointer-events: none;
+    opacity: 0.6;
+    transition: opacity $transition-base;
+  }
+
+  &:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--accent-color) 50%, var(--color-border));
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-color) 18%, transparent);
+
+    &::before { opacity: 1; }
+    .templateLogo {
+      transform: scale(1.05);
+      border-color: color-mix(in srgb, var(--accent-color) 40%, var(--color-border));
+    }
+    .templateAction {
+      color: var(--accent-color);
+      gap: 8px;
+    }
+  }
+}
+
+.templateHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-8;
+  position: relative;
+  z-index: 1;
+}
+
+.templateLogo {
+  @include flex-center;
+  width: 44px;
+  height: 44px;
+  border-radius: $radius-12;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--accent-color);
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: transform $transition-base, border-color $transition-base;
+
+  img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+}
+
+.templateCategoryChip {
+  @include badge-base;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.templateBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.templateName {
+  font-size: $font-size-14;
+  font-weight: $font-weight-700;
+  color: var(--color-text-primary);
+}
+
+.templateDesc {
+  font-size: $font-size-12;
+  color: var(--color-text-secondary);
+  line-height: $line-height-base;
+  @include text-clamp(2);
+}
+
+.templateFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.templateAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: $font-size-12;
+  font-weight: $font-weight-500;
+  color: var(--color-text-muted);
+  transition: color $transition-base, gap $transition-base;
+}
