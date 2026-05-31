@@ -129,13 +129,29 @@ export type TeacherJudgeScriptRun = {
 export type TeacherJudgeScriptRunTargetProgress = {
   vmid: number
   name?: string
+  proxmox_node?: string | null
+  resource_type?: "qemu" | "lxc" | string | null
+  user?: {
+    id?: string | null
+    email?: string | null
+    full_name?: string | null
+  } | null
   status: "queued" | "running" | "completed" | "failed"
+  reason_code?: string | null
 }
 
 export type TeacherJudgeScriptRunTargetResult = {
   vmid: number
   name?: string
+  proxmox_node?: string | null
+  resource_type?: "qemu" | "lxc" | string | null
+  user?: {
+    id?: string | null
+    email?: string | null
+    full_name?: string | null
+  } | null
   status: "completed" | "failed"
+  reason_code?: string | null
   exit_code: number | null
   validation?: {
     valid?: boolean

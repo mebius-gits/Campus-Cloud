@@ -742,8 +742,11 @@ def test_create_script_run_snapshots_only_running_group_targets(
     assert run.status == "pending"
     assert run.started_by == str(user_id)
     assert run.target_snapshot_json["targets"][0]["name"] == "101"
-    assert run.target_snapshot_json["targets"][0]["type"] == "lxc"
+    assert run.target_snapshot_json["targets"][0]["resource_type"] == "lxc"
+    assert run.target_snapshot_json["targets"][0]["proxmox_node"] == "pve1"
+    assert run.target_snapshot_json["targets"][0]["user"]["full_name"] == "Student"
     assert run.progress_json["targets"][0]["status"] == "queued"
+    assert run.progress_json["targets"][0]["user"]["email"] == "student@example.com"
 
 
 def test_create_script_run_falls_back_to_live_ip_when_cache_missing(
@@ -979,6 +982,10 @@ def test_execute_script_run_saves_valid_target_result(
     assert stored_run.progress_json["stage"] == "completed"
     assert stored_run.result_summary_json["valid_json"] == 1
     assert stored_run.target_results_json["targets"][0]["status"] == "completed"
+    assert stored_run.target_results_json["targets"][0]["reason_code"] == "success"
+    assert stored_run.target_results_json["targets"][0]["proxmox_node"] == "pve1"
+    assert stored_run.target_results_json["targets"][0]["resource_type"] == "lxc"
+    assert stored_run.target_results_json["targets"][0]["user"]["full_name"] == "S"
     assert stored_run.target_results_json["targets"][0]["validation"]["valid"] is True
     assert (
         stored_run.target_results_json["targets"][0]["parsed_result"]["schema_version"]
@@ -1099,6 +1106,9 @@ def test_execute_script_run_saves_invalid_json_result(
     assert stored_run.status.value == "completed"
     assert stored_run.result_summary_json["invalid_json"] == 1
     assert result["status"] == "failed"
+    assert result["reason_code"] == "invalid_json"
+    assert result["proxmox_node"] == "pve1"
+    assert result["user"]["email"] == "s@example.com"
     assert result["validation"]["valid"] is False
 
 

@@ -167,15 +167,17 @@ def _resolve_running_targets(
             {
                 "vmid": vmid,
                 "name": str(vmid),
-                "type": live_type,
-                "status": live_status,
-                "node": live.get("node"),
+                "resource_type": live_type,
+                "status_at_selection": live_status,
+                "proxmox_node": live.get("node"),
                 "ip_address": ip_address,
                 "ssh_user": "root",
                 "has_ssh_key": True,
-                "user_id": member["user_id"],
-                "email": member["email"],
-                "full_name": member["full_name"],
+                "user": {
+                    "id": member["user_id"],
+                    "email": member["email"],
+                    "full_name": member["full_name"],
+                },
             }
         )
 
@@ -231,7 +233,15 @@ def create_script_run(
             "total": len(targets),
             "done": 0,
             "targets": [
-                {"vmid": target["vmid"], "name": target["name"], "status": "queued"}
+                {
+                    "vmid": target["vmid"],
+                    "name": target["name"],
+                    "proxmox_node": target["proxmox_node"],
+                    "resource_type": target["resource_type"],
+                    "user": target["user"],
+                    "status": "queued",
+                    "reason_code": None,
+                }
                 for target in targets
             ],
         },

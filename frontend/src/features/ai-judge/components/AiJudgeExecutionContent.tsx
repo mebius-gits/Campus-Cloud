@@ -82,6 +82,37 @@ function JsonValidationBadge({
   return <Badge variant="destructive">JSON 無效</Badge>
 }
 
+function reasonLabel(reasonCode?: string | null) {
+  switch (reasonCode) {
+    case "success":
+      return "成功"
+    case "not_running":
+      return "未運行"
+    case "missing_ip":
+      return "缺少 IP"
+    case "missing_ssh_key":
+      return "缺少 SSH 金鑰"
+    case "owner_mismatch":
+      return "資源擁有者不一致"
+    case "missing_db_resource":
+      return "資料庫無資源"
+    case "invalid_resource_type":
+      return "類型不可執行"
+    case "python_missing":
+      return "缺少 python3"
+    case "execution_nonzero":
+      return "腳本執行失敗"
+    case "result_too_large":
+      return "結果過大"
+    case "invalid_json":
+      return "JSON 格式錯誤"
+    case "executor_error":
+      return "執行器錯誤"
+    default:
+      return reasonCode ?? null
+  }
+}
+
 function formatUsage(value?: number | null) {
   if (typeof value !== "number" || Number.isNaN(value)) return "--"
   return `${Math.round(value)}%`
@@ -334,6 +365,8 @@ export function AiJudgeExecutionContent({
             <TableHeader>
               <TableRow>
                 <TableHead>VMID</TableHead>
+                <TableHead>成員</TableHead>
+                <TableHead>來源節點</TableHead>
                 <TableHead>執行狀態</TableHead>
                 <TableHead>JSON 驗證</TableHead>
                 <TableHead>結果</TableHead>
@@ -342,13 +375,41 @@ export function AiJudgeExecutionContent({
             <TableBody>
               {progressTargets.map((target) => {
                 const result = resultByVmid.get(target.vmid)
+                const user = result?.user ?? target.user
+                const proxmoxNode = result?.proxmox_node ?? target.proxmox_node
+                const resourceType =
+                  result?.resource_type ?? target.resource_type
+                const targetReason = reasonLabel(
+                  result?.reason_code ?? target.reason_code,
+                )
                 return (
                   <TableRow key={target.vmid}>
                     <TableCell className="font-mono text-sm">
                       {target.name ?? target.vmid}
                     </TableCell>
                     <TableCell>
+                      <div className="text-sm">{user?.full_name ?? "-"}</div>
+                      {user?.email && (
+                        <div className="text-xs text-muted-foreground">
+                          {user.email}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono text-sm">
+                        {proxmoxNode ?? "-"}
+                      </div>
+                      <div className="text-xs uppercase text-muted-foreground">
+                        {resourceType ?? "-"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <TargetStatusBadge status={target.status} />
+                      {targetReason && targetReason !== "成功" && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {targetReason}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <JsonValidationBadge result={result} />
@@ -357,7 +418,7 @@ export function AiJudgeExecutionContent({
                       {result ? (
                         <details className="text-sm">
                           <summary className="cursor-pointer text-muted-foreground">
-                            展開 parsed JSON
+                            展開完整 JSON
                           </summary>
                           {result.validation?.error && (
                             <p className="mt-2 text-destructive text-xs">
@@ -365,13 +426,7 @@ export function AiJudgeExecutionContent({
                             </p>
                           )}
                           <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs">
-                            {JSON.stringify(
-                              result.parsed_result ??
-                                result.raw_result_json ??
-                                null,
-                              null,
-                              2,
-                            )}
+                            {JSON.stringify(result, null, 2)}
                           </pre>
                         </details>
                       ) : (

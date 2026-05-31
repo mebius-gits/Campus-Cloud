@@ -23,7 +23,7 @@
 - SSH 執行並發數預設為 5。
 - 每台 target 的執行結果保存上限採用：stdout 16KB、stderr 16KB、raw `result.json` 256KB。
 - 背景執行第一版接專案既有 `app.infrastructure.worker.submit_sync`，不使用 FastAPI 內建 `BackgroundTasks`。
-- 第一版不提供原始 JSON 下載，只確認後端能接收並保存 JSON，前端能顯示 valid/invalid 與 parsed JSON。
+- 第一版不提供原始 JSON 下載，只確認後端能接收並保存 JSON，前端能顯示 valid/invalid、parsed JSON，以及每台 target 的 VMID、Proxmox node、機器類型與對應學生姓名。
 - 第一版先不自動清理遠端暫存目錄，保留後續補 cleanup / retention policy 的註解。
 - 第一版不新增 `executor_error` 或 `cancel_requested_at` 欄位，後續若要取消或更完整的 executor error tracking 再補 schema。
 - 第一版不拆 `teacher_judge_script_run_results`，先以 `target_results_json` 跑通測試 JSON 接收鏈條。
@@ -89,6 +89,8 @@ python3 script.py > result.json 2> stderr.log
      - `resources.user_id` 等於該 group member user
      - live Proxmox 狀態是 `running`
      - resource 有可用 IP 與 SSH private key
+   - target snapshot 由後端固定從 DB + live Proxmox 組出，不信任前端附帶 metadata
+   - target snapshot 使用 `proxmox_node` 表示來源節點，不使用 `source`，避免和 script artifact 的 `source=ai_generated|regenerated` 撞名
 
 2. 建立 executor service
    - 輸入：`session`、`run_id`
@@ -111,6 +113,26 @@ python3 script.py > result.json 2> stderr.log
    - 對 `result.json` 呼叫 `validate_managed_script_output()`
    - JSON 正確時保存 parsed result
    - JSON 錯誤時保存 validation error、stdout/stderr 摘要與 exit code
+   - 每台 target result 必須自包含保存執行對象 metadata：
+     - `vmid`
+     - `proxmox_node`
+     - `resource_type`
+     - `user.id`
+     - `user.email`
+     - `user.full_name`
+   - 每台 target result 必須保存穩定 `reason_code`，讓不同機器狀況可分開顯示：
+     - `success`
+     - `not_running`
+     - `missing_ip`
+     - `missing_ssh_key`
+     - `owner_mismatch`
+     - `missing_db_resource`
+     - `invalid_resource_type`
+     - `python_missing`
+     - `execution_nonzero`
+     - `result_too_large`
+     - `invalid_json`
+     - `executor_error`
    - stdout/stderr/result 都要設定保存上限，避免 DB 過大
    - 保存上限只限制執行結果，不影響 `teacher_judge_script_artifacts.script_content`；managed script 仍直接保存在資料庫
    - 第一版每台 target 保存上限：
@@ -126,9 +148,10 @@ python3 script.py > result.json 2> stderr.log
    - create run 後回傳 run public object
    - 補 run detail API，讓前端 polling 查詢最新狀態
    - 前端只顯示可執行的 running VM/LXC
-- 前端顯示每台 target 狀態：queued、running、completed、failed
-- 前端顯示 JSON 格式驗證：valid / invalid，並可展開 parsed JSON
-- 第一版不提供原始 JSON 下載功能
+   - 前端顯示每台 target 狀態：queued、running、completed、failed
+   - 前端顯示每台 target 的 VMID、學生姓名/email、Proxmox node、機器類型與失敗原因
+   - 前端顯示 JSON 格式驗證：valid / invalid，並可展開 parsed JSON
+   - 第一版不提供原始 JSON 下載功能
 
 ## 驗證方式
 
@@ -149,6 +172,7 @@ python3 script.py > result.json 2> stderr.log
 - 前端指定 1 台 running LXC/VM 執行
 - 確認 run 從 pending -> running -> completed
 - 確認 `target_results_json` 有 parsed JSON
+- 確認 `target_results_json.targets[]` 有 `vmid`、`proxmox_node`、`resource_type`、`user.full_name` 與 `reason_code`
 - 確認前端能顯示「JSON 格式正確」
 
 環境驗證：
@@ -201,6 +225,7 @@ python3 script.py > result.json 2> stderr.log
 - SSH 上傳並執行 Python managed script
 - 回收 stdout JSON 並驗證 `teacher_judge_result.v1`
 - 保存 per-target 結果到 `target_results_json`
+- per-target 結果併入 VMID、Proxmox node、機器類型、學生姓名/email 與 `reason_code`
 - 前端 polling 顯示進度與 JSON valid/invalid
 - 第一版目標是讓測試 JSON 能被接收、驗證、保存與前端解析，先跑通 executor 鏈條
 

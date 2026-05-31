@@ -47,6 +47,14 @@ class RemoteScriptResult:
     stderr_text: str
 
 
+class TargetExecutionError(RuntimeError):
+    """Target-scoped executor error with a stable JSON reason code."""
+
+    def __init__(self, message: str, reason_code: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -61,15 +69,50 @@ def _target_vmid(target: dict[str, Any]) -> int:
     return int(target["vmid"])
 
 
+def _target_resource_type(target: dict[str, Any]) -> str | None:
+    value = target.get("resource_type") or target.get("type")
+    return str(value) if value is not None else None
+
+
+def _target_proxmox_node(target: dict[str, Any]) -> str | None:
+    value = target.get("proxmox_node") or target.get("node")
+    return str(value) if value is not None else None
+
+
+def _target_user(target: dict[str, Any]) -> dict[str, Any]:
+    user = target.get("user")
+    if isinstance(user, dict):
+        return {
+            "id": user.get("id"),
+            "email": user.get("email"),
+            "full_name": user.get("full_name"),
+        }
+    return {
+        "id": target.get("user_id"),
+        "email": target.get("email"),
+        "full_name": target.get("full_name"),
+    }
+
+
+def _target_metadata(target: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "vmid": _target_vmid(target),
+        "proxmox_node": _target_proxmox_node(target),
+        "resource_type": _target_resource_type(target),
+        "user": _target_user(target),
+        "name": str(target.get("name") or target.get("vmid")),
+    }
+
+
 def _target_progress(
     targets: list[dict[str, Any]],
     statuses: dict[int, str],
 ) -> list[dict[str, Any]]:
     return [
         {
-            "vmid": _target_vmid(target),
-            "name": str(target.get("name") or target.get("vmid")),
+            **_target_metadata(target),
             "status": statuses.get(_target_vmid(target), "queued"),
+            "reason_code": None,
         }
         for target in targets
     ]
@@ -135,15 +178,25 @@ def _resolve_runtime_target(
     vmid = _target_vmid(target)
     resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
     if resource is None:
-        raise RuntimeError(f"VMID {vmid} 未在資料庫中登記。")
-    if str(resource.user_id) != str(target.get("user_id")):
-        raise RuntimeError(f"VMID {vmid} 目前資源擁有者與 run target snapshot 不一致。")
+        raise TargetExecutionError(
+            f"VMID {vmid} 未在資料庫中登記。",
+            "missing_db_resource",
+        )
+    snapshot_user_id = _target_user(target).get("id")
+    if str(resource.user_id) != str(snapshot_user_id):
+        raise TargetExecutionError(
+            f"VMID {vmid} 目前資源擁有者與 run target snapshot 不一致。",
+            "owner_mismatch",
+        )
 
     live = live_by_vmid.get(vmid)
     if not live or str(live.get("status") or "") != "running":
-        raise RuntimeError(f"VMID {vmid} 目前不是運行中。")
+        raise TargetExecutionError(f"VMID {vmid} 目前不是運行中。", "not_running")
     if str(live.get("type") or "") not in {"qemu", "lxc"}:
-        raise RuntimeError(f"VMID {vmid} 不是可執行的 VM/LXC。")
+        raise TargetExecutionError(
+            f"VMID {vmid} 不是可執行的 VM/LXC。",
+            "invalid_resource_type",
+        )
 
     host = resolve_target_ip_address(
         session=session,
@@ -151,9 +204,12 @@ def _resolve_runtime_target(
         live_resource=live,
     )
     if not host:
-        raise RuntimeError(f"VMID {vmid} 沒有可用 IP。")
+        raise TargetExecutionError(f"VMID {vmid} 沒有可用 IP。", "missing_ip")
     if not resource.ssh_private_key_encrypted:
-        raise RuntimeError(f"VMID {vmid} 沒有可用 SSH 金鑰。")
+        raise TargetExecutionError(
+            f"VMID {vmid} 沒有可用 SSH 金鑰。",
+            "missing_ssh_key",
+        )
 
     return {
         **target,
@@ -226,11 +282,15 @@ def _read_remote_text(sftp: Any, path: str) -> str:
     return str(data)
 
 
-def _target_failure(target: dict[str, Any], message: str) -> dict[str, Any]:
+def _target_failure(
+    target: dict[str, Any],
+    message: str,
+    reason_code: str,
+) -> dict[str, Any]:
     return {
-        "vmid": _target_vmid(target),
-        "name": str(target.get("name") or target.get("vmid")),
+        **_target_metadata(target),
         "status": "failed",
+        "reason_code": reason_code,
         "exit_code": None,
         "validation": {
             "valid": False,
@@ -260,9 +320,9 @@ def _target_result(
             "schema_version": "teacher_judge_result.v1",
         }
         return {
-            "vmid": _target_vmid(target),
-            "name": str(target.get("name") or target.get("vmid")),
+            **_target_metadata(target),
             "status": "failed",
+            "reason_code": "result_too_large",
             "exit_code": remote_result.exit_code,
             "validation": validation,
             "stdout_excerpt": stdout_excerpt,
@@ -281,10 +341,20 @@ def _target_result(
         if remote_result.exit_code == 0 and validation.get("valid") is True
         else "failed"
     )
+    reason_code = "success"
+    if status == "failed":
+        stderr_lower = remote_result.stderr_text.lower()
+        if remote_result.exit_code == 127 or "python3: not found" in stderr_lower:
+            reason_code = "python_missing"
+        elif remote_result.exit_code != 0:
+            reason_code = "execution_nonzero"
+        else:
+            reason_code = "invalid_json"
+
     return {
-        "vmid": _target_vmid(target),
-        "name": str(target.get("name") or target.get("vmid")),
+        **_target_metadata(target),
         "status": status,
+        "reason_code": reason_code,
         "exit_code": remote_result.exit_code,
         "validation": validation,
         "stdout_excerpt": stdout_excerpt,
@@ -386,7 +456,12 @@ def _execute_script_run(run_id: uuid.UUID) -> None:
                 statuses[vmid] = "running"
             except Exception as exc:
                 statuses[vmid] = "failed"
-                early_results.append(_target_failure(target, str(exc)))
+                reason_code = (
+                    exc.reason_code
+                    if isinstance(exc, TargetExecutionError)
+                    else "executor_error"
+                )
+                early_results.append(_target_failure(target, str(exc), reason_code))
 
         _save_run_progress(
             session=session,
@@ -421,7 +496,11 @@ def _execute_script_run(run_id: uuid.UUID) -> None:
                             vmid,
                             exc_info=True,
                         )
-                        target_result = _target_failure(target, str(exc))
+                        target_result = _target_failure(
+                            target,
+                            str(exc),
+                            "executor_error",
+                        )
                     statuses[vmid] = str(target_result["status"])
                     results.append(target_result)
                     _save_run_progress(
