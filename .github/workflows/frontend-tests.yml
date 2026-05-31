@@ -30,7 +30,9 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        # Lockfile is generated on Windows and doesn't include Linux-specific
+        # esbuild platform binaries; allow bun to resolve them on this runner.
+        run: bun install
 
       - name: Biome lint + format check
         run: bunx biome check .
