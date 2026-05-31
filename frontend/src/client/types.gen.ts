@@ -14119,6 +14119,44 @@ export type TeacherJudgeCreateGroupTeacherJudgeScriptRunResponses = {
 
 export type TeacherJudgeCreateGroupTeacherJudgeScriptRunResponse = TeacherJudgeCreateGroupTeacherJudgeScriptRunResponses[keyof TeacherJudgeCreateGroupTeacherJudgeScriptRunResponses];
 
+export type TeacherJudgeGetGroupTeacherJudgeScriptRunData = {
+    body?: never;
+    path: {
+        /**
+         * Group Id
+         */
+        group_id: string;
+        /**
+         * Script Id
+         */
+        script_id: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/groups/{group_id}/judge/scripts/{script_id}/runs/{run_id}';
+};
+
+export type TeacherJudgeGetGroupTeacherJudgeScriptRunErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TeacherJudgeGetGroupTeacherJudgeScriptRunError = TeacherJudgeGetGroupTeacherJudgeScriptRunErrors[keyof TeacherJudgeGetGroupTeacherJudgeScriptRunErrors];
+
+export type TeacherJudgeGetGroupTeacherJudgeScriptRunResponses = {
+    /**
+     * Successful Response
+     */
+    200: TeacherJudgeScriptRunPublic;
+};
+
+export type TeacherJudgeGetGroupTeacherJudgeScriptRunResponse = TeacherJudgeGetGroupTeacherJudgeScriptRunResponses[keyof TeacherJudgeGetGroupTeacherJudgeScriptRunResponses];
+
 export type TeacherJudgeArchiveGroupTeacherJudgeScriptData = {
     body?: never;
     path: {

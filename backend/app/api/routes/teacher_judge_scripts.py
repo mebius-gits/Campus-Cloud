@@ -22,10 +22,15 @@ from app.ai.teacher_judge.script_artifact_service import (
     list_artifacts,
     regenerate_artifact,
 )
-from app.ai.teacher_judge.script_run_service import create_script_run
+from app.ai.teacher_judge.script_executor_service import execute_script_run
+from app.ai.teacher_judge.script_run_service import (
+    create_script_run,
+    get_script_run_public,
+)
 from app.ai.teacher_judge.template_command_service import SUPPORTED_TEMPLATE_KEYS
 from app.api.deps import InstructorUser, SessionDep
 from app.core.authorizers import require_group_access
+from app.infrastructure.worker import submit_sync
 from app.models.teacher_judge_script_run import TeacherJudgeScriptRunTargetScope
 from app.repositories import group as group_repo
 
@@ -56,7 +61,7 @@ def list_group_teacher_judge_scripts(
     group_id: uuid.UUID,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> list[TeacherJudgeScriptArtifactPublic]:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     return list_artifacts(session=session, group_id=group_id)
 
@@ -67,7 +72,7 @@ async def create_group_teacher_judge_script(
     payload: TeacherJudgeScriptCreateRequest,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptArtifactPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     template_key = _normalize_supported_template_key(payload.template_key)
     return await create_artifact(
@@ -86,7 +91,7 @@ def get_group_teacher_judge_script(
     script_id: uuid.UUID,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptArtifactPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     return get_artifact_public(
         session=session,
@@ -102,7 +107,7 @@ async def regenerate_group_teacher_judge_script(
     payload: TeacherJudgeScriptRegenerateRequest,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptArtifactPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     return await regenerate_artifact(
         session=session,
@@ -119,7 +124,7 @@ def approve_group_teacher_judge_script(
     script_id: uuid.UUID,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptArtifactPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     return approve_artifact(
         session=session,
@@ -136,15 +141,40 @@ def create_group_teacher_judge_script_run(
     payload: TeacherJudgeScriptRunCreateRequest,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptRunPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
-    return create_script_run(
+    run = create_script_run(
         session=session,
         group_id=group_id,
         artifact_id=script_id,
         target_scope=TeacherJudgeScriptRunTargetScope(payload.target_scope),
         target_vmids=payload.target_vmids,
         started_by=current_user.id,
+    )
+    submit_sync(
+        execute_script_run,
+        uuid.UUID(run.id),
+        name=f"teacher_judge_script_run:{run.id}",
+        task_id=f"teacher_judge_script_run:{run.id}",
+        max_retries=0,
+    )
+    return run
+
+
+@router.get("/{script_id}/runs/{run_id}", response_model=TeacherJudgeScriptRunPublic)
+def get_group_teacher_judge_script_run(
+    group_id: uuid.UUID,
+    script_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDep,
+    current_user: InstructorUser,
+) -> TeacherJudgeScriptRunPublic:
+    _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
+    return get_script_run_public(
+        session=session,
+        group_id=group_id,
+        artifact_id=script_id,
+        run_id=run_id,
     )
 
 
@@ -154,7 +184,7 @@ def archive_group_teacher_judge_script(
     script_id: uuid.UUID,
     session: SessionDep,
     current_user: InstructorUser,
-):
+) -> TeacherJudgeScriptArtifactPublic:
     _ensure_group_access(session=session, group_id=group_id, current_user=current_user)
     return archive_artifact(
         session=session,

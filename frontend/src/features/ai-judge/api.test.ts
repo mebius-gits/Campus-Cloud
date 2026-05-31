@@ -130,6 +130,25 @@ describe("AiJudgeService.downloadExcel", () => {
     )
   })
 
+  it("gets teacher judge script run detail", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve({}) as any)
+
+    await AiJudgeService.getScriptRun({
+      groupId: "group-1",
+      scriptId: "script-1",
+      runId: "run-1",
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "GET",
+        url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}/runs/{runId}",
+        path: { groupId: "group-1", scriptId: "script-1", runId: "run-1" },
+      }),
+    )
+  })
+
   it("deletes teacher judge script artifacts", async () => {
     vi.mocked(requestMock).mockReturnValue(Promise.resolve(undefined) as any)
 

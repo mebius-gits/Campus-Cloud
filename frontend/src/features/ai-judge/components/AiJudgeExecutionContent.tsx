@@ -28,7 +28,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { AiJudgeService } from "@/features/ai-judge/api"
+import {
+  AiJudgeService,
+  type TeacherJudgeScriptRun,
+  type TeacherJudgeScriptRunTargetProgress,
+  type TeacherJudgeScriptRunTargetResult,
+} from "@/features/ai-judge/api"
 import useCustomToast from "@/hooks/useCustomToast"
 import { queryKeys } from "@/lib/queryKeys"
 
@@ -44,9 +49,46 @@ function VmStatusBadge({ status }: { status?: string | null }) {
   return <Badge variant="secondary">{status ?? "未建立"}</Badge>
 }
 
+function RunStatusBadge({
+  status,
+}: {
+  status: TeacherJudgeScriptRun["status"]
+}) {
+  if (status === "completed") return <Badge>已完成</Badge>
+  if (status === "running") return <Badge>執行中</Badge>
+  if (status === "failed") return <Badge variant="destructive">失敗</Badge>
+  if (status === "cancelled") return <Badge variant="secondary">已取消</Badge>
+  return <Badge variant="outline">等待中</Badge>
+}
+
+function TargetStatusBadge({
+  status,
+}: {
+  status: TeacherJudgeScriptRunTargetProgress["status"] | string
+}) {
+  if (status === "completed") return <Badge>完成</Badge>
+  if (status === "running") return <Badge>執行中</Badge>
+  if (status === "failed") return <Badge variant="destructive">失敗</Badge>
+  return <Badge variant="outline">排隊中</Badge>
+}
+
+function JsonValidationBadge({
+  result,
+}: {
+  result?: TeacherJudgeScriptRunTargetResult
+}) {
+  if (!result) return <Badge variant="outline">尚未回收</Badge>
+  if (result.validation?.valid) return <Badge>JSON 正確</Badge>
+  return <Badge variant="destructive">JSON 無效</Badge>
+}
+
 function formatUsage(value?: number | null) {
   if (typeof value !== "number" || Number.isNaN(value)) return "--"
   return `${Math.round(value)}%`
+}
+
+function runIsTerminal(status?: TeacherJudgeScriptRun["status"]) {
+  return status === "completed" || status === "failed" || status === "cancelled"
 }
 
 export function AiJudgeExecutionContent({
@@ -61,6 +103,10 @@ export function AiJudgeExecutionContent({
   const [selectedVmids, setSelectedVmids] = useState<number[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(null)
+  const [activeRunRef, setActiveRunRef] = useState<{
+    scriptId: string
+    runId: string
+  } | null>(null)
 
   const scriptsQuery = useQuery({
     queryKey: queryKeys.groups.teacherJudgeScripts(groupId),
@@ -86,6 +132,33 @@ export function AiJudgeExecutionContent({
   )
   const selectedSet = new Set(selectedVmids)
 
+  const activeRunQuery = useQuery({
+    queryKey: activeRunRef
+      ? queryKeys.groups.teacherJudgeScriptRun(
+          groupId,
+          activeRunRef.scriptId,
+          activeRunRef.runId,
+        )
+      : queryKeys.groups.teacherJudgeScriptRun(groupId, "none", "none"),
+    queryFn: () =>
+      AiJudgeService.getScriptRun({
+        groupId,
+        scriptId: activeRunRef!.scriptId,
+        runId: activeRunRef!.runId,
+      }),
+    enabled: activeRunRef !== null,
+    refetchInterval: (query) =>
+      runIsTerminal(query.state.data?.status) ? false : 2000,
+  })
+  const activeRun = activeRunQuery.data
+  const progressTargets = (activeRun?.progress_json.targets ??
+    []) as TeacherJudgeScriptRunTargetProgress[]
+  const resultTargets = (activeRun?.target_results_json.targets ??
+    []) as TeacherJudgeScriptRunTargetResult[]
+  const resultByVmid = new Map(
+    resultTargets.map((result) => [result.vmid, result]),
+  )
+
   const createRunMutation = useMutation({
     mutationFn: () =>
       AiJudgeService.createScriptRun({
@@ -97,12 +170,21 @@ export function AiJudgeExecutionContent({
       showSuccessToast(
         `已建立腳本執行任務（${run.progress_json.total ?? selectedVmids.length} 台）`,
       )
+      setActiveRunRef({ scriptId: effectiveScriptId, runId: run.id })
       setDialogOpen(false)
       setSelectedScriptId(null)
       setSelectedVmids([])
       queryClient.invalidateQueries({
         queryKey: queryKeys.groups.teacherJudgeScripts(groupId),
       })
+      queryClient.setQueryData(
+        queryKeys.groups.teacherJudgeScriptRun(
+          groupId,
+          effectiveScriptId,
+          run.id,
+        ),
+        run,
+      )
     },
     onError: (err: any) =>
       showErrorToast(err?.body?.detail ?? err?.message ?? "建立執行任務失敗"),
@@ -180,31 +262,24 @@ export function AiJudgeExecutionContent({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {members.length === 0 ? (
+            {runningMembers.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={6}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
-                  尚無群組成員。
+                  目前沒有可執行的運行中 VM/LXC。
                 </TableCell>
               </TableRow>
             ) : (
-              members.map((member) => {
+              runningMembers.map((member) => {
                 const vmid = member.vmid ?? null
-                const runnable =
-                  vmid !== null &&
-                  member.vm_status === "running" &&
-                  (member.vm_type === "qemu" || member.vm_type === "lxc")
                 return (
-                  <TableRow
-                    key={member.user_id}
-                    className={!runnable ? "opacity-60" : undefined}
-                  >
+                  <TableRow key={member.user_id}>
                     <TableCell>
                       <Checkbox
                         checked={vmid !== null && selectedSet.has(vmid)}
-                        disabled={!runnable || vmid === null}
+                        disabled={vmid === null}
                         onCheckedChange={(checked) => {
                           if (vmid !== null) toggleVmid(vmid, checked === true)
                         }}
@@ -237,6 +312,81 @@ export function AiJudgeExecutionContent({
           </TableBody>
         </Table>
       </div>
+
+      {activeRun && (
+        <div className="rounded-lg border">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">最近一次執行結果</h3>
+                <RunStatusBadge status={activeRun.status} />
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                進度 {activeRun.progress_json.done ?? 0} /{" "}
+                {activeRun.progress_json.total ?? progressTargets.length} 台
+              </p>
+            </div>
+            {activeRunQuery.isFetching && !runIsTerminal(activeRun.status) && (
+              <div className="text-sm text-muted-foreground">更新中...</div>
+            )}
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>VMID</TableHead>
+                <TableHead>執行狀態</TableHead>
+                <TableHead>JSON 驗證</TableHead>
+                <TableHead>結果</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {progressTargets.map((target) => {
+                const result = resultByVmid.get(target.vmid)
+                return (
+                  <TableRow key={target.vmid}>
+                    <TableCell className="font-mono text-sm">
+                      {target.name ?? target.vmid}
+                    </TableCell>
+                    <TableCell>
+                      <TargetStatusBadge status={target.status} />
+                    </TableCell>
+                    <TableCell>
+                      <JsonValidationBadge result={result} />
+                    </TableCell>
+                    <TableCell>
+                      {result ? (
+                        <details className="text-sm">
+                          <summary className="cursor-pointer text-muted-foreground">
+                            展開 parsed JSON
+                          </summary>
+                          {result.validation?.error && (
+                            <p className="mt-2 text-destructive text-xs">
+                              {result.validation.error}
+                            </p>
+                          )}
+                          <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs">
+                            {JSON.stringify(
+                              result.parsed_result ??
+                                result.raw_result_json ??
+                                null,
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </details>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          等待回收
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">

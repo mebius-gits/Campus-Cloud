@@ -126,6 +126,29 @@ export type TeacherJudgeScriptRun = {
   updated_at: string
 }
 
+export type TeacherJudgeScriptRunTargetProgress = {
+  vmid: number
+  name?: string
+  status: "queued" | "running" | "completed" | "failed"
+}
+
+export type TeacherJudgeScriptRunTargetResult = {
+  vmid: number
+  name?: string
+  status: "completed" | "failed"
+  exit_code: number | null
+  validation?: {
+    valid?: boolean
+    error?: string | null
+    schema_version?: string
+    checks_count?: number
+  }
+  stdout_excerpt?: string
+  stderr_excerpt?: string
+  raw_result_json?: string
+  parsed_result?: Record<string, any> | null
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const AiJudgeService = {
@@ -283,6 +306,22 @@ export const AiJudgeService = {
         target_vmids: data.target_vmids,
       },
       mediaType: "application/json",
+    })
+  },
+
+  getScriptRun(data: {
+    groupId: string
+    scriptId: string
+    runId: string
+  }): CancelablePromise<TeacherJudgeScriptRun> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/groups/{groupId}/judge/scripts/{scriptId}/runs/{runId}",
+      path: {
+        groupId: data.groupId,
+        scriptId: data.scriptId,
+        runId: data.runId,
+      },
     })
   },
 

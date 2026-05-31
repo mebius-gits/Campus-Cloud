@@ -12,6 +12,7 @@ from sqlmodel import Session
 
 from app.ai.teacher_judge.schemas import TeacherJudgeScriptRunPublic
 from app.ai.teacher_judge.script_artifact_service import get_artifact
+from app.ai.teacher_judge.target_ip_resolver import resolve_target_ip_address
 from app.infrastructure.proxmox import operations as proxmox_ops
 from app.models.teacher_judge_script_artifact import TeacherJudgeScriptStatus
 from app.models.teacher_judge_script_run import (
@@ -20,6 +21,7 @@ from app.models.teacher_judge_script_run import (
     TeacherJudgeScriptRunTargetScope,
 )
 from app.repositories import group as group_repo
+from app.repositories import resource as resource_repo
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,19 @@ def _run_to_public(run: TeacherJudgeScriptRun) -> TeacherJudgeScriptRunPublic:
         created_at=run.created_at.isoformat(),
         updated_at=run.updated_at.isoformat(),
     )
+
+
+def get_script_run_public(
+    *,
+    session: Session,
+    group_id: uuid.UUID,
+    artifact_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> TeacherJudgeScriptRunPublic:
+    run = session.get(TeacherJudgeScriptRun, run_id)
+    if run is None or run.group_id != group_id or run.artifact_id != artifact_id:
+        raise HTTPException(status_code=404, detail="Script run not found")
+    return _run_to_public(run)
 
 
 def _group_member_by_vmid(
@@ -84,7 +99,10 @@ def _running_resources_by_vmid() -> dict[int, dict[str, Any]]:
     result: dict[int, dict[str, Any]] = {}
     for resource in resources:
         try:
-            vmid = int(resource.get("vmid"))
+            raw_vmid = resource.get("vmid")
+            if raw_vmid is None:
+                continue
+            vmid = int(raw_vmid)
         except (TypeError, ValueError):
             continue
         result[vmid] = dict(resource)
@@ -123,6 +141,28 @@ def _resolve_running_targets(
                 detail=f"VMID {vmid} 目前不是運行中，不能執行腳本。",
             )
 
+        resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
+        if resource is None:
+            raise HTTPException(
+                status_code=400, detail=f"VMID {vmid} 未在資料庫中登記。"
+            )
+        if str(resource.user_id) != member["user_id"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"VMID {vmid} 目前資源擁有者與群組成員不一致。",
+            )
+        ip_address = resolve_target_ip_address(
+            session=session,
+            vmid=vmid,
+            live_resource=live,
+        )
+        if not ip_address:
+            raise HTTPException(status_code=400, detail=f"VMID {vmid} 沒有可用 IP。")
+        if not resource.ssh_private_key_encrypted:
+            raise HTTPException(
+                status_code=400, detail=f"VMID {vmid} 沒有可用 SSH 金鑰。"
+            )
+
         targets.append(
             {
                 "vmid": vmid,
@@ -130,6 +170,9 @@ def _resolve_running_targets(
                 "type": live_type,
                 "status": live_status,
                 "node": live.get("node"),
+                "ip_address": ip_address,
+                "ssh_user": "root",
+                "has_ssh_key": True,
                 "user_id": member["user_id"],
                 "email": member["email"],
                 "full_name": member["full_name"],
@@ -166,6 +209,8 @@ def create_script_run(
     )
     if not targets:
         raise HTTPException(status_code=400, detail="請至少選擇一台運行中的 VM/LXC。")
+    if len(targets) > 5:
+        raise HTTPException(status_code=400, detail="單次最多只能選擇 5 台 VM/LXC。")
 
     run = TeacherJudgeScriptRun(
         group_id=group_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,12 @@ from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine
 
 from app import models  # noqa: F401
-from app.ai.teacher_judge import script_artifact_service, script_run_service
+from app.ai.teacher_judge import (
+    script_artifact_service,
+    script_executor_service,
+    script_run_service,
+    target_ip_resolver,
+)
 from app.ai.teacher_judge.schemas import RubricAnalysis, RubricItem
 from app.ai.teacher_judge.script_policy import (
     check_script_policy,
@@ -17,7 +23,11 @@ from app.ai.teacher_judge.script_policy import (
 )
 from app.api.routes.teacher_judge_scripts import _normalize_supported_template_key
 from app.models.teacher_judge_script_artifact import TeacherJudgeScriptStatus
-from app.models.teacher_judge_script_run import TeacherJudgeScriptRunTargetScope
+from app.models.teacher_judge_script_run import (
+    TeacherJudgeScriptRunStatus,
+    TeacherJudgeScriptRunTargetScope,
+)
+from app.repositories import resource as resource_repo
 
 SAFE_SCRIPT = """
 import json
@@ -60,6 +70,40 @@ def _analysis() -> RubricAnalysis:
         total_items=1,
         auto_count=1,
         summary="n8n rubric",
+    )
+
+
+def _resource(*, vmid: int, user_id: uuid.UUID) -> models.Resource:
+    return models.Resource(
+        vmid=vmid,
+        user_id=user_id,
+        environment_type="linux",
+        ip_address="10.0.0.10",
+        ssh_private_key_encrypted="encrypted-key",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+def _valid_result_json() -> str:
+    return json.dumps(
+        {
+            "schema_version": "teacher_judge_result.v1",
+            "metadata": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "platform": "linux",
+            },
+            "summary": "ok",
+            "checks": [
+                {
+                    "id": "runtime.python",
+                    "title": "Python runtime",
+                    "status": "pass",
+                    "evidence": "python3 exists",
+                    "raw": "Python 3.11",
+                }
+            ],
+            "errors": [],
+        }
     )
 
 
@@ -221,7 +265,12 @@ async def test_build_reviewed_script_retries_with_quality_feedback(
             "issues": ["不能用 stdout/stderr truthiness 直接判定 pass"]
             if script_content == "bad-script"
             else [],
-            "fix_hints": [{"type": "remove_stdout_truthiness_check", "description": "不能用 stdout/stderr truthiness 直接判定 pass"}]
+            "fix_hints": [
+                {
+                    "type": "remove_stdout_truthiness_check",
+                    "description": "不能用 stdout/stderr truthiness 直接判定 pass",
+                }
+            ]
             if script_content == "bad-script"
             else [],
         },
@@ -237,11 +286,14 @@ async def test_build_reviewed_script_retries_with_quality_feedback(
         fake_fix_script_content,
     )
 
-    script_content, policy_check, ai_review, status = (
-        await script_artifact_service.build_reviewed_script(
-            rubric_snapshot={"template_key": "linux", "items": []},
-            template_key="linux",
-        )
+    (
+        script_content,
+        policy_check,
+        ai_review,
+        status,
+    ) = await script_artifact_service.build_reviewed_script(
+        rubric_snapshot={"template_key": "linux", "items": []},
+        template_key="linux",
     )
 
     assert script_content == SAFE_SCRIPT
@@ -321,11 +373,14 @@ async def test_build_reviewed_script_re_reviews_after_ai_feedback_fix(
         },
     )
 
-    script_content, policy_check, ai_review, status = (
-        await script_artifact_service.build_reviewed_script(
-            rubric_snapshot={"template_key": "linux", "items": []},
-            template_key="linux",
-        )
+    (
+        script_content,
+        policy_check,
+        ai_review,
+        status,
+    ) = await script_artifact_service.build_reviewed_script(
+        rubric_snapshot={"template_key": "linux", "items": []},
+        template_key="linux",
     )
 
     assert '"summary": "fixed"' in script_content
@@ -355,8 +410,7 @@ async def test_create_artifact_includes_current_template_commands(
     async def fake_build_reviewed_script(*, rubric_snapshot, template_key):
         assert template_key == "n8n"
         assert (
-            rubric_snapshot["template_commands"][0]["command_key"]
-            == "n8n.port_check"
+            rubric_snapshot["template_commands"][0]["command_key"] == "n8n.port_check"
         )
         assert (
             "grep ':5678'"
@@ -620,10 +674,13 @@ def test_delete_artifact_removes_script_even_when_archived() -> None:
         artifact_id=artifact.id,
     )
 
-    assert script_artifact_service.list_artifacts(
-        session=session,
-        group_id=group_id,
-    ) == []
+    assert (
+        script_artifact_service.list_artifacts(
+            session=session,
+            group_id=group_id,
+        )
+        == []
+    )
     with pytest.raises(HTTPException) as exc_info:
         script_artifact_service.get_artifact(
             session=session,
@@ -649,6 +706,7 @@ def test_create_script_run_snapshots_only_running_group_targets(
         policy_check_result_json={"approved": True},
         ai_review_result_json={"approved": True},
     )
+    session.add(_resource(vmid=101, user_id=user_id))
     session.add(artifact)
     session.commit()
     session.refresh(artifact)
@@ -667,7 +725,9 @@ def test_create_script_run_snapshots_only_running_group_targets(
     monkeypatch.setattr(
         script_run_service,
         "_running_resources_by_vmid",
-        lambda: {101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}},
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
     )
 
     run = script_run_service.create_script_run(
@@ -686,11 +746,12 @@ def test_create_script_run_snapshots_only_running_group_targets(
     assert run.progress_json["targets"][0]["status"] == "queued"
 
 
-def test_create_script_run_rejects_stopped_target(
+def test_create_script_run_falls_back_to_live_ip_when_cache_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _session()
     group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
     artifact = models.TeacherJudgeScriptArtifact(
         group_id=group_id,
         name="rubric.pdf",
@@ -701,6 +762,9 @@ def test_create_script_run_rejects_stopped_target(
         policy_check_result_json={"approved": True},
         ai_review_result_json={"approved": True},
     )
+    resource = _resource(vmid=131, user_id=user_id)
+    resource.ip_address = None
+    session.add(resource)
     session.add(artifact)
     session.commit()
     session.refresh(artifact)
@@ -709,7 +773,68 @@ def test_create_script_run_rejects_stopped_target(
         script_run_service,
         "_group_member_by_vmid",
         lambda *, session, group_id: {
-            101: {"user_id": str(uuid.uuid4()), "email": "s@example.com", "full_name": None}
+            131: {
+                "user_id": str(user_id),
+                "email": "student@example.com",
+                "full_name": "Student",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        script_run_service,
+        "_running_resources_by_vmid",
+        lambda: {
+            131: {"vmid": 131, "type": "lxc", "status": "running", "node": "pve"}
+        },
+    )
+    monkeypatch.setattr(
+        target_ip_resolver.proxmox_ops,
+        "get_ip_address",
+        lambda node, vmid, resource_type: "10.0.0.131",
+    )
+
+    run = script_run_service.create_script_run(
+        session=session,
+        group_id=group_id,
+        artifact_id=artifact.id,
+        target_scope=TeacherJudgeScriptRunTargetScope.manual,
+        target_vmids=[131],
+        started_by=user_id,
+    )
+
+    assert run.target_snapshot_json["targets"][0]["ip_address"] == "10.0.0.131"
+    assert (
+        resource_repo.get_cached_ip_address(session=session, vmid=131)
+        == "10.0.0.131"
+    )
+
+
+def test_create_script_run_rejects_stopped_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    artifact = models.TeacherJudgeScriptArtifact(
+        group_id=group_id,
+        name="rubric.pdf",
+        template_key="linux",
+        rubric_snapshot_json={},
+        script_content=SAFE_SCRIPT,
+        status=TeacherJudgeScriptStatus.approved,
+        policy_check_result_json={"approved": True},
+        ai_review_result_json={"approved": True},
+    )
+    session.add(_resource(vmid=101, user_id=user_id))
+    session.add(artifact)
+    session.commit()
+    session.refresh(artifact)
+
+    monkeypatch.setattr(
+        script_run_service,
+        "_group_member_by_vmid",
+        lambda *, session, group_id: {
+            101: {"user_id": str(user_id), "email": "s@example.com", "full_name": None}
         },
     )
     monkeypatch.setattr(
@@ -730,6 +855,402 @@ def test_create_script_run_rejects_stopped_target(
 
     assert exc_info.value.status_code == 400
     assert "不是運行中" in str(exc_info.value.detail)
+
+
+def test_create_script_run_rejects_target_without_ssh_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    artifact = models.TeacherJudgeScriptArtifact(
+        group_id=group_id,
+        name="rubric.pdf",
+        template_key="linux",
+        rubric_snapshot_json={},
+        script_content=SAFE_SCRIPT,
+        status=TeacherJudgeScriptStatus.approved,
+        policy_check_result_json={"approved": True},
+        ai_review_result_json={"approved": True},
+    )
+    resource = _resource(vmid=101, user_id=user_id)
+    resource.ssh_private_key_encrypted = None
+    session.add(resource)
+    session.add(artifact)
+    session.commit()
+    session.refresh(artifact)
+
+    monkeypatch.setattr(
+        script_run_service,
+        "_group_member_by_vmid",
+        lambda *, session, group_id: {
+            101: {"user_id": str(user_id), "email": "s@example.com", "full_name": None}
+        },
+    )
+    monkeypatch.setattr(
+        script_run_service,
+        "_running_resources_by_vmid",
+        lambda: {101: {"vmid": 101, "type": "qemu", "status": "running"}},
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        script_run_service.create_script_run(
+            session=session,
+            group_id=group_id,
+            artifact_id=artifact.id,
+            target_scope=TeacherJudgeScriptRunTargetScope.manual,
+            target_vmids=[101],
+            started_by=None,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "SSH" in str(exc_info.value.detail)
+
+
+def test_execute_script_run_saves_valid_target_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    artifact = models.TeacherJudgeScriptArtifact(
+        group_id=group_id,
+        name="rubric.pdf",
+        template_key="linux",
+        rubric_snapshot_json={},
+        script_content=SAFE_SCRIPT,
+        status=TeacherJudgeScriptStatus.approved,
+        policy_check_result_json={"approved": True},
+        ai_review_result_json={"approved": True},
+    )
+    session.add(_resource(vmid=101, user_id=user_id))
+    session.add(artifact)
+    session.commit()
+    session.refresh(artifact)
+
+    monkeypatch.setattr(script_executor_service, "engine", session.get_bind())
+    monkeypatch.setattr(script_executor_service, "decrypt_value", lambda _value: "KEY")
+    monkeypatch.setattr(
+        script_run_service,
+        "_group_member_by_vmid",
+        lambda *, session, group_id: {
+            101: {"user_id": str(user_id), "email": "s@example.com", "full_name": "S"}
+        },
+    )
+    monkeypatch.setattr(
+        script_run_service,
+        "_running_resources_by_vmid",
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
+    )
+    monkeypatch.setattr(
+        script_executor_service,
+        "_live_running_by_vmid",
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
+    )
+    monkeypatch.setattr(
+        script_executor_service,
+        "_execute_target_script",
+        lambda *, target, script_content: script_executor_service.RemoteScriptResult(
+            exit_code=0,
+            result_json_text=_valid_result_json(),
+            stderr_text="",
+        ),
+    )
+
+    run = script_run_service.create_script_run(
+        session=session,
+        group_id=group_id,
+        artifact_id=artifact.id,
+        target_scope=TeacherJudgeScriptRunTargetScope.manual,
+        target_vmids=[101],
+        started_by=user_id,
+    )
+
+    script_executor_service.execute_script_run(uuid.UUID(run.id))
+
+    session.expire_all()
+    stored_run = session.get(models.TeacherJudgeScriptRun, uuid.UUID(run.id))
+    assert stored_run is not None
+    assert stored_run.status.value == "completed"
+    assert stored_run.progress_json["stage"] == "completed"
+    assert stored_run.result_summary_json["valid_json"] == 1
+    assert stored_run.target_results_json["targets"][0]["status"] == "completed"
+    assert stored_run.target_results_json["targets"][0]["validation"]["valid"] is True
+    assert (
+        stored_run.target_results_json["targets"][0]["parsed_result"]["schema_version"]
+        == "teacher_judge_result.v1"
+    )
+
+
+def test_executor_runtime_target_falls_back_to_live_ip_when_cache_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    resource = _resource(vmid=131, user_id=user_id)
+    resource.ip_address = None
+    session.add(resource)
+    session.commit()
+
+    run = models.TeacherJudgeScriptRun(
+        group_id=group_id,
+        artifact_id=uuid.uuid4(),
+        target_scope=TeacherJudgeScriptRunTargetScope.manual,
+        status=TeacherJudgeScriptRunStatus.running,
+    )
+    monkeypatch.setattr(script_executor_service, "decrypt_value", lambda _value: "KEY")
+    monkeypatch.setattr(
+        target_ip_resolver.proxmox_ops,
+        "get_ip_address",
+        lambda node, vmid, resource_type: "10.0.0.131",
+    )
+
+    target = script_executor_service._resolve_runtime_target(
+        session=session,
+        run=run,
+        target={"vmid": 131, "user_id": str(user_id), "name": "131"},
+        live_by_vmid={
+            131: {"vmid": 131, "type": "lxc", "status": "running", "node": "pve"}
+        },
+    )
+
+    assert target["host"] == "10.0.0.131"
+    assert target["private_key_pem"] == "KEY"
+    assert (
+        resource_repo.get_cached_ip_address(session=session, vmid=131)
+        == "10.0.0.131"
+    )
+
+
+def test_execute_script_run_saves_invalid_json_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    artifact = models.TeacherJudgeScriptArtifact(
+        group_id=group_id,
+        name="rubric.pdf",
+        template_key="linux",
+        rubric_snapshot_json={},
+        script_content=SAFE_SCRIPT,
+        status=TeacherJudgeScriptStatus.approved,
+        policy_check_result_json={"approved": True},
+        ai_review_result_json={"approved": True},
+    )
+    session.add(_resource(vmid=101, user_id=user_id))
+    session.add(artifact)
+    session.commit()
+    session.refresh(artifact)
+
+    monkeypatch.setattr(script_executor_service, "engine", session.get_bind())
+    monkeypatch.setattr(script_executor_service, "decrypt_value", lambda _value: "KEY")
+    monkeypatch.setattr(
+        script_run_service,
+        "_group_member_by_vmid",
+        lambda *, session, group_id: {
+            101: {"user_id": str(user_id), "email": "s@example.com", "full_name": "S"}
+        },
+    )
+    monkeypatch.setattr(
+        script_run_service,
+        "_running_resources_by_vmid",
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
+    )
+    monkeypatch.setattr(
+        script_executor_service,
+        "_live_running_by_vmid",
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
+    )
+    monkeypatch.setattr(
+        script_executor_service,
+        "_execute_target_script",
+        lambda *, target, script_content: script_executor_service.RemoteScriptResult(
+            exit_code=0,
+            result_json_text="{not-json",
+            stderr_text="",
+        ),
+    )
+
+    run = script_run_service.create_script_run(
+        session=session,
+        group_id=group_id,
+        artifact_id=artifact.id,
+        target_scope=TeacherJudgeScriptRunTargetScope.manual,
+        target_vmids=[101],
+        started_by=user_id,
+    )
+
+    script_executor_service.execute_script_run(uuid.UUID(run.id))
+
+    session.expire_all()
+    stored_run = session.get(models.TeacherJudgeScriptRun, uuid.UUID(run.id))
+    assert stored_run is not None
+    result = stored_run.target_results_json["targets"][0]
+    assert stored_run.status.value == "completed"
+    assert stored_run.result_summary_json["invalid_json"] == 1
+    assert result["status"] == "failed"
+    assert result["validation"]["valid"] is False
+
+
+def test_execute_script_run_records_executor_level_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _session()
+    group_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    artifact = models.TeacherJudgeScriptArtifact(
+        group_id=group_id,
+        name="rubric.pdf",
+        template_key="linux",
+        rubric_snapshot_json={},
+        script_content=SAFE_SCRIPT,
+        status=TeacherJudgeScriptStatus.approved,
+        policy_check_result_json={"approved": True},
+        ai_review_result_json={"approved": True},
+    )
+    session.add(_resource(vmid=101, user_id=user_id))
+    session.add(artifact)
+    session.commit()
+    session.refresh(artifact)
+
+    monkeypatch.setattr(script_executor_service, "engine", session.get_bind())
+    monkeypatch.setattr(
+        script_run_service,
+        "_group_member_by_vmid",
+        lambda *, session, group_id: {
+            101: {"user_id": str(user_id), "email": "s@example.com", "full_name": "S"}
+        },
+    )
+    monkeypatch.setattr(
+        script_run_service,
+        "_running_resources_by_vmid",
+        lambda: {
+            101: {"vmid": 101, "type": "lxc", "status": "running", "node": "pve1"}
+        },
+    )
+
+    def raise_live_lookup_error() -> dict[int, dict[str, object]]:
+        raise RuntimeError("proxmox unavailable")
+
+    monkeypatch.setattr(
+        script_executor_service,
+        "_live_running_by_vmid",
+        raise_live_lookup_error,
+    )
+
+    run = script_run_service.create_script_run(
+        session=session,
+        group_id=group_id,
+        artifact_id=artifact.id,
+        target_scope=TeacherJudgeScriptRunTargetScope.manual,
+        target_vmids=[101],
+        started_by=user_id,
+    )
+
+    script_executor_service.execute_script_run(uuid.UUID(run.id))
+
+    session.expire_all()
+    stored_run = session.get(models.TeacherJudgeScriptRun, uuid.UUID(run.id))
+    assert stored_run is not None
+    assert stored_run.status.value == "failed"
+    assert stored_run.progress_json["stage"] == "failed"
+    assert stored_run.result_summary_json["executor_error"] == "proxmox unavailable"
+
+
+def test_execute_target_script_uploads_runs_and_collects_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRemoteFile:
+        def __init__(self, files: dict[str, bytes], path: str, mode: str) -> None:
+            self.files = files
+            self.path = path
+            self.mode = mode
+
+        def __enter__(self) -> FakeRemoteFile:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def write(self, data: bytes) -> None:
+            self.files[self.path] = data
+
+        def read(self) -> bytes:
+            return self.files[self.path]
+
+    class FakeSFTP:
+        def __init__(self) -> None:
+            self.files: dict[str, bytes] = {}
+            self.closed = False
+
+        def file(self, path: str, mode: str) -> FakeRemoteFile:
+            return FakeRemoteFile(self.files, path, mode)
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.sftp = FakeSFTP()
+            self.closed = False
+
+        def open_sftp(self) -> FakeSFTP:
+            return self.sftp
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_client = FakeClient()
+    commands: list[str] = []
+    remote_dir = "/tmp/campus-cloud-judge/run-1/101"
+
+    monkeypatch.setattr(
+        script_executor_service,
+        "create_key_client",
+        lambda *args, **kwargs: fake_client,
+    )
+
+    def fake_exec_command(client, command, *, timeout):
+        commands.append(command)
+        if "python3 script.py" in command:
+            client.sftp.files[f"{remote_dir}/result.json"] = (
+                _valid_result_json().encode()
+            )
+            client.sftp.files[f"{remote_dir}/stderr.log"] = b""
+        return 0, "", ""
+
+    monkeypatch.setattr(script_executor_service, "exec_command", fake_exec_command)
+
+    result = script_executor_service._execute_target_script(
+        target={
+            "vmid": 101,
+            "host": "10.0.0.10",
+            "ssh_user": "root",
+            "private_key_pem": "KEY",
+            "run_id": "run-1",
+        },
+        script_content=SAFE_SCRIPT,
+    )
+
+    assert commands == [
+        "mkdir -p /tmp/campus-cloud-judge/run-1/101",
+        "cd /tmp/campus-cloud-judge/run-1/101 && python3 script.py > result.json 2> stderr.log",
+    ]
+    assert fake_client.sftp.files[f"{remote_dir}/script.py"] == SAFE_SCRIPT.encode()
+    assert result.exit_code == 0
+    assert validate_managed_script_output(result.result_json_text)["valid"] is True
+    assert fake_client.sftp.closed is True
+    assert fake_client.closed is True
 
 
 @pytest.mark.asyncio
@@ -773,7 +1294,9 @@ def test_script_route_rejects_unknown_template_key() -> None:
 
 
 def test_script_policy_blocks_destructive_commands() -> None:
-    result = check_script_policy("import subprocess\nsubprocess.run('rm -rf /', shell=True)")
+    result = check_script_policy(
+        "import subprocess\nsubprocess.run('rm -rf /', shell=True)"
+    )
 
     assert result["approved"] is False
     assert result["blocked"] is True
