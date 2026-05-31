@@ -104,7 +104,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
     mutationFn: (scriptId: string) =>
       AiJudgeService.approveScript({ groupId, scriptId }),
     onSuccess: () => {
-      showSuccessToast("檢測腳本已核准")
+      showSuccessToast("收集腳本已核准")
       invalidateScripts()
     },
     onError: (err: any) =>
@@ -116,7 +116,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
       AiJudgeService.regenerateScript({ groupId, scriptId }),
     onSuccess: (script) => {
       setSelectedId(script.id)
-      showSuccessToast("檢測腳本已重新生成")
+      showSuccessToast("收集腳本已重新生成")
       invalidateScripts()
     },
     onError: (err: any) =>
@@ -127,7 +127,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
     mutationFn: (scriptId: string) =>
       AiJudgeService.deleteScript({ groupId, scriptId }),
     onSuccess: (_data, scriptId) => {
-      showSuccessToast("檢測腳本已刪除")
+      showSuccessToast("收集腳本已刪除")
       setSelectedId(null)
       setDeleteTarget(null)
       queryClient.setQueryData<TeacherJudgeScriptArtifact[]>(
@@ -143,9 +143,9 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">AI 檢測腳本</h2>
+        <h2 className="text-xl font-bold tracking-tight">AI 收集腳本</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          管理群組內由評分表產生的受管 Python 檢測腳本。
+          管理群組內由評分表產生的受管 Python 收集腳本。
         </p>
       </div>
 
@@ -155,7 +155,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
         <Card className="border-destructive/40 shadow-sm">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-6 text-sm">
             <span className="text-destructive">
-              載入檢測腳本失敗，請稍後再試。
+              載入收集腳本失敗，請稍後再試。
             </span>
             <Button
               size="sm"
@@ -169,7 +169,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
       ) : scripts.length === 0 ? (
         <Card className="border-border/50 shadow-sm">
           <CardContent className="py-8 text-sm text-muted-foreground">
-            尚未建立檢測腳本。請先到「AI 情境分析」上傳評分表並製作腳本。
+            尚未建立收集腳本。請先到「AI 情境分析」上傳評分表並製作腳本。
           </CardContent>
         </Card>
       ) : (
@@ -274,11 +274,11 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>確認刪除檢測腳本？</AlertDialogTitle>
+            <AlertDialogTitle>確認刪除收集腳本？</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget
                 ? `你即將刪除「${deleteTarget.name}」v${deleteTarget.version}。刪除後此腳本會從可用流程中停用，不能再核准或重新生成。`
-                : "你即將刪除這份檢測腳本。"}
+                : "你即將刪除這份收集腳本。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

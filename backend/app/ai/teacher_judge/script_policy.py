@@ -29,8 +29,14 @@ class ManagedScriptCheck(BaseModel):
         return normalized
 
 
+class ManagedScriptMetadata(BaseModel):
+    timestamp: str = Field(..., min_length=1, max_length=120)
+    platform: str = Field(..., min_length=1, max_length=240)
+
+
 class ManagedScriptResult(BaseModel):
     schema_version: str
+    metadata: ManagedScriptMetadata
     summary: str = Field(default="", max_length=2000)
     checks: list[ManagedScriptCheck] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
@@ -57,8 +63,12 @@ DENY_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bpip\s+install\b", "禁止安裝 Python 套件"),
     (r"\bnpm\s+install\b", "禁止安裝 npm 套件"),
     (r"\bchmod\b|\bchown\b|\bsystemctl\s+(?:enable|disable|restart|stop|start)\b", "禁止修改系統設定或服務狀態"),
-    (r"\.ssh\b|\.env\b|id_rsa|private[-_ ]key", "禁止讀取敏感檔案或金鑰"),
     (r"\breset\b|\bcleanup\b|\bclean\s+up\b|\bfix\b|\brepair\b", "禁止產生修復、清理或重設類反向操作"),
+)
+
+SENSITIVE_PATH_PATTERN = re.compile(
+    r"(?:\.ssh(?:[/\\]|\b)|\.env(?:[/\\]|\b)|id_rsa\b|private[-_ ]key)",
+    flags=re.IGNORECASE,
 )
 
 DENY_AST_CALLS: dict[str, str] = {
@@ -184,6 +194,20 @@ def _literal_command_text(node: ast.AST) -> str | None:
     return None
 
 
+def _literal_path_text(node: ast.AST | None) -> str | None:
+    if literal := _literal_str(node):
+        return literal
+    if isinstance(node, ast.Call) and node.args:
+        return _literal_path_text(node.args[0])
+    return None
+
+
+def _pathlib_call_path_text(node: ast.Call) -> str | None:
+    if not isinstance(node.func, ast.Attribute):
+        return None
+    return _literal_path_text(node.func.value)
+
+
 def _open_mode(node: ast.Call, mode_arg_index: int = 1) -> str:
     if len(node.args) > mode_arg_index:
         mode = _literal_str(node.args[mode_arg_index])
@@ -253,6 +277,8 @@ def _dangerous_command_issue(command_text: str) -> str | None:
     for pattern, message in DENY_PATTERNS:
         if re.search(pattern, normalized, flags=re.IGNORECASE | re.DOTALL):
             return message
+    if SENSITIVE_PATH_PATTERN.search(normalized):
+        return "禁止讀取敏感檔案或金鑰"
 
     tokens = re.split(r"\s+", normalized.strip())
     if not tokens:
@@ -306,6 +332,12 @@ def check_script_policy(script_content: str) -> dict[str, Any]:
         issues.append("腳本輸出 JSON 必須包含 checks 欄位")
     if '"errors"' not in script_content and "'errors'" not in script_content:
         issues.append("腳本輸出 JSON 必須包含 errors 欄位")
+    if '"metadata"' not in script_content and "'metadata'" not in script_content:
+        issues.append("腳本輸出 JSON 必須包含 metadata 欄位")
+    if '"timestamp"' not in script_content and "'timestamp'" not in script_content:
+        issues.append("metadata 必須包含 timestamp")
+    if '"platform"' not in script_content and "'platform'" not in script_content:
+        issues.append("metadata 必須包含 platform")
 
     try:
         tree = ast.parse(script_content)
@@ -325,8 +357,20 @@ def check_script_policy(script_content: str) -> dict[str, Any]:
                 issues.append(DENY_AST_CALLS[call_name])
             if call_name in {"open", "io.open", "pathlib.Path.open"}:
                 mode_arg_index = 0 if call_name == "pathlib.Path.open" else 1
+                path_arg_index = 0 if call_name != "pathlib.Path.open" else None
+                path_text = (
+                    _literal_path_text(node.args[path_arg_index])
+                    if path_arg_index is not None and node.args
+                    else _pathlib_call_path_text(node)
+                )
+                if path_text and SENSITIVE_PATH_PATTERN.search(path_text):
+                    issues.append("禁止讀取敏感檔案或金鑰")
                 if _is_write_mode(_open_mode(node, mode_arg_index=mode_arg_index)):
                     issues.append("禁止以寫入模式開啟檔案")
+            if call_name in {"pathlib.Path.read_text", "pathlib.Path.read_bytes"}:
+                path_text = _pathlib_call_path_text(node)
+                if path_text and SENSITIVE_PATH_PATTERN.search(path_text):
+                    issues.append("禁止讀取敏感檔案或金鑰")
             if call_name == "subprocess.run" and _keyword_is_true(node, "shell"):
                 issues.append("禁止使用 shell=True 執行指令")
             if call_name == "subprocess.run" and node.args:

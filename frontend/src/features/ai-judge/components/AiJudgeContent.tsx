@@ -209,12 +209,12 @@ export function AiJudgeContent({
       })
       showSuccessToast(
         artifact.status === "reviewed"
-          ? "檢測腳本已產生並通過審查"
-          : "檢測腳本已產生，請查看審查結果",
+          ? "收集腳本已產生並通過審查"
+          : "收集腳本已產生，請查看審查結果",
       )
       onScriptCreated?.()
     } catch (err: any) {
-      showErrorToast(err?.body?.detail ?? err?.message ?? "製作檢測腳本失敗")
+      showErrorToast(err?.body?.detail ?? err?.message ?? "製作收集腳本失敗")
     } finally {
       setIsCreatingScript(false)
     }
@@ -252,7 +252,7 @@ export function AiJudgeContent({
               ) : (
                 <>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  製作檢測腳本
+                  製作收集腳本
                 </>
               )}
             </Button>
@@ -283,10 +283,10 @@ export function AiJudgeContent({
             <span className="mt-0.5 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <div className="space-y-1">
               <p className="font-medium text-foreground">
-                正在生成受管檢測腳本
+                正在生成受管收集腳本
               </p>
               <p className="text-muted-foreground">
-                AI 正在依目前評分項目與環境命令產生 Python 腳本，系統會接著執行 hard policy 與 AI reviewer 審查。
+                AI 正在依目前評分項目與環境命令產生 Python 收集腳本，系統會接著執行 hard policy 與 AI reviewer 審查。
               </p>
             </div>
           </CardContent>

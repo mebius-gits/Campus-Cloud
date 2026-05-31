@@ -1,0 +1,385 @@
+"""Quality validator for Teacher Judge managed scripts."""
+
+from __future__ import annotations
+
+import ast
+import re
+from typing import Any
+
+REQUIRED_HELPERS = {
+    "truncate_output",
+    "redact_sensitive_text",
+    "command_available",
+    "run_command",
+    "record_check",
+}
+
+UNKNOWN_ONLY_EXCEPTIONS = {
+    "subprocess.TimeoutExpired",
+    "TimeoutExpired",
+    "FileNotFoundError",
+    "PermissionError",
+}
+
+_DIRECT_RAW_PATTERN = re.compile(
+    r"""["']raw["']\s*:\s*[^\n]*(stdout|stderr)""",
+    re.IGNORECASE,
+)
+_STDOUT_PASS_TERNARY_PATTERN = re.compile(
+    r"""["']pass["']\s+if\s+[^\n]*(stdout|stderr)|if\s+[^\n]*(stdout|stderr)[^\n]*else\s+["']pass["']""",
+    re.IGNORECASE,
+)
+
+
+def _literal_str(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _call_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _call_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    if isinstance(node, ast.Call):
+        return _call_name(node.func)
+    return None
+
+
+def _node_mentions_stream(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and child.id in {"stdout", "stderr"}:
+            return True
+        if isinstance(child, ast.Attribute) and child.attr in {"stdout", "stderr"}:
+            return True
+    return False
+
+
+def _call_status_literal(node: ast.Call) -> str | None:
+    for arg in node.args:
+        literal = _literal_str(arg)
+        if literal in {"pass", "fail", "warning", "unknown", "skipped"}:
+            return literal
+    for keyword in node.keywords:
+        if keyword.arg == "status":
+            literal = _literal_str(keyword.value)
+            if literal in {"pass", "fail", "warning", "unknown", "skipped"}:
+                return literal
+    return None
+
+
+def _call_has_pass_status(node: ast.Call) -> bool:
+    return _call_status_literal(node) == "pass"
+
+
+def _body_marks_pass(body: list[ast.stmt]) -> bool:
+    for statement in body:
+        for node in ast.walk(statement):
+            if isinstance(node, ast.Assign) and _literal_str(node.value) == "pass":
+                return True
+            if isinstance(node, ast.Call):
+                if _call_name(node.func) == "record_check" and _call_has_pass_status(node):
+                    return True
+    return False
+
+
+def _except_name(handler: ast.ExceptHandler) -> str | None:
+    if handler.type is None:
+        return None
+    if isinstance(handler.type, ast.Name):
+        return handler.type.id
+    if isinstance(handler.type, ast.Attribute):
+        base = _call_name(handler.type.value)
+        return f"{base}.{handler.type.attr}" if base else handler.type.attr
+    return None
+
+
+def _collect_commands_needing_which(tree: ast.AST) -> set[str]:
+    commands: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if _call_name(node.func) != "subprocess.run" or not node.args:
+            continue
+        first_arg = node.args[0]
+        if not isinstance(first_arg, (ast.List, ast.Tuple)) or not first_arg.elts:
+            continue
+        command = _literal_str(first_arg.elts[0])
+        if command:
+            commands.add(command)
+    return commands
+
+
+def _collect_which_commands(tree: ast.AST) -> set[str]:
+    commands: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if _call_name(node.func) != "shutil.which" or not node.args:
+            continue
+        command = _literal_str(node.args[0])
+        if command:
+            commands.add(command)
+    return commands
+
+
+def _calls_named_helper(
+    tree: ast.AST,
+    helper_name: str,
+    *,
+    skip_functions: set[str] | None = None,
+) -> bool:
+    skip_functions = skip_functions or set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in skip_functions:
+            continue
+        if isinstance(node, ast.Call) and _call_name(node.func) == helper_name:
+            return True
+    return False
+
+
+def _function_definitions(
+    tree: ast.AST,
+) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    return {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _function_uses_helper(
+    function_def: ast.FunctionDef | ast.AsyncFunctionDef,
+    helper_name: str,
+) -> bool:
+    return any(
+        isinstance(node, ast.Call) and _call_name(node.func) == helper_name
+        for node in ast.walk(function_def)
+    )
+
+
+def _function_mentions_returncode(
+    function_def: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    for node in ast.walk(function_def):
+        if isinstance(node, ast.Constant) and node.value == "returncode":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "returncode":
+            return True
+    return False
+
+
+def _redaction_uses_bare_key(
+    function_def: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    for node in ast.walk(function_def):
+        literal = _literal_str(node)
+        if not literal:
+            continue
+        lowered = literal.lower()
+        for match in re.finditer(r"key", lowered):
+            prefix = lowered[max(0, match.start() - 20) : match.start()]
+            if "api" not in prefix and "private" not in prefix:
+                return True
+    return False
+
+
+def _record_check_has_sanitized_raw(
+    function_def: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    return _function_uses_helper(
+        function_def, "truncate_output"
+    ) and _function_uses_helper(function_def, "redact_sensitive_text")
+
+
+def _record_check_raw_arg(call: ast.Call) -> ast.AST | None:
+    if len(call.args) >= 5:
+        return call.args[4]
+    for keyword in call.keywords:
+        if keyword.arg == "raw":
+            return keyword.value
+    return None
+
+
+def _body_record_check_statuses(body: list[ast.stmt]) -> set[str]:
+    statuses: set[str] = set()
+    for statement in body:
+        for node in ast.walk(statement):
+            if isinstance(node, ast.Call) and _call_name(node.func) == "record_check":
+                status = _call_status_literal(node)
+                if status:
+                    statuses.add(status)
+    return statuses
+
+
+def _condition_checks_availability(node: ast.AST) -> bool:
+    return any(
+        isinstance(child, ast.Call)
+        and _call_name(child.func) in {"command_available", "shutil.which"}
+        for child in ast.walk(node)
+    )
+
+
+def _json_dumps_has_ensure_ascii_false(node: ast.Call) -> bool:
+    for keyword in node.keywords:
+        if keyword.arg != "ensure_ascii":
+            continue
+        return (
+            isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is False
+        )
+    return False
+
+
+def _record_check_literal_arg(
+    call: ast.Call,
+    position: int,
+    keyword_name: str,
+) -> str | None:
+    if len(call.args) > position:
+        return _literal_str(call.args[position])
+    for keyword in call.keywords:
+        if keyword.arg == keyword_name:
+            return _literal_str(keyword.value)
+    return None
+
+
+def _is_generic_check_id(check_id: str) -> bool:
+    normalized = check_id.strip().lower()
+    return (
+        normalized in {"check", "check-1", "item", "item-1", "stable_check_id"}
+        or normalized.startswith("check-")
+        or normalized.startswith("item-")
+    )
+
+
+def check_script_quality(script_content: str) -> dict[str, Any]:
+    """Return quality validation results for a generated managed script."""
+    issues: list[str] = []
+
+    try:
+        tree = ast.parse(script_content)
+    except SyntaxError as exc:
+        return {
+            "approved": False,
+            "blocked": True,
+            "issues": [f"Python 語法錯誤：{exc.msg}"],
+        }
+
+    helper_defs = _function_definitions(tree)
+    missing_helpers = sorted(REQUIRED_HELPERS - set(helper_defs))
+    if missing_helpers:
+        issues.append("腳本缺少必要 helper：" + ", ".join(missing_helpers))
+
+    record_check_def = helper_defs.get("record_check")
+    if record_check_def and not _record_check_has_sanitized_raw(record_check_def):
+        issues.append(
+            "record_check 必須統一透過 redact_sensitive_text 與 truncate_output 處理 raw"
+        )
+
+    command_available_def = helper_defs.get("command_available")
+    if command_available_def and not _function_uses_helper(
+        command_available_def, "shutil.which"
+    ):
+        issues.append("command_available 必須使用 shutil.which 檢查工具可用性")
+
+    run_command_def = helper_defs.get("run_command")
+    if run_command_def and not _function_mentions_returncode(run_command_def):
+        issues.append("run_command 必須回傳 returncode")
+
+    redaction_def = helper_defs.get("redact_sensitive_text")
+    if redaction_def and _redaction_uses_bare_key(redaction_def):
+        issues.append("redact_sensitive_text 不可使用過度寬泛的裸 key 規則")
+
+    if not _calls_named_helper(tree, "record_check", skip_functions={"record_check"}):
+        issues.append("腳本必須透過 record_check 建立檢查結果")
+
+    if not _calls_named_helper(tree, "run_command", skip_functions={"run_command"}):
+        issues.append("腳本必須透過 run_command 執行收集指令")
+
+    json_dumps_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_name(node.func) == "json.dumps"
+    ]
+    if not json_dumps_calls:
+        issues.append("腳本必須使用 json.dumps 輸出 JSON")
+    elif any(not _json_dumps_has_ensure_ascii_false(call) for call in json_dumps_calls):
+        issues.append("json.dumps 必須設定 ensure_ascii=False")
+
+    if (
+        '"metadata"' not in script_content
+        and "'metadata'" not in script_content
+        or '"timestamp"' not in script_content
+        and "'timestamp'" not in script_content
+        or '"platform"' not in script_content
+        and "'platform'" not in script_content
+    ):
+        issues.append("輸出 JSON metadata 必須包含 timestamp 與 platform")
+
+    if _DIRECT_RAW_PATTERN.search(script_content):
+        issues.append("raw 不可直接保存 stdout/stderr，必須先脫敏並截斷")
+
+    if _STDOUT_PASS_TERNARY_PATTERN.search(script_content):
+        issues.append("不能用 stdout/stderr truthiness 直接判定 pass")
+
+    commands = _collect_commands_needing_which(tree)
+    which_commands = _collect_which_commands(tree)
+    for command in sorted(commands - which_commands):
+        issues.append(f"外部工具 `{command}` 缺少 shutil.which 可用性檢查")
+
+    if commands and not _calls_named_helper(
+        tree,
+        "command_available",
+        skip_functions={"command_available"},
+    ):
+        issues.append("腳本必須透過 command_available 檢查外部工具可用性")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_name(node.func) == "record_check":
+            check_id = _record_check_literal_arg(node, 0, "check_id")
+            if check_id and _is_generic_check_id(check_id):
+                issues.append("record_check id 必須是語意化穩定 ID")
+            title = _record_check_literal_arg(node, 1, "title")
+            if title and "檢查" in title:
+                issues.append("record_check title 請使用收集語意，不要使用檢查")
+            raw_arg = _record_check_raw_arg(node)
+            if raw_arg is not None and _node_mentions_stream(raw_arg):
+                issues.append(
+                    "record_check raw 不可直接餵 stdout/stderr，必須先整理為 snippet 再交給 helper"
+                )
+
+        if isinstance(node, ast.If):
+            if _node_mentions_stream(node.test) and _body_marks_pass(node.body):
+                issues.append("不能用 stdout/stderr 是否有內容直接判定 pass")
+            if _condition_checks_availability(node.test):
+                statuses = _body_record_check_statuses(node.body)
+                if "warning" in statuses:
+                    issues.append("工具缺失時應回傳 unknown，不可使用 warning")
+        elif isinstance(node, ast.ExceptHandler):
+            exception_name = _except_name(node)
+            statuses = _body_record_check_statuses(node.body)
+            if _body_marks_pass(node.body):
+                if exception_name in {
+                    None,
+                    "Exception",
+                    "FileNotFoundError",
+                    "PermissionError",
+                }:
+                    issues.append("例外處理不可吞錯後直接標成 pass")
+                elif exception_name in {"subprocess.TimeoutExpired", "TimeoutExpired"}:
+                    issues.append("timeout 例外不可標成 pass")
+            if exception_name in {None, "Exception"}:
+                if any(isinstance(stmt, ast.Pass) for stmt in node.body):
+                    issues.append("不可使用 except Exception/bare except 後直接 swallow/pass")
+            if exception_name in UNKNOWN_ONLY_EXCEPTIONS and "warning" in statuses:
+                issues.append(f"{exception_name} 應回傳 unknown，不可使用 warning")
+
+    deduped = list(dict.fromkeys(issues))
+    return {
+        "approved": not deduped,
+        "blocked": bool(deduped),
+        "issues": deduped,
+    }

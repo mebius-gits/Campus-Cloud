@@ -1154,7 +1154,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
               onClick={() => setActiveView("ai-judge-scripts")}
             >
               <FileCode2 className="mr-2 h-4 w-4 text-cyan-500" />
-              AI 檢測腳本
+              AI 收集腳本
             </Button>
             <Button
               variant={activeView === "ai-pve-message" ? "secondary" : "ghost"}

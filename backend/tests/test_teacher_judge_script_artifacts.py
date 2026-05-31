@@ -20,13 +20,19 @@ from app.models.teacher_judge_script_artifact import TeacherJudgeScriptStatus
 
 SAFE_SCRIPT = """
 import json
+import platform
+from datetime import datetime, timezone
 
 print(json.dumps({
     "schema_version": "teacher_judge_result.v1",
+    "metadata": {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "platform": platform.platform(),
+    },
     "summary": "ok",
     "checks": [],
     "errors": [],
-}))
+}, ensure_ascii=False))
 """.strip()
 
 
@@ -89,7 +95,8 @@ async def test_generate_script_content_sends_commands_feedback_and_safety_prompt
                 }
             ],
             "previous_review_feedback": {
-                "policy_issues": ["禁止使用 shell=True 執行指令"]
+                "policy_issues": ["禁止使用 shell=True 執行指令"],
+                "quality_issues": ["工具缺失時應回傳 unknown，不可使用 warning"],
             },
         },
         template_key="n8n",
@@ -99,9 +106,18 @@ async def test_generate_script_content_sends_commands_feedback_and_safety_prompt
     user_payload = json.loads(captured_payload["messages"][1]["content"])
     assert "subprocess.run([...]" in system_prompt
     assert "shell=True" in system_prompt
+    assert "record_check" in system_prompt
+    assert "run_command" in system_prompt
+    assert "ensure_ascii=False" in system_prompt
+    assert "metadata" in system_prompt
+    assert "truncate_output" in system_prompt
+    assert "quality validator" in system_prompt
     assert user_payload["template_commands"][0]["command_key"] == "n8n.port_check"
     assert user_payload["previous_review_feedback"]["policy_issues"] == [
         "禁止使用 shell=True 執行指令"
+    ]
+    assert user_payload["previous_review_feedback"]["quality_issues"] == [
+        "工具缺失時應回傳 unknown，不可使用 warning"
     ]
 
 
@@ -152,6 +168,84 @@ async def test_create_artifact_saves_reviewed_managed_script(
 
     assert approved.status == "approved"
     assert approved.approved_by == str(user_id)
+
+
+@pytest.mark.asyncio
+async def test_build_reviewed_script_retries_with_quality_feedback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_snapshots: list[dict] = []
+
+    async def fake_generate_script_content(*, rubric_snapshot, template_key):
+        seen_snapshots.append(dict(rubric_snapshot))
+        return "bad-script" if len(seen_snapshots) == 1 else SAFE_SCRIPT
+
+    async def fake_review_script_with_ai(*, script_content, rubric_snapshot):
+        if script_content == "bad-script":
+            return {
+                "approved": False,
+                "risk_level": "medium",
+                "issues": ["腳本品質不足"],
+                "suggested_fix": "請改成使用 helper 並補 unknown 狀態",
+            }
+        return {
+            "approved": True,
+            "risk_level": "low",
+            "issues": [],
+            "suggested_fix": None,
+        }
+
+    monkeypatch.setattr(
+        script_artifact_service,
+        "generate_script_content",
+        fake_generate_script_content,
+    )
+    monkeypatch.setattr(
+        script_artifact_service,
+        "review_script_with_ai",
+        fake_review_script_with_ai,
+    )
+    monkeypatch.setattr(
+        script_artifact_service,
+        "check_script_policy",
+        lambda script_content: {
+            "approved": True,
+            "blocked": False,
+            "risk_level": "low",
+            "issues": [],
+        },
+    )
+    monkeypatch.setattr(
+        script_artifact_service,
+        "check_script_quality",
+        lambda script_content: {
+            "approved": script_content != "bad-script",
+            "blocked": script_content == "bad-script",
+            "issues": ["不能用 stdout/stderr truthiness 直接判定 pass"]
+            if script_content == "bad-script"
+            else [],
+        },
+    )
+
+    script_content, policy_check, ai_review, status = (
+        await script_artifact_service.build_reviewed_script(
+            rubric_snapshot={"template_key": "linux", "items": []},
+            template_key="linux",
+        )
+    )
+
+    assert script_content == SAFE_SCRIPT
+    assert status == TeacherJudgeScriptStatus.reviewed
+    assert policy_check["quality_approved"] is True
+    assert ai_review["approved"] is True
+    assert len(seen_snapshots) == 2
+    assert "previous_review_feedback" not in seen_snapshots[0]
+    assert seen_snapshots[1]["previous_review_feedback"]["quality_issues"] == [
+        "不能用 stdout/stderr truthiness 直接判定 pass"
+    ]
+    assert seen_snapshots[1]["previous_review_feedback"]["ai_review_issues"] == [
+        "腳本品質不足"
+    ]
 
 
 @pytest.mark.asyncio
@@ -282,7 +376,11 @@ async def test_regenerate_failed_artifact_passes_previous_review_feedback(
         status=TeacherJudgeScriptStatus.review_failed,
         policy_check_result_json={
             "approved": False,
-            "issues": ["禁止使用 shell=True 執行指令"],
+            "issues": ["工具缺失時應回傳 unknown，不可使用 warning"],
+            "safety_approved": True,
+            "safety_issues": [],
+            "quality_approved": False,
+            "quality_issues": ["工具缺失時應回傳 unknown，不可使用 warning"],
         },
         ai_review_result_json={
             "approved": False,
@@ -296,12 +394,26 @@ async def test_regenerate_failed_artifact_passes_previous_review_feedback(
 
     async def fake_build_reviewed_script(*, rubric_snapshot, template_key):
         feedback = rubric_snapshot["previous_review_feedback"]
-        assert feedback["policy_issues"] == ["禁止使用 shell=True 執行指令"]
+        assert feedback["policy_approved"] is True
+        assert feedback["policy_issues"] == []
+        assert feedback["quality_approved"] is False
+        assert feedback["quality_issues"] == [
+            "工具缺失時應回傳 unknown，不可使用 warning"
+        ]
         assert feedback["ai_review_issues"] == ["指令執行方式不符合規範"]
         assert feedback["ai_review_suggested_fix"] == "改用 argv list 與 timeout"
         return (
             SAFE_SCRIPT,
-            {"approved": True, "blocked": False, "risk_level": "low", "issues": []},
+            {
+                "approved": True,
+                "blocked": False,
+                "risk_level": "low",
+                "issues": [],
+                "safety_approved": True,
+                "safety_issues": [],
+                "quality_approved": True,
+                "quality_issues": [],
+            },
             {"approved": True, "risk_level": "low", "issues": []},
             TeacherJudgeScriptStatus.reviewed,
         )
@@ -504,7 +616,7 @@ import json
 import subprocess as sp
 
 sp.run("echo hi", shell=True, timeout=5)
-print(json.dumps({"schema_version": "teacher_judge_result.v1", "checks": [], "errors": []}))
+print(json.dumps({"schema_version": "teacher_judge_result.v1", "metadata": {"timestamp": "now", "platform": "test"}, "checks": [], "errors": []}, ensure_ascii=False))
 """.strip()
     )
 
@@ -551,6 +663,64 @@ print(json.dumps({"schema_version": "teacher_judge_result.v1", "checks": [], "er
     assert any("寫入檔案" in issue for issue in result["issues"])
 
 
+def test_script_policy_allows_sensitive_redaction_patterns() -> None:
+    result = check_script_policy(
+        """
+import json
+import re
+
+def redact_sensitive_text(text: str) -> str:
+    patterns = [
+        (
+            r"(?i)(password|passwd|secret|token|api_key|bearer|auth_token|access_token|private_key|ssh-rsa|id_rsa)\\s*[:=]\\s*[^\\s]+",
+            r"\\1: [REDACTED]",
+        ),
+        (r"([a-f0-9]{32,})", "[REDACTED_HASH]"),
+        (r"(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})", r"\\1"),
+    ]
+    redacted = text
+    for pattern, replacement in patterns:
+        redacted = re.sub(pattern, replacement, redacted)
+    return redacted
+
+print(json.dumps({"schema_version": "teacher_judge_result.v1", "metadata": {"timestamp": "now", "platform": "test"}, "checks": [], "errors": []}, ensure_ascii=False))
+""".strip()
+    )
+
+    assert result["approved"] is True
+
+
+def test_script_policy_blocks_sensitive_file_open() -> None:
+    result = check_script_policy(
+        """
+import json
+
+with open("/home/student/.ssh/id_rsa", "r", encoding="utf-8") as key_file:
+    key_file.read()
+
+print(json.dumps({"schema_version": "teacher_judge_result.v1", "metadata": {"timestamp": "now", "platform": "test"}, "checks": [], "errors": []}, ensure_ascii=False))
+""".strip()
+    )
+
+    assert result["approved"] is False
+    assert any("敏感檔案" in issue for issue in result["issues"])
+
+
+def test_script_policy_blocks_sensitive_subprocess_path() -> None:
+    result = check_script_policy(
+        """
+import json
+import subprocess
+
+subprocess.run(["cat", "/home/student/.ssh/id_rsa"], timeout=5)
+print(json.dumps({"schema_version": "teacher_judge_result.v1", "metadata": {"timestamp": "now", "platform": "test"}, "checks": [], "errors": []}, ensure_ascii=False))
+""".strip()
+    )
+
+    assert result["approved"] is False
+    assert any("敏感檔案" in issue for issue in result["issues"])
+
+
 def test_script_policy_blocks_external_network_requests() -> None:
     result = check_script_policy(
         """
@@ -573,7 +743,7 @@ import json
 import requests
 
 requests.get("http://127.0.0.1:5678/health", timeout=5)
-print(json.dumps({"schema_version": "teacher_judge_result.v1", "checks": [], "errors": []}))
+print(json.dumps({"schema_version": "teacher_judge_result.v1", "metadata": {"timestamp": "now", "platform": "test"}, "checks": [], "errors": []}, ensure_ascii=False))
 """.strip()
     )
 
@@ -584,6 +754,7 @@ def test_validate_managed_script_output_contract() -> None:
     valid = validate_managed_script_output(
         {
             "schema_version": "teacher_judge_result.v1",
+            "metadata": {"timestamp": "now", "platform": "test"},
             "summary": "ok",
             "checks": [
                 {
@@ -600,6 +771,7 @@ def test_validate_managed_script_output_contract() -> None:
     invalid = validate_managed_script_output(
         {
             "schema_version": "teacher_judge_result.v1",
+            "metadata": {"timestamp": "now", "platform": "test"},
             "checks": [{"id": "service", "title": "Service check", "status": "done"}],
             "errors": [],
         }

@@ -16,7 +16,13 @@ from app.ai.teacher_judge.schemas import (
     RubricAnalysis,
     TeacherJudgeScriptArtifactPublic,
 )
+from app.ai.teacher_judge.script_generation_contract import (
+    RESULT_SCHEMA_VERSION,
+    SCRIPT_GENERATION_CONTRACT_PROMPT,
+    SCRIPT_GENERATION_MAX_ATTEMPTS,
+)
 from app.ai.teacher_judge.script_policy import check_script_policy
+from app.ai.teacher_judge.script_quality_validator import check_script_quality
 from app.ai.teacher_judge.service import _call_vllm
 from app.ai.teacher_judge.template_command_service import get_enabled_template_commands
 from app.ai.utils import apply_thinking_control
@@ -33,16 +39,17 @@ logger = logging.getLogger(__name__)
 
 SCRIPT_GENERATION_SYSTEM_PROMPT = """
 # 角色
-你是 Teacher Judge 的受管 Python 檢測腳本產生器。
+你是 Teacher Judge 的受管 Python 資料收集腳本產生器。
 
 # 任務
-根據 rubric snapshot 產生一份只讀、可重複執行的 Python managed script。
+根據 rubric snapshot 產生一份只讀、可重複執行的 Python managed data collection script。
+腳本負責收集同學 VM/LXC 內的服務、port、process、localhost HTTP 等資料，整理成 JSON，供後續解讀與評分使用。
 
 # 硬性規則
 - 只能輸出 JSON，不要 markdown。
-- JSON 欄位必須是 {"script_content": "..."}。
+- JSON 欄位必須是 {{"script_content": "..."}}。
 - script_content 必須是完整 Python 程式。
-- 腳本只能讀取本機服務狀態、port、process、HTTP localhost endpoint。
+- 腳本只能收集本機服務狀態、port、process、HTTP localhost endpoint。
 - 腳本不得刪除、修改、修復、安裝、重啟、停用或重設任何環境。
 - 腳本不得讀取 .env、.ssh、private key 或把資料送到外部網路。
 - 若需要執行指令，只能使用 subprocess.run([...], timeout=秒數, capture_output=True, text=True, check=False)。
@@ -50,30 +57,40 @@ SCRIPT_GENERATION_SYSTEM_PROMPT = """
 - 不得使用 os.system、os.popen、subprocess.Popen 或任何未設定 timeout 的指令執行方式。
 - 若 template command 含 pipe、redirect、grep 等 shell 寫法，請改用 Python 程式解析 stdout，不要原樣 shell=True 執行。
 - HTTP request 只允許 GET/HEAD localhost/127.0.0.1/::1，必須設定 timeout。
-- 腳本最後必須 print 單一 JSON，schema_version 固定為 teacher_judge_result.v1。
-- 優先根據 rubric item 的 check_steps.command_key 對應 template_commands 產生檢查。
-- 若 previous_review_feedback 有內容，代表上一輪腳本審查未通過；必須修正其中所有 policy/AI reviewer 問題。
+- 腳本最後必須 print 單一 JSON，schema_version 固定為 {schema_version}，並使用 json.dumps(..., ensure_ascii=False)。
+- 輸出 JSON 的 metadata 必須包含 timestamp 與 platform。
+- 優先根據 rubric item 的 check_steps.command_key 對應 template_commands 產生收集項目。
+- 若 previous_review_feedback 有內容，代表上一輪腳本審查未通過；必須修正其中所有 policy、quality validator、AI reviewer 問題。
 
 # managed script 輸出 JSON contract
-{
-  "schema_version": "teacher_judge_result.v1",
-  "summary": "檢查摘要",
+{{
+  "schema_version": "{schema_version}",
+  "metadata": {{
+    "timestamp": "ISO-8601 timestamp",
+    "platform": "platform.platform()"
+  }},
+  "summary": "收集摘要",
   "checks": [
-    {
-      "id": "stable_check_id",
-      "title": "檢查名稱",
+    {{
+      "id": "service.semantic_collection_id",
+      "title": "收集名稱",
       "status": "pass | fail | warning | unknown | skipped",
       "evidence": "可讀證據",
       "raw": "必要時放原始片段"
-    }
+    }}
   ],
   "errors": []
-}
-""".strip()
+}}
+
+{contract_prompt}
+""".format(
+    schema_version=RESULT_SCHEMA_VERSION,
+    contract_prompt=SCRIPT_GENERATION_CONTRACT_PROMPT,
+).strip()
 
 
 AI_REVIEWER_SYSTEM_PROMPT = """
-你是 Teacher Judge managed script 的安全審查員。
+你是 Teacher Judge managed data collection script 的安全審查員。
 只審查腳本，不執行腳本。請依 policy 判斷它是否只做 read-only inspection。
 只輸出 JSON：
 {
@@ -182,19 +199,33 @@ def _previous_review_feedback(
 ) -> dict[str, Any] | None:
     policy_check = artifact.policy_check_result_json or {}
     ai_review = artifact.ai_review_result_json or {}
-    policy_issues = policy_check.get("issues")
+    safety_issues = policy_check.get("safety_issues")
+    policy_issues = (
+        safety_issues
+        if isinstance(safety_issues, list)
+        else policy_check.get("issues")
+    )
+    quality_issues = policy_check.get("quality_issues")
     ai_issues = ai_review.get("issues")
     feedback = {
-        "policy_approved": policy_check.get("approved"),
+        "policy_approved": (
+            policy_check.get("safety_approved")
+            if "safety_approved" in policy_check
+            else policy_check.get("approved")
+        ),
         "policy_issues": policy_issues if isinstance(policy_issues, list) else [],
+        "quality_approved": policy_check.get("quality_approved"),
+        "quality_issues": quality_issues if isinstance(quality_issues, list) else [],
         "ai_review_approved": ai_review.get("approved"),
         "ai_review_issues": ai_issues if isinstance(ai_issues, list) else [],
         "ai_review_suggested_fix": ai_review.get("suggested_fix"),
     }
     has_failed_review = (
         feedback["policy_approved"] is False
+        or feedback["quality_approved"] is False
         or feedback["ai_review_approved"] is False
         or bool(feedback["policy_issues"])
+        or bool(feedback["quality_issues"])
         or bool(feedback["ai_review_issues"])
         or bool(feedback["ai_review_suggested_fix"])
     )
@@ -210,6 +241,44 @@ def _resolve_status(
     if policy_check.get("approved") is True and ai_review.get("approved") is True:
         return TeacherJudgeScriptStatus.reviewed
     return TeacherJudgeScriptStatus.review_failed
+
+
+def _merge_gate_results(
+    safety_check: dict[str, Any],
+    quality_check: dict[str, Any],
+) -> dict[str, Any]:
+    safety_issues = safety_check.get("issues")
+    quality_issues = quality_check.get("issues")
+    combined_issues = [
+        *(
+            [str(issue) for issue in safety_issues]
+            if isinstance(safety_issues, list)
+            else []
+        ),
+        *(
+            [str(issue) for issue in quality_issues]
+            if isinstance(quality_issues, list)
+            else []
+        ),
+    ]
+    approved = (
+        safety_check.get("approved") is True
+        and quality_check.get("approved") is True
+    )
+    return {
+        "approved": approved,
+        "blocked": not approved,
+        "risk_level": "low" if approved else "high",
+        "issues": list(dict.fromkeys(combined_issues)),
+        "safety_approved": safety_check.get("approved") is True,
+        "safety_issues": [str(issue) for issue in safety_issues]
+        if isinstance(safety_issues, list)
+        else [],
+        "quality_approved": quality_check.get("approved") is True,
+        "quality_issues": [str(issue) for issue in quality_issues]
+        if isinstance(quality_issues, list)
+        else [],
+    }
 
 
 async def generate_script_content(
@@ -307,17 +376,65 @@ async def build_reviewed_script(
     rubric_snapshot: dict[str, Any],
     template_key: str,
 ) -> tuple[str, dict[str, Any], dict[str, Any], TeacherJudgeScriptStatus]:
-    script_content = await generate_script_content(
-        rubric_snapshot=rubric_snapshot,
-        template_key=template_key,
+    attempt_snapshot = dict(rubric_snapshot)
+    last_script_content = ""
+    last_gate_result: dict[str, Any] = {
+        "approved": False,
+        "blocked": True,
+        "risk_level": "high",
+        "issues": ["尚未開始生成"],
+        "safety_approved": False,
+        "safety_issues": [],
+        "quality_approved": False,
+        "quality_issues": [],
+    }
+    last_ai_review: dict[str, Any] = {
+        "approved": False,
+        "risk_level": "high",
+        "issues": ["尚未開始 AI reviewer"],
+        "suggested_fix": "請重新生成腳本",
+    }
+
+    for attempt in range(1, SCRIPT_GENERATION_MAX_ATTEMPTS + 1):
+        last_script_content = await generate_script_content(
+            rubric_snapshot=attempt_snapshot,
+            template_key=template_key,
+        )
+        safety_check = check_script_policy(last_script_content)
+        quality_check = check_script_quality(last_script_content)
+        last_gate_result = _merge_gate_results(safety_check, quality_check)
+        last_ai_review = await review_script_with_ai(
+            script_content=last_script_content,
+            rubric_snapshot=attempt_snapshot,
+        )
+        status = _resolve_status(last_gate_result, last_ai_review)
+        if status == TeacherJudgeScriptStatus.reviewed:
+            return (
+                last_script_content,
+                last_gate_result,
+                last_ai_review,
+                status,
+            )
+
+        if attempt < SCRIPT_GENERATION_MAX_ATTEMPTS:
+            attempt_snapshot = dict(rubric_snapshot)
+            attempt_snapshot["previous_review_feedback"] = {
+                "attempt": attempt,
+                "policy_approved": last_gate_result.get("safety_approved"),
+                "policy_issues": last_gate_result.get("safety_issues", []),
+                "quality_approved": last_gate_result.get("quality_approved"),
+                "quality_issues": last_gate_result.get("quality_issues", []),
+                "ai_review_approved": last_ai_review.get("approved"),
+                "ai_review_issues": last_ai_review.get("issues", []),
+                "ai_review_suggested_fix": last_ai_review.get("suggested_fix"),
+            }
+
+    return (
+        last_script_content,
+        last_gate_result,
+        last_ai_review,
+        TeacherJudgeScriptStatus.review_failed,
     )
-    policy_check = check_script_policy(script_content)
-    ai_review = await review_script_with_ai(
-        script_content=script_content,
-        rubric_snapshot=rubric_snapshot,
-    )
-    status = _resolve_status(policy_check, ai_review)
-    return script_content, policy_check, ai_review, status
 
 
 def list_artifacts(
@@ -503,7 +620,7 @@ def approve_artifact(
     if artifact.status != TeacherJudgeScriptStatus.reviewed:
         raise HTTPException(status_code=400, detail="只有審查通過的腳本可以核准。")
     if artifact.policy_check_result_json.get("approved") is not True:
-        raise HTTPException(status_code=400, detail="腳本未通過 hard policy。")
+        raise HTTPException(status_code=400, detail="腳本未通過安全/品質檢查。")
     if artifact.ai_review_result_json.get("approved") is not True:
         raise HTTPException(status_code=400, detail="腳本未通過 AI reviewer。")
 
