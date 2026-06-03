@@ -77,7 +77,13 @@ function ReviewPanel({
   )
 }
 
-export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
+export function AiJudgeScriptsContent({
+  groupId,
+  onScriptApproved,
+}: {
+  groupId: string
+  onScriptApproved?: () => void
+}) {
   const queryClient = useQueryClient()
   const { showSuccessToast, showErrorToast } = useCustomToast()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -106,6 +112,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
     onSuccess: () => {
       showSuccessToast("收集腳本已核准")
       invalidateScripts()
+      onScriptApproved?.()
     },
     onError: (err: any) =>
       showErrorToast(err?.body?.detail ?? err?.message ?? "核准失敗"),
@@ -143,7 +150,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">AI 收集腳本</h2>
+        <h2 className="text-xl font-bold tracking-tight">收集腳本</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           管理群組內由評分表產生的受管 Python 收集腳本。
         </p>
@@ -169,7 +176,7 @@ export function AiJudgeScriptsContent({ groupId }: { groupId: string }) {
       ) : scripts.length === 0 ? (
         <Card className="border-border/50 shadow-sm">
           <CardContent className="py-8 text-sm text-muted-foreground">
-            尚未建立收集腳本。請先到「AI 情境分析」上傳評分表並製作腳本。
+            尚未建立收集腳本。請先到「評分表」上傳評分表並製作腳本。
           </CardContent>
         </Card>
       ) : (

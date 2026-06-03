@@ -525,7 +525,7 @@ export function AiJudgeExecutionContent({
               </Select>
               {approvedScripts.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  目前沒有已核准的收集腳本，請先到 AI 收集腳本頁核准。
+                  目前沒有已核准的收集腳本，請先到收集腳本分頁核准。
                 </p>
               )}
             </div>

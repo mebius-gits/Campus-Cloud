@@ -406,7 +406,7 @@ export function AiJudgeContent({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">AI 情境分析</h2>
+          <h2 className="text-xl font-bold tracking-tight">評分表</h2>
           <p className="text-sm text-muted-foreground mt-1">
             上傳評估表，查看 AI 偵測判斷並調整評估項目
           </p>
