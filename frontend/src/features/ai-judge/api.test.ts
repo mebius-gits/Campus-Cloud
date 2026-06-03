@@ -63,6 +63,7 @@ describe("AiJudgeService.downloadExcel", () => {
       groupId: "group-1",
       name: "rubric.pdf",
       template_key: "n8n",
+      source_file_id: "file-1",
       rubric_snapshot: {
         items: [],
         total_items: 0,
@@ -84,7 +85,95 @@ describe("AiJudgeService.downloadExcel", () => {
         body: expect.objectContaining({
           name: "rubric.pdf",
           template_key: "n8n",
+          source_file_id: "file-1",
         }),
+      }),
+    )
+  })
+
+  it("lists teacher judge rubric files under a group", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve([]) as any)
+
+    await AiJudgeService.listFiles({ groupId: "group-1" })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "GET",
+        url: "/api/v1/groups/{groupId}/judge/files/",
+        path: { groupId: "group-1" },
+      }),
+    )
+  })
+
+  it("uploads teacher judge rubric files with conflict strategy", async () => {
+    const file = new File(["rubric"], "rubric.pdf", { type: "application/pdf" })
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve({}) as any)
+
+    await AiJudgeService.uploadFile({
+      groupId: "group-1",
+      file,
+      template_key: "linux",
+      conflict_strategy: "overwrite",
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "POST",
+        url: "/api/v1/groups/{groupId}/judge/files/",
+        path: { groupId: "group-1" },
+        formData: {
+          file,
+          template_key: "linux",
+          conflict_strategy: "overwrite",
+        },
+      }),
+    )
+  })
+
+  it("updates teacher judge rubric file analysis", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve({}) as any)
+
+    const analysis = {
+      items: [],
+      total_items: 0,
+      checked_count: 0,
+      auto_count: 0,
+      partial_count: 0,
+      manual_count: 0,
+      summary: "",
+      raw_text: "",
+    }
+
+    await AiJudgeService.updateFileAnalysis({
+      groupId: "group-1",
+      fileId: "file-1",
+      analysis,
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "PATCH",
+        url: "/api/v1/groups/{groupId}/judge/files/{fileId}/analysis",
+        path: { groupId: "group-1", fileId: "file-1" },
+        body: { analysis },
+      }),
+    )
+  })
+
+  it("deletes teacher judge rubric files", async () => {
+    vi.mocked(requestMock).mockReturnValue(Promise.resolve(undefined) as any)
+
+    await AiJudgeService.deleteFile({ groupId: "group-1", fileId: "file-1" })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      OpenAPI,
+      expect.objectContaining({
+        method: "DELETE",
+        url: "/api/v1/groups/{groupId}/judge/files/{fileId}",
+        path: { groupId: "group-1", fileId: "file-1" },
       }),
     )
   })
@@ -195,6 +284,40 @@ describe("AiJudgeService.downloadExcel", () => {
       "/api/v1/rubric/download-excel",
       expect.objectContaining({
         method: "POST",
+      }),
+    )
+  })
+
+  it("downloads original teacher judge rubric files", async () => {
+    const tokenResolver = vi.fn(async (options: { url: string }) => {
+      expect(options.url).toBe(
+        "/api/v1/groups/group-1/judge/files/file-1/download",
+      )
+      return "token-123"
+    })
+
+    const expectedBlob = new Blob(["file-content"])
+    const blobFn = vi.fn().mockResolvedValue(expectedBlob)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: blobFn,
+    })
+
+    OpenAPI.TOKEN = tokenResolver as typeof OpenAPI.TOKEN
+    OpenAPI.BASE = ""
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await AiJudgeService.downloadFile({
+      groupId: "group-1",
+      fileId: "file-1",
+    })
+
+    expect(result).toBe(expectedBlob)
+    expect(tokenResolver).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/groups/group-1/judge/files/file-1/download",
+      expect.objectContaining({
+        method: "GET",
       }),
     )
   })

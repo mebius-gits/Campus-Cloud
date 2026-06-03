@@ -82,6 +82,7 @@ async def create_group_teacher_judge_script(
         template_key=template_key,
         rubric_analysis=payload.rubric_snapshot,
         created_by=current_user.id,
+        source_file_id=payload.source_file_id,
     )
 
 

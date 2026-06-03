@@ -20,6 +20,7 @@ from app.ai.teacher_judge._types import (
     TemplateCommandSnapshot,
 )
 from app.ai.teacher_judge.config import settings
+from app.ai.teacher_judge.file_service import source_file_snapshot
 from app.ai.teacher_judge.schemas import (
     RubricAnalysis,
     TeacherJudgeScriptArtifactPublic,
@@ -201,6 +202,10 @@ def _artifact_to_public(
         name=artifact.name,
         template_key=artifact.template_key,
         rubric_snapshot_json=artifact.rubric_snapshot_json,
+        source_file_id=str(artifact.source_file_id)
+        if artifact.source_file_id
+        else None,
+        source_file_snapshot_json=artifact.source_file_snapshot_json,
         script_language=artifact.script_language.value,
         script_content=artifact.script_content,
         source=artifact.source.value,
@@ -830,6 +835,7 @@ async def create_artifact(
     template_key: str,
     rubric_analysis: RubricAnalysis,
     created_by: uuid.UUID | None,
+    source_file_id: uuid.UUID | None = None,
     template_commands: list[TeacherJudgeTemplateCommand] | None = None,
 ) -> TeacherJudgeScriptArtifactPublic:
     artifact_name = name.strip()
@@ -843,6 +849,15 @@ async def create_artifact(
         _rubric_snapshot(rubric_analysis, template_key),
         template_commands,
     )
+    source_file, source_file_snapshot_json = source_file_snapshot(
+        session=session,
+        group_id=group_id,
+        file_id=source_file_id,
+    )
+    if source_file is not None:
+        source_file.analysis_json = rubric_analysis.model_dump(mode="json")
+        source_file.updated_at = _now()
+        session.add(source_file)
     script_content, policy_check, ai_review, status = await build_reviewed_script(
         rubric_snapshot=rubric_snapshot,
         template_key=template_key,
@@ -853,6 +868,8 @@ async def create_artifact(
         name=artifact_name,
         template_key=template_key,
         rubric_snapshot_json=rubric_snapshot,
+        source_file_id=source_file_id,
+        source_file_snapshot_json=source_file_snapshot_json,
         script_language=TeacherJudgeScriptLanguage.python,
         script_content=script_content,
         source=TeacherJudgeScriptSource.ai_generated,
@@ -895,6 +912,18 @@ async def regenerate_artifact(
         else artifact.rubric_snapshot_json,
         template_commands,
     )
+    source_file_id = artifact.source_file_id
+    source_file_snapshot_json = artifact.source_file_snapshot_json
+    if source_file_id is not None and rubric_analysis is not None:
+        source_file, source_file_snapshot_json = source_file_snapshot(
+            session=session,
+            group_id=group_id,
+            file_id=source_file_id,
+        )
+        if source_file is not None:
+            source_file.analysis_json = rubric_analysis.model_dump(mode="json")
+            source_file.updated_at = _now()
+            session.add(source_file)
     generation_snapshot = dict(rubric_snapshot)
     previous_feedback = _previous_review_feedback(artifact)
     if previous_feedback:
@@ -911,6 +940,8 @@ async def regenerate_artifact(
             name=artifact.name,
             template_key=template_key,
             rubric_snapshot_json=rubric_snapshot,
+            source_file_id=source_file_id,
+            source_file_snapshot_json=source_file_snapshot_json,
             script_language=TeacherJudgeScriptLanguage.python,
             script_content=script_content,
             source=TeacherJudgeScriptSource.regenerated,
@@ -927,6 +958,7 @@ async def regenerate_artifact(
         return _artifact_to_public(next_artifact)
 
     artifact.rubric_snapshot_json = rubric_snapshot
+    artifact.source_file_snapshot_json = source_file_snapshot_json
     artifact.script_content = script_content
     artifact.source = TeacherJudgeScriptSource.regenerated
     artifact.status = status

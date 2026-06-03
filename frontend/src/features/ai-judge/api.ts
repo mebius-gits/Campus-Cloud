@@ -55,6 +55,25 @@ export type RubricUploadResponse = {
   template_key: TemplateKey
 }
 
+export type TeacherJudgeFile = {
+  id: string
+  group_id: string
+  uploaded_by: string | null
+  original_filename: string
+  file_hash: string
+  template_key: TemplateKey
+  analysis_json: RubricAnalysis
+  status: "active" | "replaced"
+  created_at: string
+  updated_at: string
+}
+
+export type RubricFileUploadResponse = RubricUploadResponse & {
+  file: TeacherJudgeFile
+}
+
+export type RubricFileConflictStrategy = "overwrite" | "copy"
+
 export type RubricChatResponse = {
   reply: string
   updated_items: RubricItem[] | null
@@ -269,6 +288,7 @@ export const AiJudgeService = {
     name: string
     template_key: TemplateKey
     rubric_snapshot: RubricAnalysis
+    source_file_id?: string | null
   }): CancelablePromise<TeacherJudgeScriptArtifact> {
     return __request(OpenAPI, {
       method: "POST",
@@ -278,8 +298,91 @@ export const AiJudgeService = {
         name: data.name,
         template_key: data.template_key,
         rubric_snapshot: data.rubric_snapshot,
+        source_file_id: data.source_file_id ?? null,
       },
       mediaType: "application/json",
+    })
+  },
+
+  listFiles(data: { groupId: string }): CancelablePromise<TeacherJudgeFile[]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/groups/{groupId}/judge/files/",
+      path: { groupId: data.groupId },
+    })
+  },
+
+  uploadFile(data: {
+    groupId: string
+    file: File
+    template_key: TemplateKey
+    conflict_strategy?: RubricFileConflictStrategy
+  }): CancelablePromise<RubricFileUploadResponse> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/groups/{groupId}/judge/files/",
+      path: { groupId: data.groupId },
+      formData: {
+        file: data.file,
+        template_key: data.template_key,
+        ...(data.conflict_strategy
+          ? { conflict_strategy: data.conflict_strategy }
+          : {}),
+      },
+    })
+  },
+
+  updateFileAnalysis(data: {
+    groupId: string
+    fileId: string
+    analysis: RubricAnalysis
+  }): CancelablePromise<TeacherJudgeFile> {
+    return __request(OpenAPI, {
+      method: "PATCH",
+      url: "/api/v1/groups/{groupId}/judge/files/{fileId}/analysis",
+      path: { groupId: data.groupId, fileId: data.fileId },
+      body: { analysis: data.analysis },
+      mediaType: "application/json",
+    })
+  },
+
+  async downloadFile(data: { groupId: string; fileId: string }): Promise<Blob> {
+    const rawToken = OpenAPI.TOKEN
+    const url = `/api/v1/groups/${data.groupId}/judge/files/${data.fileId}/download`
+    const token =
+      typeof rawToken === "function"
+        ? await (
+            rawToken as (o: { method: string; url: string }) => Promise<string>
+          )({
+            method: "GET",
+            url,
+          })
+        : rawToken
+
+    const base = OpenAPI.BASE || ""
+    const response = await fetch(`${base}${url}`, {
+      method: "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.detail || "下載失敗")
+    }
+
+    return response.blob()
+  },
+
+  deleteFile(data: {
+    groupId: string
+    fileId: string
+  }): CancelablePromise<void> {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: "/api/v1/groups/{groupId}/judge/files/{fileId}",
+      path: { groupId: data.groupId, fileId: data.fileId },
     })
   },
 

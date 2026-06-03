@@ -65,6 +65,19 @@ class TeacherJudgeScriptArtifact(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column(sa.JSON, nullable=False),
     )
+    source_file_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            sa.Uuid,
+            sa.ForeignKey("teacher_judge_files.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
+    source_file_snapshot_json: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(sa.JSON, nullable=False),
+    )
     script_language: TeacherJudgeScriptLanguage = Field(
         default=TeacherJudgeScriptLanguage.python,
         sa_column=Column(

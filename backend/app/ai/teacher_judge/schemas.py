@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -108,6 +109,7 @@ class RubricExportRequest(BaseModel):
     summary: str = Field(default="")
 
 
+FileStatus = Literal["active", "replaced"]
 ScriptLanguage = Literal["python", "shell", "bat"]
 ScriptSource = Literal["ai_generated", "regenerated"]
 ScriptStatus = Literal["draft", "review_failed", "reviewed", "approved", "archived"]
@@ -121,6 +123,7 @@ class TeacherJudgeScriptCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     template_key: str = Field(default="linux", max_length=50)
     rubric_snapshot: RubricAnalysis
+    source_file_id: uuid.UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -148,6 +151,8 @@ class TeacherJudgeScriptArtifactPublic(BaseModel):
     name: str
     template_key: str
     rubric_snapshot_json: dict[str, Any]
+    source_file_id: str | None
+    source_file_snapshot_json: dict[str, Any]
     script_language: ScriptLanguage
     script_content: str
     source: ScriptSource
@@ -160,6 +165,30 @@ class TeacherJudgeScriptArtifactPublic(BaseModel):
     created_at: str
     updated_at: str
     approved_at: str | None
+
+
+class TeacherJudgeFilePublic(BaseModel):
+    id: str
+    group_id: str
+    uploaded_by: str | None
+    original_filename: str
+    file_hash: str
+    template_key: str
+    analysis_json: dict[str, Any]
+    status: FileStatus
+    created_at: str
+    updated_at: str
+
+
+class TeacherJudgeFileUploadResponse(BaseModel):
+    file: TeacherJudgeFilePublic
+    analysis: RubricAnalysis
+    ai_metrics: dict[str, Any]
+    template_key: str = "linux"
+
+
+class TeacherJudgeFileAnalysisUpdateRequest(BaseModel):
+    analysis: RubricAnalysis
 
 
 class TeacherJudgeScriptRunCreateRequest(BaseModel):

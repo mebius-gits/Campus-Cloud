@@ -54,6 +54,7 @@ from .teacher_judge_script_artifact import (
     TeacherJudgeScriptSource,
     TeacherJudgeScriptStatus,
 )
+from .teacher_judge_file import TeacherJudgeFile, TeacherJudgeFileStatus
 from .teacher_judge_script_run import (
     TeacherJudgeScriptRun,
     TeacherJudgeScriptRunStatus,
@@ -143,6 +144,8 @@ __all__ = [
     "SubnetConfig",
     "IpAllocation",
     "ScriptDeployLog",
+    "TeacherJudgeFile",
+    "TeacherJudgeFileStatus",
     "TeacherJudgeScriptArtifact",
     "TeacherJudgeScriptLanguage",
     "TeacherJudgeScriptRun",
