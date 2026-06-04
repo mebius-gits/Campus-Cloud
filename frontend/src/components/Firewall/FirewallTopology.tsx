@@ -6,6 +6,7 @@ import {
   type Edge,
   MiniMap,
   type Node,
+  type OnNodeDrag,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -437,8 +438,8 @@ function FirewallTopologyInner() {
   const handleOpenConsoleRef = useRef(handleOpenConsole)
   handleOpenConsoleRef.current = handleOpenConsole
 
-  const onNodeDragStop = useCallback(
-    (_event: React.MouseEvent, _node: Node, currentNodes: Node[]) => {
+  const onNodeDragStop: OnNodeDrag<Node> = useCallback(
+    (_event, _node, currentNodes) => {
       if (layoutSaveTimer.current) clearTimeout(layoutSaveTimer.current)
       layoutSaveTimer.current = setTimeout(() => {
         saveLayoutMutation.mutate(currentNodes)

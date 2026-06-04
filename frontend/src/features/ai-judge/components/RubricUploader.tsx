@@ -21,6 +21,9 @@ export function RubricUploader({
 }: RubricUploaderProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const acceptedExtensions = accept
+    .split(",")
+    .map((ext) => ext.trim().replace(".", "").toLowerCase())
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -34,20 +37,23 @@ export function RubricUploader({
     setIsDragging(false)
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(false)
 
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      const file = files[0]
-      const ext = file.name.split(".").pop()?.toLowerCase()
-      if (ext === "docx" || ext === "pdf") {
-        setSelectedFile(file)
+      const files = e.dataTransfer.files
+      if (files.length > 0) {
+        const file = files[0]
+        const ext = file.name.split(".").pop()?.toLowerCase()
+        if (ext && acceptedExtensions.includes(ext)) {
+          setSelectedFile(file)
+        }
       }
-    }
-  }, [])
+    },
+    [acceptedExtensions],
+  )
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

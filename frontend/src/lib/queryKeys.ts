@@ -6,6 +6,10 @@ export const queryKeys = {
     all: ["groups"] as const,
     detail: (groupId: string) => ["group", groupId] as const,
     batchJob: (jobId: string) => ["batch-job", jobId] as const,
+    teacherJudgeScripts: (groupId: string) =>
+      ["group", groupId, "teacher-judge-scripts"] as const,
+    teacherJudgeScriptRun: (groupId: string, scriptId: string, runId: string) =>
+      ["group", groupId, "teacher-judge-script-run", scriptId, runId] as const,
   },
   users: {
     all: ["users"] as const,

@@ -52,6 +52,16 @@ describe("queryKeys", () => {
       )
     })
 
+    it("teacher judge script run key includes script and run ids", () => {
+      expect(queryKeys.groups.teacherJudgeScriptRun("g1", "s1", "r1")).toEqual([
+        "group",
+        "g1",
+        "teacher-judge-script-run",
+        "s1",
+        "r1",
+      ])
+    })
+
     it("resources.rrdStats includes both vmid and timeframe", () => {
       expect(queryKeys.resources.rrdStats(100, "hour")).toEqual([
         "rrdStats",

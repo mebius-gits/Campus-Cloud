@@ -58,7 +58,10 @@ export function useSessionWarning(): {
   })
 
   const runningVmids = useMemo(
-    () => myResources.filter((r) => r.status === "running").map((r) => r.vmid),
+    () =>
+      myResources.flatMap((r) =>
+        r.status === "running" && r.vmid != null ? [r.vmid] : [],
+      ),
     [myResources],
   )
 

@@ -67,7 +67,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AiJudgeContent } from "@/features/ai-judge/components/AiJudgeContent"
+import { AiJudgeManagementContent } from "@/features/ai-judge/components/AiJudgeManagementContent"
 import { AiPveMessageContent } from "@/features/ai-pve-log/components/AiPveMessageContent"
 import { requireGroupManagerUser } from "@/features/auth/guards"
 import { GroupFeatureService, type TaskStatus } from "@/features/groups/api"
@@ -1064,7 +1064,7 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
     currentUser?.role === "admin" || currentUser?.is_superuser || false
 
   const [activeView, setActiveView] = useState<
-    "members" | "ai-judge" | "ai-pve-message"
+    "members" | "ai-judge-management" | "ai-pve-message"
   >("members")
 
   const { data: group } = useSuspenseQuery(groupDetailQueryOptions(groupId))
@@ -1137,12 +1137,14 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
               系統整合
             </h3>
             <Button
-              variant={activeView === "ai-judge" ? "secondary" : "ghost"}
+              variant={
+                activeView === "ai-judge-management" ? "secondary" : "ghost"
+              }
               className="w-full justify-start transition-all hover:bg-accent hover:text-accent-foreground border-border/50"
-              onClick={() => setActiveView("ai-judge")}
+              onClick={() => setActiveView("ai-judge-management")}
             >
               <Brain className="mr-2 h-4 w-4 text-blue-500" />
-              AI 情境分析
+              AI 評分管理
             </Button>
             <Button
               variant={activeView === "ai-pve-message" ? "secondary" : "ghost"}
@@ -1157,7 +1159,9 @@ function GroupDetailContent({ groupId }: { groupId: string }) {
 
         {/* 內容區塊 */}
         <div className="flex-1 min-w-0 flex flex-col gap-6">
-          {activeView === "ai-judge" && <AiJudgeContent groupId={groupId} />}
+          {activeView === "ai-judge-management" && (
+            <AiJudgeManagementContent groupId={groupId} members={members} />
+          )}
           {activeView === "ai-pve-message" && (
             <AiPveMessageContent groupId={groupId} />
           )}

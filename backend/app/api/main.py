@@ -25,6 +25,8 @@ from app.api.routes import (
     rubric,
     script_deploy,
     spec_change_requests,
+    teacher_judge_files,
+    teacher_judge_scripts,
     tunnel,
     users,
     utils,
@@ -60,6 +62,8 @@ api_router.include_router(ip_management.router)
 api_router.include_router(script_deploy.router)
 api_router.include_router(jobs.router)
 api_router.include_router(rubric.router)
+api_router.include_router(teacher_judge_files.router)
+api_router.include_router(teacher_judge_scripts.router)
 api_router.include_router(tunnel.router)
 api_router.include_router(desktop_client.router)
 

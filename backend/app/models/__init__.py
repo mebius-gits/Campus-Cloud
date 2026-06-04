@@ -48,6 +48,19 @@ from .spec_change_request import (
     SpecChangeType,
 )
 from .subnet_config import SubnetConfig
+from .teacher_judge_file import TeacherJudgeFile, TeacherJudgeFileStatus
+from .teacher_judge_script_artifact import (
+    TeacherJudgeScriptArtifact,
+    TeacherJudgeScriptLanguage,
+    TeacherJudgeScriptSource,
+    TeacherJudgeScriptStatus,
+)
+from .teacher_judge_script_run import (
+    TeacherJudgeScriptRun,
+    TeacherJudgeScriptRunStatus,
+    TeacherJudgeScriptRunTargetScope,
+)
+from .teacher_judge_template_command import TeacherJudgeTemplateCommand
 from .tunnel_proxy import TunnelProxy
 from .user import User, UserBase, UserRole
 from .vm_migration_job import VMMigrationJob, VMMigrationJobStatus
@@ -131,6 +144,16 @@ __all__ = [
     "SubnetConfig",
     "IpAllocation",
     "ScriptDeployLog",
+    "TeacherJudgeFile",
+    "TeacherJudgeFileStatus",
+    "TeacherJudgeScriptArtifact",
+    "TeacherJudgeScriptLanguage",
+    "TeacherJudgeScriptRun",
+    "TeacherJudgeScriptRunStatus",
+    "TeacherJudgeScriptRunTargetScope",
+    "TeacherJudgeScriptSource",
+    "TeacherJudgeScriptStatus",
+    "TeacherJudgeTemplateCommand",
     # Deletion Request
     "DeletionRequest",
     "DeletionRequestStatus",
