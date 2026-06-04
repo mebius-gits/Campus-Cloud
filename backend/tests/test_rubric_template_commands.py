@@ -18,6 +18,24 @@ from app.api.routes import rubric as rubric_route
 from app.models.teacher_judge_template_command import TeacherJudgeTemplateCommand
 
 
+def _patch_teacher_judge_vllm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        teacher_judge_service,
+        "settings",
+        SimpleNamespace(
+            VLLM_MODEL_NAME="test-model",
+            VLLM_ENABLE_THINKING=False,
+            VLLM_TIMEOUT=60,
+            VLLM_MAX_TOKENS=4096,
+            VLLM_CHAT_MAX_TOKENS=4096,
+            VLLM_CHAT_TEMPERATURE=0.2,
+            VLLM_TOP_P=1.0,
+            VLLM_TOP_K=20,
+            VLLM_REPETITION_PENALTY=1.0,
+        ),
+    )
+
+
 def _session_with_commands() -> Session:
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
@@ -100,6 +118,7 @@ async def test_analyze_rubric_injects_catalog_and_normalizes_check_steps(
         )
 
     monkeypatch.setattr(teacher_judge_service, "_call_vllm", fake_call_vllm)
+    _patch_teacher_judge_vllm_settings(monkeypatch)
 
     analysis, _metrics = await teacher_judge_service.analyze_rubric(
         "rubric text",
@@ -161,6 +180,7 @@ async def test_chat_with_rubric_validates_returned_check_steps(
         )
 
     monkeypatch.setattr(teacher_judge_service, "_call_vllm", fake_call_vllm)
+    _patch_teacher_judge_vllm_settings(monkeypatch)
 
     _reply, updated_items, _metrics = await teacher_judge_service.chat_with_rubric(
         messages=[SimpleNamespace(role="user", content="照這樣改")],
