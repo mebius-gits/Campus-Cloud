@@ -7902,7 +7902,7 @@ export type VmRequestReviewRuntimeResource = {
 /**
  * VMRequestStatus
  */
-export type VmRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type VmRequestStatus = 'pending' | 'approved' | 'provisioning' | 'running' | 'rejected' | 'cancelled';
 
 /**
  * VMRequestWindowAvailabilityRequest

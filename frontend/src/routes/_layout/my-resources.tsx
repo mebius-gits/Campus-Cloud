@@ -55,7 +55,7 @@ function MyResourcesTableContent({
 
   const merged = useMemo<ResourceRow[]>(() => {
     return (resources as ResourceRow[]).map((r) => {
-      const del = deletingMap?.get(r.vmid)
+      const del = r.vmid == null ? undefined : deletingMap?.get(r.vmid)
       return del ? { ...r, _deleting: deletionToMeta(del) } : r
     })
   }, [resources, deletingMap])
@@ -63,6 +63,7 @@ function MyResourcesTableContent({
   const handleRowClick = useCallback(
     (row: ResourceRow) => {
       if (row._deleting) return
+      if (row.vmid == null) return
       navigate({
         to: "/my-resources/$vmid",
         params: { vmid: row.vmid.toString() },

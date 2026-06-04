@@ -422,6 +422,9 @@ export const createColumns = (
         if (c) return <CreatingActions meta={c} />
         const d = row.original._deleting
         if (d) return <DeletingActions meta={d} />
+        if (row.original.vmid == null) {
+          return <span className="text-muted-foreground">-</span>
+        }
         return (
           <VMActions
             vmid={row.original.vmid}

@@ -80,7 +80,7 @@ function VMsTableContent({
       pendingToFakeRow(req, idx),
     )
     const annotated = (resources as ResourceRow[]).map((r) => {
-      const del = deletingMap?.get(r.vmid)
+      const del = r.vmid == null ? undefined : deletingMap?.get(r.vmid)
       return del ? { ...r, _deleting: deletionToMeta(del) } : r
     })
     return [...placeholders, ...annotated]
@@ -96,6 +96,7 @@ function VMsTableContent({
         onOpenDeletingDetail(row._deleting.request_id)
         return
       }
+      if (row.vmid == null) return
       navigate({
         to: "/resources/$vmid",
         params: { vmid: row.vmid.toString() },

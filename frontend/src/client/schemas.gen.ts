@@ -13728,6 +13728,8 @@ export const VMRequestStatusSchema = {
     enum: [
         'pending',
         'approved',
+        'provisioning',
+        'running',
         'rejected',
         'cancelled'
     ],
