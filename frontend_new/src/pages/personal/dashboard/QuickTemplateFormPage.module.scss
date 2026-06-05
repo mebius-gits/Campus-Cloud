@@ -151,18 +151,25 @@
 }
 
 .templateExitLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
   font-size: $font-size-12;
   font-weight: $font-weight-500;
   color: var(--color-text-secondary);
-  background: transparent;
-  border: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: $radius-8;
+  padding: 6px 12px;
+  border-radius: $radius-pill;
+  transition: all $transition-base;
+  white-space: nowrap;
 
   &:hover {
     color: var(--color-primary);
-    text-decoration: underline;
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
   }
 }
 

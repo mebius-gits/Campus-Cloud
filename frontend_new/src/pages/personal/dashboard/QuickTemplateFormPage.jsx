@@ -214,6 +214,7 @@ export default function QuickTemplateFormPage({ slug, onBack, onSubmitted }) {
                   onClick={onBack}
                   title="改用完整申請表單"
                 >
+                  <MIcon name="tune" size={14} />
                   完整設定
                 </button>
               </div>
