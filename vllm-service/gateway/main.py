@@ -29,6 +29,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from api.client import ModelClient  # noqa: E402
 from config.multi_model import (
+    GATEWAY_ENV_FILE_VAR,
     GatewayRoute,
     build_gateway_routes,
     find_route_for_model,
@@ -42,13 +43,14 @@ logger = logging.getLogger(__name__)
 
 # 初始化
 app = FastAPI(title="vLLM API Gateway", version="1.0.0")
-settings = get_settings()
+gateway_env_file = os.getenv(GATEWAY_ENV_FILE_VAR, ".env.API")
+settings = get_settings(gateway_env_file)
 client = ModelClient(settings)
 
 # 多模型 Gateway 設定（若設定檔缺失則回退單模型）
 try:
-    _gateway_cfg = load_gateway_config()
-    _gateway_instances = load_model_instances()
+    _gateway_cfg = load_gateway_config(gateway_env_file)
+    _gateway_instances = load_model_instances(gateway_env_file)
     gateway_routes: dict[str, GatewayRoute] = build_gateway_routes(_gateway_instances)
     gateway_default_model = _gateway_cfg.default_model or next(iter(gateway_routes))
     gateway_host = _gateway_cfg.host

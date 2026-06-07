@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from config.settings import PROJECT_ROOT, Settings
+from config.settings import PROJECT_ROOT, SERVICE_ENV_FILE_VAR, Settings
 
-DEFAULT_BASE_ENV = ".env"
+GATEWAY_ENV_FILE_VAR = "VLLM_SERVICE_GATEWAY_ENV_FILE"
+DEFAULT_BASE_ENV = ".env.API"
 DEFAULT_MODELS_JSON = "models.json"
 
 
@@ -62,9 +63,18 @@ def _resolve_path(file_path: str | Path) -> Path:
     return path
 
 
-def load_gateway_config(base_env_file: str | Path = DEFAULT_BASE_ENV) -> GatewayConfig:
-    """從 .env 載入 Gateway 設定。"""
-    env_path = _resolve_path(base_env_file)
+def _default_base_env_file() -> str:
+    """取得 Gateway/cluster 模式預設 env 檔。"""
+    return (
+        os.getenv(GATEWAY_ENV_FILE_VAR)
+        or os.getenv(SERVICE_ENV_FILE_VAR)
+        or DEFAULT_BASE_ENV
+    )
+
+
+def load_gateway_config(base_env_file: str | Path | None = None) -> GatewayConfig:
+    """從 Gateway 共用 env 載入 Gateway 設定。"""
+    env_path = _resolve_path(base_env_file or _default_base_env_file())
     if not env_path.exists():
         raise FileNotFoundError(f"環境設定檔不存在: {env_path}")
     
@@ -82,21 +92,21 @@ def load_gateway_config(base_env_file: str | Path = DEFAULT_BASE_ENV) -> Gateway
 
 
 def load_model_instances(
-    base_env_file: str | Path = DEFAULT_BASE_ENV,
+    base_env_file: str | Path | None = None,
     models_json_file: str | Path = DEFAULT_MODELS_JSON,
     cli_overrides: dict[str, str] | None = None,
 ) -> list[ModelInstanceConfig]:
     """載入多模型實例設定。
     
     Args:
-        base_env_file: 共用環境變數檔案路徑（預設 .env）
+        base_env_file: 共用環境變數檔案路徑（預設 .env.API）
         models_json_file: 模型配置 JSON 檔案路徑（預設 models.json）
         cli_overrides: 由 main.py 傳入的命令列參數覆寫值
     
     Returns:
         模型實例配置列表
     """
-    base_path = _resolve_path(base_env_file)
+    base_path = _resolve_path(base_env_file or _default_base_env_file())
     models_json_path = _resolve_path(models_json_file)
     
     if not base_path.exists():
@@ -183,7 +193,7 @@ def load_model_instances(
             os.environ[env_key] = value
         
         try:
-            settings = Settings()
+            settings = Settings(_env_file=str(base_path))
         finally:
             # 恢復原始環境變數
             for env_key, original_value in original_env.items():

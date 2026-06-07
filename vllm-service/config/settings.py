@@ -16,14 +16,25 @@ from utils.model_utils import is_vision_model
 
 # 專案根目錄
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-ENV_FILE = PROJECT_ROOT / ".env"
+DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
+ENV_FILE = DEFAULT_ENV_FILE
+SERVICE_ENV_FILE_VAR = "VLLM_SERVICE_ENV_FILE"
+
+
+def resolve_env_file(env_file: str | Path | None = None) -> Path:
+    """解析目前服務使用的 env 檔案路徑。"""
+    configured = env_file or os.getenv(SERVICE_ENV_FILE_VAR) or DEFAULT_ENV_FILE
+    path = Path(configured)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path
 
 
 class Settings(BaseSettings):
     """應用程式設定 - .env 變數自動覆蓋預設值"""
 
     model_config = SettingsConfigDict(
-        env_file=str(ENV_FILE),
+        env_file=str(DEFAULT_ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -102,9 +113,9 @@ class Settings(BaseSettings):
     request_timeout: int = Field(default=300, description="請求逾時秒數", ge=10)
 
     # ---- Benchmark 設定 ----
-    bench_total_requests: int = Field(default=50, description="Benchmark 總請求數", ge=1)
-    bench_concurrency: int = Field(default=10, description="Benchmark 併發數", ge=1)
-    bench_max_tokens: int = Field(default=256, description="Benchmark 每次最大 token 數", ge=1)
+    bench_total_requests: int = Field(default=60, description="Benchmark 總請求數", ge=1)
+    bench_concurrency: int = Field(default=64, description="Benchmark 併發數", ge=1)
+    bench_max_tokens: int = Field(default=2048, description="Benchmark 每次最大 token 數", ge=1)
     bench_prompt: str = Field(
         default="請用繁體中文簡要介紹什麼是人工智慧？",
         description="Benchmark 使用的 prompt",
@@ -112,17 +123,17 @@ class Settings(BaseSettings):
 
     # ---- Webapp 推論參數 (統一管理，避免散落硬編碼) ----
     default_max_tokens: int = Field(default=2048, description="預設最大生成 token 數", ge=128)
-    default_temperature: float = Field(default=1.0, description="預設溫度參數", ge=0.0, le=2.0)
-    document_max_tokens: int = Field(default=4096, description="文件模式最大 token 數", ge=512)
+    default_temperature: float = Field(default=0.8, description="預設溫度參數", ge=0.0, le=2.0)
+    document_max_tokens: int = Field(default=16384, description="文件模式最大 token 數", ge=512)
     vision_temperature: float = Field(default=1.0, description="視覺模式溫度", ge=0.0, le=2.0)
     default_top_p: float = Field(default=0.95, description="Top-P 取樣（0.0-1.0）", ge=0.0, le=1.0)
     default_top_k: int = Field(default=20, description="Top-K 取樣（vLLM 擴展參數，-1 表示停用）", ge=-1)
     default_min_p: float = Field(default=0.0, description="Min-P 取樣（vLLM 擴展參數，0.0 表示停用）", ge=0.0, le=1.0)
     default_presence_penalty: float = Field(default=1.5, description="存在懲罰，鼓勵新主題（0.0-2.0）", ge=0.0, le=2.0)
-    default_repetition_penalty: float = Field(default=1.0, description="重複懲罰（vLLM 擴展參數，1.0=無懲罰）", ge=0.0)
+    default_repetition_penalty: float = Field(default=1.1, description="重複懲罰（vLLM 擴展參數，1.0=無懲罰）", ge=0.0)
 
     # ---- 視覺模型設定 ----
-    max_image_size: int = Field(default=1024, description="最大圖片尺寸 (px)", ge=256)
+    max_image_size: int = Field(default=2048, description="最大圖片尺寸 (px)", ge=256)
     enable_image_resize: bool = Field(default=True, description="自動調整圖片大小")
     allowed_local_media_path: str = Field(
         default="/",
@@ -171,7 +182,7 @@ class Settings(BaseSettings):
     )
 
     # ---- HuggingFace 設定 ----
-    hf_hub_offline: int = Field(default=1, description="HuggingFace 離線模式")
+    hf_hub_offline: int = Field(default=0, description="HuggingFace 離線模式")
     vllm_usage_stats_enabled: int = Field(default=0, description="vLLM 使用統計")
     tokenizers_parallelism: bool = Field(default=False, description="Tokenizer 平行化")
 
@@ -396,9 +407,15 @@ class Settings(BaseSettings):
             os.environ.pop("VLLM_NVFP4_GEMM_BACKEND", None)
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """取得單例設定物件"""
-    settings = Settings()
+@lru_cache(maxsize=8)
+def _get_settings_cached(env_file: str) -> Settings:
+    """依 env 檔案快取設定物件。"""
+    settings = Settings(_env_file=env_file)
     settings.inject_env_vars()
     return settings
+
+
+def get_settings(env_file: str | Path | None = None) -> Settings:
+    """取得設定物件。"""
+    env_path = resolve_env_file(env_file)
+    return _get_settings_cached(str(env_path))

@@ -14,4 +14,4 @@ else
 fi
 
 cd "$PROJECT_ROOT"
-exec "$PYTHON_BIN" main.py gateway "$@"
+exec "$PYTHON_BIN" main.py gateway --base-env .env.API "$@"

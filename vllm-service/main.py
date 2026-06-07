@@ -23,12 +23,13 @@ from urllib.request import urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config.multi_model import (
+    GATEWAY_ENV_FILE_VAR,
     build_gateway_routes,
     load_gateway_config,
     load_model_instances,
     validate_cluster_resources,
 )
-from config.settings import get_settings
+from config.settings import SERVICE_ENV_FILE_VAR, get_settings, resolve_env_file
 from core.cluster import MultiModelEngineManager
 from core.engine import VLLMEngine
 from utils.health_utils import check_system_health
@@ -475,6 +476,9 @@ def quick_start_cluster(
         kv_cache_dtype: vLLM --kv-cache-dtype 覆寫值（空字串表示不啟用）
     """
     logger = get_logger("ClusterLauncher")
+    base_env_path = resolve_env_file(base_env)
+    os.environ[SERVICE_ENV_FILE_VAR] = str(base_env_path)
+    os.environ[GATEWAY_ENV_FILE_VAR] = str(base_env_path)
 
     try:
         cli_overrides = {
@@ -558,10 +562,13 @@ def quick_start_single(
     wait_ready: bool = True,
     timeout: int = 600,
     skip_check: bool = False,
+    env_file: str = ".env.interface",
 ) -> VLLMEngine | None:
     """啟動單一模型 vLLM 主服務。"""
     logger = get_logger("SingleLauncher")
-    settings = get_settings()
+    env_path = resolve_env_file(env_file)
+    os.environ[SERVICE_ENV_FILE_VAR] = str(env_path)
+    settings = get_settings(env_file=env_path)
 
     if skip_check:
         logger.warning("已跳過預啟動檢查")
@@ -604,11 +611,13 @@ def _run_single_mode(args) -> None:
     """執行單模型模式並阻塞到服務結束。"""
     logger = get_logger("Main")
     logger.info("啟動模式: single（單一模型主服務）")
+    logger.info(f"單模型設定檔: {args.env_file}")
 
     engine = quick_start_single(
         wait_ready=not args.no_wait,
         timeout=args.timeout,
         skip_check=args.skip_check,
+        env_file=args.env_file,
     )
     if engine is None:
         sys.exit(1)
@@ -722,10 +731,16 @@ def main() -> None:
         help="跳過預啟動檢查"
     )
     parser.add_argument(
+        "--env-file",
+        type=str,
+        default=".env.interface",
+        help="單模型主服務設定檔路徑（預設 .env.interface）",
+    )
+    parser.add_argument(
         "--base-env",
         type=str,
-        default=".env",
-        help="集群共用設定檔路徑（預設 .env）"
+        default=".env.API",
+        help="Gateway/cluster 共用設定檔路徑（預設 .env.API）"
     )
     parser.add_argument(
         "--models-json",

@@ -14,8 +14,6 @@
 
 ```bash
 cd vllm-service
-cp .env.example .env
-cp models.json.example models.json
 ```
 
 先依 GPU/CUDA/平台版本安裝 vLLM；`requirements.txt` 只列出服務周邊依賴，未固定
@@ -26,10 +24,12 @@ pip install -r requirements.txt
 pip install vllm
 ```
 
-依部署需求編輯 `.env`：
+依部署模式編輯對應設定檔：
 
-- 單模型模式主要看 `MODEL_NAME`、`API_PORT`、`API_KEY`。
-- Gateway 模式主要看 `GATEWAY_*` 與 `models.json`。
+- 單模型模式讀取 `.env.interface`，主要看 `MODEL_NAME`、`API_PORT`、`API_KEY` 與單模型 vLLM 容量參數。
+- Gateway 模式讀取 `.env.API`，主要看 `GATEWAY_*`、共用部署值與 `models.json`。
+- `models.json` 管理多模型各自的 `model_name`、`api_port`、engine/parser 參數。
+- 影片、文件、溫度、Top-P/K、重複懲罰等不常改的推論預設值集中在 `config/settings.py`。
 - `API_KEY` 需與主 backend 的 `VLLM_API_KEY` / `AI_API_API_KEY` 對齊。
 
 ## 啟動單一模型主服務
@@ -41,7 +41,7 @@ bash ./start_single_model.sh
 等同：
 
 ```bash
-python main.py single
+python main.py single --env-file .env.interface
 ```
 
 此模式會啟動一個 vLLM OpenAI-compatible server。主 backend 的內部 AI 功能可用：
@@ -61,12 +61,12 @@ bash ./start_multi_model_gateway.sh
 等同：
 
 ```bash
-python main.py gateway
+python main.py gateway --base-env .env.API
 ```
 
 此模式會：
 
-1. 讀取 `.env` 的共用設定。
+1. 讀取 `.env.API` 的共用設定與 `GATEWAY_*`。
 2. 讀取 `models.json` 的模型 alias 與各模型 port。
 3. 依序啟動每個 vLLM instance。
 4. 啟動 FastAPI Gateway，提供 `/v1/models`、`/v1/chat/completions`、`/v1/completions`。

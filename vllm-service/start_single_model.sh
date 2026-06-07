@@ -14,4 +14,4 @@ else
 fi
 
 cd "$PROJECT_ROOT"
-exec "$PYTHON_BIN" main.py single "$@"
+exec "$PYTHON_BIN" main.py single --env-file .env.interface "$@"
