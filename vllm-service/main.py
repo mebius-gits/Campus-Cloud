@@ -567,7 +567,7 @@ def quick_start_single(
         logger.warning("已跳過預啟動檢查")
     elif not pre_launch_check(settings=settings):
         logger.error("預啟動檢查失敗，取消啟動")
-        logger.info("運行 'python 診斷工具.py' 查看詳細診斷資訊")
+        logger.info("請檢查模型路徑、GPU/CUDA 環境、port 佔用與 logs/ 內的服務日誌")
         return None
 
     logger.section("啟動單模型 vLLM 服務")
@@ -595,7 +595,7 @@ def quick_start_single(
         return engine
     except Exception as exc:
         logger.error(f"啟動失敗: {exc}")
-        logger.info("運行 'python 診斷工具.py' 查看詳細診斷資訊")
+        logger.info("請檢查模型路徑、GPU/CUDA 環境、port 佔用與 logs/ 內的服務日誌")
         engine.stop()
         return None
 
