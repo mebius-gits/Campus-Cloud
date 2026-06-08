@@ -218,7 +218,7 @@ def pre_launch_check(settings=None, logger_name: str = "PreCheck") -> bool:
         return False
     
     # 檢查端口可用性
-    if not check_port_available(settings.api_port, logger):
+    if not check_port_available(settings.api_host, settings.api_port, logger):
         return False
     
     # 檢查 CUDA 環境
@@ -356,7 +356,7 @@ def validate_model_integrity(settings, logger) -> bool:
     return True
 
 
-def check_port_available(port: int, logger) -> bool:
+def check_port_available(host: str, port: int, logger) -> bool:
     """檢查端口是否可用。"""
     import socket
     
@@ -365,13 +365,13 @@ def check_port_available(port: int, logger) -> bool:
     
     try:
         # 嘗試綁定端口
-        sock.bind(("0.0.0.0", port))
+        sock.bind((host, port))
         sock.close()
-        logger.success(f"✓ 端口 {port} 可用")
+        logger.success(f"✓ 端口 {host}:{port} 可用")
         return True
     except OSError as e:
         sock.close()
-        logger.error(f"端口 {port} 不可用: {e}")
+        logger.error(f"端口 {host}:{port} 不可用: {e}")
         
         # 嘗試找出佔用進程（Linux）
         try:
