@@ -26,6 +26,8 @@ import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
+import { AuthSessionService } from "@/services/authSession"
+import { isTokenExpiredOrNearExpiry } from "@/services/openApiAuth"
 
 declare global {
   interface Window {
@@ -85,7 +87,11 @@ async function approveDeviceCode(deviceCode: string): Promise<boolean> {
             url: "/api/v1/desktop-client/auth/approve",
           })
         : (OpenAPI.TOKEN as string | undefined)
-    const token = resolvedToken || localStorage.getItem("access_token")
+    let token = resolvedToken || AuthSessionService.getAccessToken()
+    if (token && isTokenExpiredOrNearExpiry(token, Date.now(), 0)) {
+      const refreshed = await AuthSessionService.refreshAccessToken()
+      token = refreshed ? AuthSessionService.getAccessToken() : null
+    }
     if (!token) {
       console.warn("[approveDeviceCode] no access_token in localStorage")
       return false
@@ -119,11 +125,25 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as
 function Login() {
   const { device_code: deviceCode } = useSearch({ from: "/login" })
   const [deviceApproved, setDeviceApproved] = useState(false)
+  const [deviceApprovalError, setDeviceApprovalError] = useState("")
+  const [deviceApprovalPending, setDeviceApprovalPending] = useState(false)
+  const approveDesktopClient = async () => {
+    if (!deviceCode || deviceApprovalPending) return false
+    setDeviceApprovalPending(true)
+    setDeviceApprovalError("")
+    const ok = await approveDeviceCode(deviceCode)
+    setDeviceApprovalPending(false)
+    if (ok) {
+      setDeviceApproved(true)
+    } else {
+      setDeviceApprovalError("桌面連線工具授權失敗，請重新登入或稍後再試。")
+    }
+    return ok
+  }
   const { loginMutation, googleLoginMutation } = useAuth({
     onLoginSuccess: deviceCode
       ? async () => {
-          const ok = await approveDeviceCode(deviceCode)
-          if (ok) setDeviceApproved(true)
+          await approveDesktopClient()
           return true // prevent navigate to "/"
         }
       : undefined,
@@ -137,9 +157,7 @@ function Login() {
   // If user is already logged in and device_code is present, approve immediately
   useEffect(() => {
     if (!deviceCode || !isLoggedIn() || deviceApproved) return
-    approveDeviceCode(deviceCode).then((ok) => {
-      if (ok) setDeviceApproved(true)
-    })
+    void approveDesktopClient()
   }, [deviceCode, deviceApproved])
 
   useEffect(() => {
@@ -266,7 +284,25 @@ function Login() {
 
           {deviceCode && (
             <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
-              請登入以授權桌面連線工具
+              {deviceApprovalPending
+                ? "正在授權桌面連線工具..."
+                : "請登入以授權桌面連線工具"}
+            </div>
+          )}
+
+          {deviceApprovalError && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-center text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+              <p>{deviceApprovalError}</p>
+              {isLoggedIn() && (
+                <button
+                  type="button"
+                  className="mt-2 underline underline-offset-4"
+                  disabled={deviceApprovalPending}
+                  onClick={() => void approveDesktopClient()}
+                >
+                  重新授權
+                </button>
+              )}
             </div>
           )}
 

@@ -48,20 +48,31 @@ describe("isLoggedIn", () => {
     expect(isLoggedIn()).toBe(false)
   })
 
-  it("returns true when access_token is set to a non-empty string", () => {
-    storage.setItem("access_token", "header.payload.signature")
+  function tokenWithExp(exp: number) {
+    const payload = btoa(JSON.stringify({ exp }))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "")
+    return `header.${payload}.signature`
+  }
+
+  it("returns true when access_token is present and not expired", () => {
+    storage.setItem("access_token", tokenWithExp(Math.floor(Date.now() / 1000) + 60))
     expect(isLoggedIn()).toBe(true)
   })
 
-  it("returns true even for an empty string token (presence-only check)", () => {
-    // Current implementation uses `getItem(...) !== null`, so empty string still counts as logged-in.
-    // This pins the contract; if changed to truthy check, update both impl + test together.
+  it("returns false for an empty string token", () => {
     storage.setItem("access_token", "")
-    expect(isLoggedIn()).toBe(true)
+    expect(isLoggedIn()).toBe(false)
+  })
+
+  it("returns false for an expired token", () => {
+    storage.setItem("access_token", tokenWithExp(Math.floor(Date.now() / 1000) - 60))
+    expect(isLoggedIn()).toBe(false)
   })
 
   it("returns false after the token is removed", () => {
-    storage.setItem("access_token", "abc")
+    storage.setItem("access_token", tokenWithExp(Math.floor(Date.now() / 1000) + 60))
     expect(isLoggedIn()).toBe(true)
     storage.removeItem("access_token")
     expect(isLoggedIn()).toBe(false)

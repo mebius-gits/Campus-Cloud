@@ -17,20 +17,18 @@ const openAppData = () => send(ipcRouters.SYSTEM.openAppData);
   <div class="main">
     <breadcrumb />
     <div class="app-container-breadcrumb">
-      <div
-        class="flex flex-col gap-6 justify-center items-center p-8 w-full h-full bg-white rounded drop-shadow-lg"
-      >
-        <img src="/logo/only/128x128.png" class="w-24 h-24" alt="Logo" />
-        <div class="text-xl font-bold">{{ t("about.name") }}</div>
-        <div class="max-w-md text-sm text-center text-gray-500">
+      <div class="page-surface about-surface">
+        <img src="/logo/only/128x128.png" class="about-logo" alt="Logo" />
+        <div class="about-name">{{ t("about.name") }}</div>
+        <div class="about-description">
           {{ t("about.description") }}
         </div>
-        <div class="flex gap-3">
+        <div class="about-tags">
           <el-tag size="small" type="success">{{ t("about.features.oneClick") }}</el-tag>
           <el-tag size="small" type="primary">{{ t("about.features.bundled") }}</el-tag>
-          <el-tag size="small" type="warning">{{ t("about.features.secure") }}</el-tag>
+          <el-tag size="small" type="danger">{{ t("about.features.secure") }}</el-tag>
         </div>
-        <div class="text-xs text-gray-400">
+        <div class="about-version">
           {{ t("about.version") }} v{{ pkg.version }}
         </div>
         <el-button size="small" @click="openAppData">
@@ -40,3 +38,43 @@ const openAppData = () => send(ipcRouters.SYSTEM.openAppData);
     </div>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.about-surface {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.about-logo {
+  width: 88px;
+  height: 88px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.about-name {
+  margin-top: 10px;
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.about-description {
+  max-width: 440px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.about-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.about-version {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+</style>

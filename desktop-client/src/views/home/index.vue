@@ -22,6 +22,7 @@ const status = computed(() => {
 });
 
 const uptime = computed(() => {
+  now.value;
   if (!appStore.tunnelStatus.running || appStore.tunnelStatus.lastStartTime <= 0) {
     return "";
   }
@@ -33,6 +34,14 @@ const uptime = computed(() => {
   const s = elapsed % 60;
   return `${h}h ${m}m ${s}s`;
 });
+
+const tunnelCount = computed(() => appStore.tunnelStatus.tunnels.length);
+const localPorts = computed(() =>
+  appStore.tunnelStatus.tunnels
+    .map(tunnel => tunnel.visitor_port)
+    .filter(Boolean)
+    .join(", ")
+);
 
 const now = ref(Date.now());
 const tickTimer = ref<number | null>(null);
@@ -91,83 +100,135 @@ const copy = async (value: string) => {
 const openSsh = (port: number) => {
   send(ipcRouters.SYSTEM.openSsh, { port });
 };
+
+const openRdp = (port: number) => {
+  send(ipcRouters.SYSTEM.openRdp, { port });
+};
 </script>
 
 <template>
   <div class="main">
     <breadcrumb />
     <div class="app-container-breadcrumb">
-      <div class="flex flex-col gap-4 p-6 w-full h-full bg-white rounded drop-shadow-lg overflow-auto">
-        <div class="flex gap-8 items-center">
-          <div
-            class="flex relative justify-center items-center w-40 h-40 rounded-full border-4"
-            :class="{
-              'border-[#5A3DAA] text-[#5A3DAA]': status === 'running',
-              'border-[#E6A23C] text-[#E6A23C]': status === 'error',
-              'border-gray-300 text-gray-400': status === 'stopped'
-            }"
-          >
-            <IconifyIconOffline class="text-6xl" icon="rocket-launch-rounded" />
+      <div class="page-surface">
+        <div class="page-header">
+          <div>
+            <div class="page-title">SkyLab Connect</div>
+            <div class="page-subtitle">
+              <template v-if="!appStore.loggedIn">
+                {{ t("home.empty.notLoggedIn") }}
+              </template>
+              <template v-else-if="status === 'running'">
+                {{ t("home.status.uptime", { time: uptime }) }}
+              </template>
+              <template v-else-if="status === 'error'">
+                {{ appStore.tunnelStatus.connectionError }}
+              </template>
+              <template v-else>
+                {{ t("home.status.stopped") }}
+              </template>
+            </div>
           </div>
 
-          <div class="flex flex-col flex-1 gap-3">
-            <div class="text-xl font-bold">
-              <span v-if="status === 'running'" class="text-[#5A3DAA]">
-                {{ t("home.status.running") }}
-              </span>
-              <span v-else-if="status === 'error'" class="text-[#E6A23C]">
-                {{ t("home.status.error") }}
-              </span>
-              <span v-else class="text-gray-500">
-                {{ t("home.status.stopped") }}
-              </span>
-            </div>
+          <div
+            class="status-pill"
+            :class="{
+              'status-pill--success': status === 'running',
+              'status-pill--danger': status === 'error'
+            }"
+          >
+            <span
+              class="status-dot"
+              :class="{
+                'status-dot--success': status === 'running',
+                'status-dot--danger': status === 'error',
+                'status-dot--muted': status === 'stopped'
+              }"
+            />
+            <span v-if="status === 'running'">{{ t("home.status.running") }}</span>
+            <span v-else-if="status === 'error'">{{ t("home.status.error") }}</span>
+            <span v-else>{{ t("home.status.stopped") }}</span>
+          </div>
+        </div>
 
-            <div v-if="!appStore.loggedIn" class="text-sm text-amber-600">
-              {{ t("home.empty.notLoggedIn") }}
+        <div class="connection-grid">
+          <section class="connection-panel section-panel">
+            <div class="connection-icon" :class="`connection-icon--${status}`">
+              <IconifyIconOffline icon="rocket-launch-rounded" />
             </div>
-            <div v-else-if="status === 'running'" class="text-sm text-gray-500">
-              {{ t("home.status.uptime", { time: uptime }) }}
-            </div>
-            <div v-else-if="status === 'error'" class="text-sm text-amber-600 break-all">
-              {{ appStore.tunnelStatus.connectionError }}
-            </div>
+            <div class="connection-content">
+              <div class="section-title">
+                <span v-if="status === 'running'">{{ t("home.status.running") }}</span>
+                <span v-else-if="status === 'error'">{{ t("home.status.error") }}</span>
+                <span v-else>{{ t("home.status.stopped") }}</span>
+              </div>
+              <div class="connection-meta">
+                <template v-if="!appStore.loggedIn">
+                  {{ t("home.empty.notLoggedIn") }}
+                </template>
+                <template v-else-if="status === 'running'">
+                  {{ t("home.status.uptime", { time: uptime }) }}
+                </template>
+                <template v-else-if="status === 'error'">
+                  {{ appStore.tunnelStatus.connectionError }}
+                </template>
+                <template v-else>
+                  {{ t("home.tunnels.empty") }}
+                </template>
+              </div>
 
-            <div class="flex gap-2">
-              <el-button
-                v-if="!appStore.loggedIn"
-                type="primary"
-                @click="goLogin"
-              >
-                {{ t("home.empty.goLogin") }}
-              </el-button>
-              <el-button
-                v-else
-                type="primary"
-                :disabled="loading"
-                @click="handleToggle"
-              >
-                {{
-                  appStore.tunnelStatus.running
-                    ? t("home.button.stop")
-                    : t("home.button.start")
-                }}
-              </el-button>
-              <el-button text @click="goLogs">{{ t("router.logger.title") }}</el-button>
+              <div class="connection-actions">
+                <el-button v-if="!appStore.loggedIn" type="primary" @click="goLogin">
+                  <IconifyIconOffline icon="login-rounded" />
+                  {{ t("home.empty.goLogin") }}
+                </el-button>
+                <el-button v-else type="primary" :disabled="loading" @click="handleToggle">
+                  <IconifyIconOffline
+                    :icon="appStore.tunnelStatus.running ? 'stop-rounded' : 'play-arrow-rounded'"
+                  />
+                  {{
+                    appStore.tunnelStatus.running
+                      ? t("home.button.stop")
+                      : t("home.button.start")
+                  }}
+                </el-button>
+                <el-button text @click="goLogs">
+                  <IconifyIconOffline icon="file-copy-sharp" />
+                  {{ t("router.logger.title") }}
+                </el-button>
+              </div>
+            </div>
+          </section>
+
+          <div class="metric-grid">
+            <div class="metric-item">
+              <div class="metric-label">{{ t("home.tunnels.title") }}</div>
+              <div class="metric-value">{{ tunnelCount }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">{{ t("resources.table.ip") }}</div>
+              <div class="metric-value metric-value--small">
+                {{ localPorts || "127.0.0.1" }}
+              </div>
             </div>
           </div>
         </div>
 
-        <el-divider />
-
-        <div>
-          <h3 class="mb-2 text-base font-semibold">
-            {{ t("home.tunnels.title") }}
-          </h3>
+        <section class="section-panel">
+          <div class="section-header">
+            <div class="section-title">{{ t("home.tunnels.title") }}</div>
+            <el-button size="small" text @click="goResources">
+              <IconifyIconOffline icon="cloud" />
+              {{ t("router.resources.title") }}
+            </el-button>
+          </div>
           <div
             v-if="!appStore.tunnelStatus.tunnels.length"
-            class="py-8 text-sm text-center text-gray-400"
+            class="empty-state"
           >
+            <div class="empty-icon">
+              <IconifyIconOffline icon="settings-ethernet-rounded" />
+            </div>
             <template v-if="!appStore.tunnelStatus.running">
               {{ t("home.tunnels.empty") }}
             </template>
@@ -198,6 +259,7 @@ const openSsh = (port: number) => {
                   text
                   @click="copy(`127.0.0.1:${row.visitor_port}`)"
                 >
+                  <IconifyIconOffline icon="content-copy-rounded" />
                   {{ t("common.copy") }}
                 </el-button>
               </template>
@@ -210,13 +272,99 @@ const openSsh = (port: number) => {
                   type="primary"
                   @click="openSsh(row.visitor_port)"
                 >
+                  <IconifyIconOffline icon="terminal-rounded" />
                   {{ t("home.tunnels.connectSsh") }}
+                </el-button>
+                <el-button
+                  v-else-if="String(row.service).toLowerCase() === 'rdp'"
+                  size="small"
+                  type="primary"
+                  @click="openRdp(row.visitor_port)"
+                >
+                  <IconifyIconOffline icon="desktop-windows-rounded" />
+                  {{ t("home.tunnels.connectRdp") }}
                 </el-button>
               </template>
             </el-table-column>
           </el-table>
-        </div>
+        </section>
       </div>
     </div>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.connection-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.8fr);
+  gap: 14px;
+}
+
+.connection-panel {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+}
+
+.connection-icon {
+  display: flex;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-status-neutral);
+  font-size: 30px;
+  background: var(--color-hover);
+  border-radius: 8px;
+}
+
+.connection-icon--running {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+}
+
+.connection-icon--error {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.connection-content {
+  min-width: 0;
+}
+
+.connection-meta {
+  max-width: 560px;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.connection-actions :deep(.el-button) {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.metric-value--small {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .connection-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
