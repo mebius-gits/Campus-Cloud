@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./RequestReviewPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { useToast } from "../../../hooks/useToast";
 import { VmRequestsService } from "../../../services/vmRequests";
 
 const TABS = [
-  { key: "pending", label: "待審核" },
-  { key: "approved", label: "已通過" },
-  { key: "rejected", label: "已拒絕" },
-  { key: "all", label: "全部" },
+  { key: "pending", label: "待審核", icon: "pending_actions" },
+  { key: "approved", label: "已通過", icon: "task_alt" },
+  { key: "rejected", label: "已拒絕", icon: "block" },
+  { key: "all", label: "全部", icon: "view_list" },
 ];
+
+const REVIEW_COLUMNS = ["申請資源", "申請人", "時段", "規格", "狀態"];
 
 const STATUS_META = {
   pending: { label: "待審核", tone: "info" },
@@ -92,6 +94,8 @@ export default function RequestReviewPage() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("pending");
   const [requests, setRequests] = useState([]);
+  const [allRequests, setAllRequests] = useState([]);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -106,12 +110,16 @@ export default function RequestReviewPage() {
     [requests, selectedId],
   );
 
-  async function fetchRequests(tab = activeTab) {
+  const fetchRequests = useCallback(async (tab = activeTab) => {
     setLoading(true);
     setError("");
     try {
-      const res = await VmRequestsService.listAll(tab === "all" ? undefined : tab);
+      const [res, allRes] = await Promise.all([
+        VmRequestsService.listAll(tab === "all" ? undefined : tab),
+        VmRequestsService.listAll(undefined),
+      ]);
       const data = res.data ?? [];
+      setAllRequests(allRes.data ?? []);
       setRequests(data);
       setSelectedId((current) => (
         current && data.some((item) => item.id === current)
@@ -120,17 +128,18 @@ export default function RequestReviewPage() {
       ));
     } catch (err) {
       setRequests([]);
+      setAllRequests([]);
       setSelectedId(null);
       setError(err?.message ?? "讀取申請失敗");
     } finally {
       setLoading(false);
     }
-  }
+  }, [activeTab]);
 
   useEffect(() => {
     fetchRequests(activeTab);
     setComment("");
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, fetchRequests]);
 
   useEffect(() => {
     if (!selected?.id) {
@@ -172,6 +181,30 @@ export default function RequestReviewPage() {
 
   const effectiveRequest = context?.request ?? selected;
   const isPending = effectiveRequest?.status === "pending";
+  const stats = useMemo(() => {
+    const source = allRequests.length ? allRequests : requests;
+    const pending = source.filter((request) => request.status === "pending").length;
+    const approved = source.filter((request) => request.status === "approved").length;
+    const rejected = source.filter((request) => request.status === "rejected").length;
+    return { total: source.length, pending, approved, rejected };
+  }, [allRequests, requests]);
+
+  const visibleRequests = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return requests;
+    return requests.filter((request) => {
+      const searchable = [
+        requestTitle(request),
+        requestUser(request),
+        request.resource_type,
+        request.status,
+        request.gpu_mapping_id,
+        specLabel(request),
+        formatRange(request.start_at, request.end_at),
+      ].join(" ").toLowerCase();
+      return searchable.includes(q);
+    });
+  }, [query, requests]);
 
   return (
     <div className={styles.page}>
@@ -180,17 +213,77 @@ export default function RequestReviewPage() {
           <h1 className={styles.pageTitle}>申請審核</h1>
           <p className={styles.pageSubtitle}>審核使用者提交的 VM / LXC 預約申請</p>
         </div>
-        <div className={styles.tabs}>
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`${styles.tab} ${activeTab === tab.key ? styles.tabActive : ""}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className={styles.pageActions}>
+          <button type="button" className={styles.btnSecondary} onClick={() => fetchRequests(activeTab)} disabled={loading}>
+            <MIcon name="sync" size={16} />
+            {loading ? "讀取中..." : "重新整理"}
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.statRow}>
+        <div className={styles.statCard}>
+          <div className={styles.statIcon}>
+            <MIcon name="assignment" size={20} />
+          </div>
+          <div className={styles.statInfo}>
+            <span className={styles.statLabel}>總申請</span>
+            <span className={styles.statValue}>{stats.total}</span>
+          </div>
+        </div>
+        <div className={styles.statCard}>
+          <div className={`${styles.statIcon} ${styles.statIconBusy}`}>
+            <MIcon name="pending_actions" size={20} />
+          </div>
+          <div className={styles.statInfo}>
+            <span className={styles.statLabel}>待審核</span>
+            <span className={styles.statValue}>{stats.pending}</span>
+          </div>
+        </div>
+        <div className={styles.statCard}>
+          <div className={`${styles.statIcon} ${styles.statIconOk}`}>
+            <MIcon name="task_alt" size={20} />
+          </div>
+          <div className={styles.statInfo}>
+            <span className={styles.statLabel}>已通過</span>
+            <span className={styles.statValue}>{stats.approved}</span>
+          </div>
+        </div>
+        <div className={styles.statCard}>
+          <div className={`${styles.statIcon} ${styles.statIconDanger}`}>
+            <MIcon name="block" size={20} />
+          </div>
+          <div className={styles.statInfo}>
+            <span className={styles.statLabel}>已拒絕</span>
+            <span className={styles.statValue}>{stats.rejected}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.tabs}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`${styles.tab} ${activeTab === tab.key ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            <MIcon name={tab.icon} size={16} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <MIcon name="search" size={16} />
+          <input
+            type="text"
+            className={styles.searchInput}
+            placeholder="搜尋主機、申請人、狀態或 GPU"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </div>
       </div>
 
@@ -206,29 +299,44 @@ export default function RequestReviewPage() {
                   重新整理
                 </button>
               </div>
-            ) : requests.length === 0 ? (
+            ) : visibleRequests.length === 0 ? (
               <EmptyState tab={activeTab} />
             ) : (
-              <div className={styles.list}>
-                {requests.map((request) => (
-                  <button
-                    key={request.id}
-                    type="button"
-                    className={`${styles.row} ${selected?.id === request.id ? styles.rowActive : ""}`}
-                    onClick={() => { setSelectedId(request.id); setComment(""); }}
-                  >
-                    <div className={styles.rowIcon}>
-                      <MIcon name={request.resource_type === "vm" ? "computer" : "terminal"} size={20} />
-                    </div>
-                    <div className={styles.rowMain}>
-                      <span className={styles.rowName}>{requestTitle(request)}</span>
-                      <span className={styles.rowMeta}>
-                        {requestUser(request)} · {formatRange(request.start_at, request.end_at)}
-                      </span>
-                    </div>
-                    <StatusBadge status={request.status} />
-                  </button>
-                ))}
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      {REVIEW_COLUMNS.map((column) => (
+                        <th key={column} className={styles.th}>{column}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRequests.map((request) => (
+                      <tr
+                        key={request.id}
+                        className={`${styles.tr} ${selected?.id === request.id ? styles.trActive : ""}`}
+                        onClick={() => { setSelectedId(request.id); setComment(""); }}
+                      >
+                        <td className={styles.td}>
+                          <div className={styles.nameCell}>
+                            <div className={styles.nameIcon}>
+                              <MIcon name={request.resource_type === "vm" ? "computer" : "terminal"} size={18} />
+                            </div>
+                            <div>
+                              <div className={styles.namePrimary}>{requestTitle(request)}</div>
+                              <div className={styles.nameSub}>{request.resource_type === "vm" ? "VM" : "LXC"}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className={styles.td}>{requestUser(request)}</td>
+                        <td className={styles.td}>{formatRange(request.start_at, request.end_at)}</td>
+                        <td className={styles.td}>{specLabel(request)}</td>
+                        <td className={styles.td}><StatusBadge status={request.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
