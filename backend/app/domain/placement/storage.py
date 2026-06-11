@@ -5,8 +5,8 @@ from app.domain.placement.models import (
     StorageSelection,
     WorkingStoragePool,
 )
-from app.domain.placement.scorer import projected_share, storage_contention_penalty
 from app.domain.placement.schemas import ResourceType
+from app.domain.placement.scorer import projected_share, storage_contention_penalty
 
 STORAGE_SPEED_RANK = {"nvme": 0, "ssd": 1, "hdd": 2, "unknown": 3}
 

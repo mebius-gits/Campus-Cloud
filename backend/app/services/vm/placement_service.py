@@ -7,12 +7,6 @@ from datetime import UTC, datetime
 from sqlmodel import Session
 
 from app.domain.placement import advisor as placement_advisor
-from app.domain.placement.schemas import (
-    NodeCapacity,
-    PlacementPlan,
-    PlacementRequest,
-    ResourceType,
-)
 from app.domain.placement import policy as placement_policy
 from app.domain.placement import scorer as placement_scorer
 from app.domain.placement.models import (
@@ -29,6 +23,12 @@ from app.domain.placement.models import (
 )
 from app.domain.placement.models import (
     WorkingStoragePool as _WorkingStoragePool,
+)
+from app.domain.placement.schemas import (
+    NodeCapacity,
+    PlacementPlan,
+    PlacementRequest,
+    ResourceType,
 )
 from app.domain.placement.storage import (
     reserve_storage_pool as _reserve_storage_pool,
