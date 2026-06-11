@@ -50,8 +50,15 @@ def _patch_availability(monkeypatch: MonkeyPatch) -> None:
         lambda request: ("lxc", "Prefer LXC for this request."),
     )
 
-    def fake_plan(*, request, node_capacities, effective_resource_type, resource_type_reason):
-        del request, node_capacities, effective_resource_type, resource_type_reason
+    def fake_plan(
+        *,
+        request,
+        node_capacities,
+        effective_resource_type,
+        resource_type_reason,
+        session=None,
+    ):
+        del request, node_capacities, effective_resource_type, resource_type_reason, session
         return PlacementPlan(
             feasible=True,
             requested_resource_type="lxc",
@@ -83,7 +90,6 @@ def _patch_availability(monkeypatch: MonkeyPatch) -> None:
         "build_plan",
         fake_plan,
     )
-
 
 def test_preview_availability_returns_hourly_suggestions(
     client: TestClient,
