@@ -798,21 +798,22 @@ def _run_deployment(task: DeploymentTask, request_data: dict, password: str) -> 
             container_storage=data_storage,
             net_config=request_data.get("net_config"),
         )
-        # 安全地記錄 inline env：用遮罩密碼重新產生一份，
-        # 確保 log 內容完全不經手真實密碼
-        safe_env = _build_inline_env(
-            hostname=request_data["hostname"],
-            password="***",
-            cpu=request_data["cpu"],
-            ram=request_data["ram"],
-            disk=request_data["disk"],
-            unprivileged=request_data["unprivileged"],
-            ssh=request_data["ssh"],
-            template_storage=iso_storage,
-            container_storage=data_storage,
-            net_config=request_data.get("net_config"),
+        # 安全地記錄部署參數：只記錄非敏感欄位，
+        # 不經過 _build_inline_env，確保 log 與密碼完全無資料流關聯
+        logger.info(
+            "Inline env params: hostname=%s cpu=%s ram=%s disk=%s"
+            " unprivileged=%s ssh=%s template_storage=%s container_storage=%s"
+            " net_config=%s",
+            request_data["hostname"],
+            request_data["cpu"],
+            request_data["ram"],
+            request_data["disk"],
+            request_data["unprivileged"],
+            request_data["ssh"],
+            iso_storage,
+            data_storage,
+            request_data.get("net_config"),
         )
-        logger.info("Inline env (sanitised): %s", safe_env)
 
         # 2.6 下載 build.func 並修補升級提示函式，避免無人值守時卡住。
         #
