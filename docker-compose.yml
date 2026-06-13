@@ -1,10 +1,10 @@
-﻿## SkyLab — 完整單檔 Docker Compose
-## 與專案內 compose.yml + compose.override.yml + compose.traefik.yml 等價，
-## 並補上後端 infrastructure/redis 實際使用的 Redis 服務。
+﻿## SkyLab — Docker Compose（單一檔案，全棧）
+## 本專案唯一的 Compose 檔，涵蓋 proxy / db / redis / backend / frontend 等所有服務
+## （含後端 infrastructure/redis 需要的 Redis 服務）。
 ##
 ## 使用方式：
-##   docker compose -f docker-compose.yml up -d        # 一鍵啟動全部
-##   docker compose -f docker-compose.yml watch        # 開發模式 + 熱重載
+##   docker compose up -d        # 一鍵啟動全部（標準檔名，自動載入，不需 -f）
+##   docker compose watch        # 開發模式 + 熱重載
 ##
 ## 生產環境若已有外部 traefik-public 網路，請：
 ##   1. 移除 proxy 服務（或用 profiles: [dev] 排除）
@@ -44,34 +44,23 @@ x-backend-env: &backend-env
 services:
 
   # ---------------------------------------------------------------------------
-  # 反向代理（本地開發用，生產請改用 compose.traefik.yml）
+  # Nginx 反向代理（單一對外入口 :80；同源分流：/api、/ws → backend，其餘 → frontend）
+  # 取代原本的 Traefik proxy。設定檔見 ./nginx/default.conf
   # ---------------------------------------------------------------------------
-  proxy:
-    image: traefik:3.6
+  nginx:
+    image: nginx:alpine
     restart: unless-stopped
     ports:
       - "80:80"
-      - "8090:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    command:
-      - --providers.docker
-      - --providers.docker.constraints=Label(`traefik.constraint-label`, `traefik-public`)
-      - --providers.docker.exposedbydefault=false
-      - --entrypoints.http.address=:80
-      - --entrypoints.https.address=:443
-      - --accesslog
-      - --log
-      - --log.level=DEBUG
-      - --api
-      - --api.insecure=true
-    labels:
-      - traefik.enable=true
-      - traefik.constraint-label=traefik-public
-      - traefik.http.middlewares.https-redirect.contenttype.autodetect=false
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
-      - traefik-public
       - default
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
 
   # ---------------------------------------------------------------------------
   # PostgreSQL
@@ -254,7 +243,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+        - VITE_API_URL=${VITE_API_URL:-}
         - NODE_ENV=${NODE_ENV:-development}
     labels:
       - traefik.enable=true
@@ -268,6 +257,25 @@ services:
       - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-https.tls=true
       - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-https.tls.certresolver=le
       - traefik.http.routers.${STACK_NAME?Variable not set}-frontend-http.middlewares=https-redirect
+
+  # ---------------------------------------------------------------------------
+  # Frontend New（重構中的新版前端，與舊版並行，共用同一個 backend/db）
+  # ---------------------------------------------------------------------------
+  frontend_new:
+    image: '${DOCKER_IMAGE_FRONTEND_NEW:-frontend-new}:${TAG-latest}'
+    restart: always
+    ports:
+      - "5174:80"
+    networks:
+      - default
+    depends_on:
+      backend:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: frontend_new/Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-}
 
   # ---------------------------------------------------------------------------
   # Playwright（E2E，預設不啟動，需要時：--profile e2e）
@@ -308,5 +316,5 @@ networks:
     driver: bridge
   traefik-public:
     # 本地開發為 false（由本檔的 proxy 服務建立）
-    # 生產：請改為 true，並改用 compose.traefik.yml 提供的 Traefik
+    # 生產：若改用外部 Traefik，請設為 true 並移除本檔 proxy 服務
     external: false
