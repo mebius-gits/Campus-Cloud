@@ -53,14 +53,14 @@ onMounted(() => {
     </ul>
     <div class="mb-2 menu-footer">
       <div
-        class="flex flex-col gap-1 justify-center items-center text-[12px] text-[#6b7280]"
+        class="flex flex-col gap-1 justify-center items-center text-[12px]"
       >
         <span
-          class="inline-block w-2 h-2 rounded-full"
+          class="footer-status-dot"
           :class="{
-            'bg-green-500': statusBadge.type === 'success',
-            'bg-amber-500': statusBadge.type === 'warning',
-            'bg-gray-400': statusBadge.type === 'info'
+            'footer-status-dot--success': statusBadge.type === 'success',
+            'footer-status-dot--danger': statusBadge.type === 'warning',
+            'footer-status-dot--muted': statusBadge.type === 'info'
           }"
         />
       </div>
@@ -70,3 +70,25 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.footer-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-status-neutral);
+}
+
+.footer-status-dot--success {
+  background: var(--color-success);
+}
+
+.footer-status-dot--danger {
+  background: var(--color-danger);
+}
+
+.footer-status-dot--muted {
+  background: var(--color-status-neutral);
+}
+</style>

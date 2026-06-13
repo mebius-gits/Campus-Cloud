@@ -10,11 +10,14 @@ import {
 import { currentUserQueryOptions } from "@/features/auth/queries"
 import { queryKeys } from "@/lib/queryKeys"
 import { AuthSessionService } from "@/services/authSession"
+import { isTokenExpiredOrNearExpiry } from "@/services/openApiAuth"
 import { handleError } from "@/utils"
 import useCustomToast from "./useCustomToast"
 
 const isLoggedIn = () => {
-  return localStorage.getItem("access_token") !== null
+  const token = localStorage.getItem("access_token")
+  if (!token) return false
+  return !isTokenExpiredOrNearExpiry(token, Date.now(), 0)
 }
 
 const useAuth = (options?: {

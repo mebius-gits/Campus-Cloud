@@ -192,3 +192,90 @@ def test_login_with_argon2_password_keeps_hash(client: TestClient, db: Session) 
 
     assert user.hashed_password == original_hash
     assert user.hashed_password.startswith("$argon2")
+
+
+class _GoogleTokenInfoResponse:
+    def __init__(self, data: dict[str, str], status_code: int = 200) -> None:
+        self._data = data
+        self.status_code = status_code
+
+    def json(self) -> dict[str, str]:
+        return self._data
+
+
+class _GoogleTokenInfoClient:
+    def __init__(self, response: _GoogleTokenInfoResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> "_GoogleTokenInfoClient":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def get(self, *args: object, **kwargs: object) -> _GoogleTokenInfoResponse:
+        return self._response
+
+
+def _mock_google_tokeninfo(monkeypatch, data: dict[str, str]) -> None:
+    response = _GoogleTokenInfoResponse(data)
+
+    def client_factory(*args: object, **kwargs: object) -> _GoogleTokenInfoClient:
+        return _GoogleTokenInfoClient(response)
+
+    monkeypatch.setattr("app.services.user.auth_service.httpx.AsyncClient", client_factory)
+
+
+def test_google_login_is_case_insensitive_for_existing_user(
+    client: TestClient, db: Session, monkeypatch
+) -> None:
+    email = "MixedCaseGoogle@example.com"
+    user_create = UserCreate(
+        email=email,
+        full_name="Google User",
+        password=random_lower_string(),
+        is_active=True,
+        is_superuser=False,
+    )
+    create_user(session=db, user_create=user_create)
+    db.commit()
+
+    with patch("app.services.user.auth_service.settings.GOOGLE_CLIENT_ID", "google-client"):
+        _mock_google_tokeninfo(
+            monkeypatch,
+            {
+                "aud": "google-client",
+                "email": email.lower(),
+                "email_verified": "true",
+            },
+        )
+        r = client.post(
+            f"{settings.API_V1_STR}/login/google",
+            json={"id_token": "valid-google-token"},
+        )
+
+    assert r.status_code == 200
+    tokens = r.json()
+    assert tokens["access_token"]
+    assert tokens["refresh_token"]
+
+
+def test_google_login_unregistered_email_has_clear_error(
+    client: TestClient, monkeypatch
+) -> None:
+    with patch("app.services.user.auth_service.settings.GOOGLE_CLIENT_ID", "google-client"):
+        _mock_google_tokeninfo(
+            monkeypatch,
+            {
+                "aud": "google-client",
+                "email": "missing-google-user@example.com",
+                "email_verified": "true",
+            },
+        )
+        r = client.post(
+            f"{settings.API_V1_STR}/login/google",
+            json={"id_token": "valid-google-token"},
+        )
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Google account is not registered"
