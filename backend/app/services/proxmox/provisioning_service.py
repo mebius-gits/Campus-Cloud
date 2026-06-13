@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -53,13 +54,59 @@ def should_start_now(db_request) -> bool:
     return start_at <= _utc_now()
 
 
+def _ensure_resource_stopped(
+    node: str,
+    vmid: int,
+    resource_type: str,
+    *,
+    timeout_seconds: float = 30.0,
+) -> None:
+    """Stop a resource and wait until Proxmox reports it as stopped."""
+    try:
+        status = proxmox_service.get_status(node, vmid, resource_type)
+    except Exception:
+        logger.warning(
+            "Failed to fetch %s %s status before stop", resource_type, vmid
+        )
+        return
+
+    if status.get("status") != "running":
+        return
+
+    proxmox_service.control(node, vmid, resource_type, "stop")
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        time.sleep(1)
+        try:
+            status = proxmox_service.get_status(node, vmid, resource_type)
+        except Exception:
+            logger.debug(
+                "Waiting for %s %s stop: status check failed",
+                resource_type,
+                vmid,
+            )
+            continue
+        if status.get("status") == "stopped":
+            return
+
+    logger.warning(
+        "%s %s still appears running after stop timeout", resource_type, vmid
+    )
+    raise ProxmoxError(
+        f"{resource_type} {vmid} is still running after stop timeout"
+    )
+
+
 def _cleanup_failed_resource(node: str, vmid: int, resource_type: str) -> None:
     """Best-effort cleanup for a partially provisioned resource."""
     try:
         try:
-            status = proxmox_service.get_status(node, vmid, resource_type)
-            if status.get("status") == "running":
-                proxmox_service.control(node, vmid, resource_type, "stop")
+            _ensure_resource_stopped(
+                node,
+                vmid,
+                resource_type,
+                timeout_seconds=45.0,
+            )
         except Exception:
             logger.warning("Failed to stop %s %s during cleanup", resource_type, vmid)
 
@@ -427,6 +474,7 @@ def create_vm(
                 logger.error("GPU 可用性檢查失敗 (%s): %s", gpu_mapping_id, e)
                 raise ProxmoxError(f"無法驗證 GPU '{gpu_mapping_id}'：{e}")
             config_updates["hostpci0"] = f"mapping={gpu_mapping_id}"
+        _ensure_resource_stopped(target_node, new_vmid, "qemu")
         proxmox_service.update_config(target_node, new_vmid, "qemu", **config_updates)
 
         if vm_data.disk_size:
@@ -737,6 +785,7 @@ def execute_provision(plan: dict) -> tuple[int, str]:
                     logger.error("GPU 可用性檢查失敗 (%s): %s", plan["gpu_mapping_id"], e)
                     raise ProxmoxError(f"無法驗證 GPU '{plan['gpu_mapping_id']}'：{e}")
                 config_updates["hostpci0"] = f"mapping={plan['gpu_mapping_id']}"
+            _ensure_resource_stopped(actual_node, new_vmid, "qemu")
             proxmox_service.update_config(actual_node, new_vmid, "qemu", **config_updates)
 
             if plan.get("disk_size"):

@@ -22,7 +22,11 @@ const RESOURCE_TYPE_MAP = {
    所以「重試／撤銷」必須同時看 vmid：vmid 已存在代表機器已開出來，
    重試會把使用者關機的 VM 重新開機、撤銷會讓 request 與活著的資源脫鉤。 */
 function canRetry(req) {
-  return req.status === "approved" && req.vmid == null;
+  return (
+    req.status === "approved" &&
+    req.vmid == null &&
+    req.migration_status === "failed"
+  );
 }
 
 function canCancel(req) {
@@ -397,6 +401,7 @@ export default function RequestsPage({ intent }) {
       <RequestFormPage
         key="create"
         className={styles.animSlideInRight}
+        quickStartPreset={intent?.quickStartPreset}
         onBack={() => { setReturning(true); setView(VIEW_LIST); }}
       />
     );
