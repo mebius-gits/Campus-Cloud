@@ -4,7 +4,7 @@ import { apiPost } from "../../services/api";
 import styles from "./LoginPage.module.scss";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
-const ENABLE_SIGNUP = import.meta.env.VITE_ENABLE_SIGNUP !== "false";
+const ENABLE_SIGNUP = import.meta.env.ENABLE_SIGNUP !== "false";
 let googleIdentityScriptPromise;
 
 function loadGoogleIdentityScript() {

@@ -190,7 +190,7 @@ services:
       dockerfile: frontend_new/Dockerfile
       args:
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-        VITE_ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
+        ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
     ports:
       - "5174:80"
     depends_on:
