@@ -183,10 +183,6 @@ def list_all(
 
 
 DELETED_TOMBSTONE_DAYS = 30
-"""How long after a user-initiated deletion to keep showing the tombstone on
-their resources page. Keep it short enough that the list doesn't grow
-forever; long enough that the user notices the change after returning from
-a few days off."""
 
 
 def list_by_user(
@@ -289,15 +285,6 @@ def list_by_user(
             )
             if req.vmid:
                 shown_vmids.add(req.vmid)
-
-        # 3. Deletion tombstones (recent self-initiated deletions).
-        result.extend(
-            _list_user_deletion_tombstones(
-                session=session,
-                user_id=user_id,
-                excluded_vmids=shown_vmids,
-            )
-        )
 
         return result
     except Exception as e:

@@ -12,6 +12,10 @@ import AiSidePanel from "./AiSidePanel";
 import FastTemplatesPanel from "../../../components/FastTemplatesPanel/FastTemplatesPanel";
 import AvailabilityPanel from "../../../components/AvailabilityPanel/AvailabilityPanel";
 import MIcon from "../../../components/MIcon";
+import {
+  getQuickStartPreset,
+  pickQuickStartVmTemplateId,
+} from "./quickStartPresets";
 
 /* Hostname normalization — preserves alphanumeric, replaces others with hyphen */
 function normalizeHostname(value) {
@@ -89,7 +93,7 @@ const MSG = {
   endInPast:        "結束時間必須晚於現在",
 };
 
-export default function RequestFormPage({ onBack, className, quickTemplateSlug }) {
+export default function RequestFormPage({ onBack, className, quickTemplateSlug, quickStartPreset }) {
   const { user }  = useAuth();
   const toast     = useToast();
   const isPrivileged = user?.is_superuser || user?.role === "admin" || user?.role === "teacher";
@@ -150,6 +154,10 @@ export default function RequestFormPage({ onBack, className, quickTemplateSlug }
   const [vmLoading, setVmLoading]       = useState(false);
   const [gpuOptions, setGpuOptions]     = useState([]);
   const [gpuLoading, setGpuLoading]     = useState(false);
+  const activeQuickStart = useMemo(
+    () => getQuickStartPreset(quickStartPreset),
+    [quickStartPreset],
+  );
 
   /* ── API fetches ── */
   useEffect(() => {
@@ -197,6 +205,34 @@ export default function RequestFormPage({ onBack, className, quickTemplateSlug }
       .catch(() => {})
       .finally(() => setVmLoading(false));
   }, [resourceType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!activeQuickStart) return;
+    setResourceType(activeQuickStart.resourceType);
+    setMode("immediate");
+    setServiceTemplateName("");
+    setServiceTemplateSlug("");
+    setForm((prev) => ({
+      ...prev,
+      hostname: prev.hostname || normalizeHostname(`${activeQuickStart.id}-${Date.now().toString().slice(-4)}`),
+      cores: activeQuickStart.defaultCores,
+      memory: activeQuickStart.defaultMemoryMb,
+      disk_size: activeQuickStart.defaultDiskGb,
+      username: prev.username || activeQuickStart.defaultUsername,
+      os_info: activeQuickStart.osInfo,
+      reason: prev.reason || activeQuickStart.defaultReason,
+      start_at: "",
+      end_at: "",
+      immediate_no_end: true,
+      gpu_mapping_id: "",
+    }));
+  }, [activeQuickStart]);
+
+  useEffect(() => {
+    if (!activeQuickStart || resourceType !== "vm" || form.template_id || vmTemplates.length === 0) return;
+    const templateId = pickQuickStartVmTemplateId(vmTemplates, activeQuickStart);
+    if (templateId) set("template_id", templateId);
+  }, [activeQuickStart, resourceType, form.template_id, vmTemplates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canLoadGpu = resourceType === "vm" &&
     (mode === "immediate" || (form.start_at && form.end_at));
@@ -382,6 +418,7 @@ export default function RequestFormPage({ onBack, className, quickTemplateSlug }
         os_info:   form.os_info || undefined,
         reason:    form.reason.trim(),
         storage:   "local-lvm",
+        environment_type: activeQuickStart?.defaultEnvironmentType || undefined,
         ...(resourceType === "lxc"
           ? {
               ostemplate: form.ostemplate,

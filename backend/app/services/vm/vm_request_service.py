@@ -901,6 +901,14 @@ def retry(
         raise BadRequestError(
             f"Only approved VM requests can be retried (current={db_request.status.value})"
         )
+    if db_request.vmid is not None:
+        raise BadRequestError(
+            "This request has already been provisioned; control or delete the resource instead."
+        )
+    if db_request.migration_status != VMMigrationStatus.failed:
+        raise BadRequestError(
+            "Only failed provisioning attempts can be retried."
+        )
 
     submit_sync(
         vm_request_schedule_service.process_single_request_start,
