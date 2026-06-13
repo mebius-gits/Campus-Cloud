@@ -72,12 +72,14 @@ onUnmounted(() => {
   <div class="main">
     <breadcrumb />
     <div class="app-container-breadcrumb">
-      <div
-        class="flex flex-col gap-6 p-6 w-full h-full bg-white rounded drop-shadow-lg overflow-auto"
-      >
-        <h2 class="text-lg font-semibold">{{ t("config.title") }}</h2>
+      <div class="page-surface">
+        <div class="page-header">
+          <div>
+            <div class="page-title">{{ t("config.title") }}</div>
+          </div>
+        </div>
 
-        <el-form label-width="140px" label-position="left">
+        <el-form class="settings-form section-panel" label-width="140px" label-position="left">
           <el-form-item :label="t('config.language.label')">
             <el-radio-group v-model="form.language">
               <el-radio value="zh-CN">{{ t("config.language.zhCN") }}</el-radio>
@@ -87,14 +89,14 @@ onUnmounted(() => {
 
           <el-form-item :label="t('config.autoStart.label')">
             <el-switch v-model="form.launchAtStartup" />
-            <div class="ml-3 text-xs text-gray-400">
+            <div class="form-hint">
               {{ t("config.autoStart.tips") }}
             </div>
           </el-form-item>
 
           <el-form-item :label="t('config.backend.label')">
             <el-input v-model="form.backendUrl" placeholder="http://localhost:8000" />
-            <div class="mt-1 text-xs text-gray-400">
+            <div class="form-hint form-hint--block">
               {{ t("config.backend.tips") }}
             </div>
           </el-form-item>
@@ -123,3 +125,21 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.settings-form {
+  padding: 20px 20px 6px;
+}
+
+.form-hint {
+  margin-left: 12px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.form-hint--block {
+  width: 100%;
+  margin-top: 6px;
+  margin-left: 0;
+}
+</style>

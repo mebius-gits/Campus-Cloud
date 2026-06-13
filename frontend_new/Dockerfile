@@ -15,6 +15,9 @@ COPY frontend/src/json /app/frontend/src/json
 COPY ./frontend_new /app/frontend_new
 
 ARG VITE_API_URL
+ARG VITE_GOOGLE_CLIENT_ID
+ARG ENABLE_SIGNUP
+ENV ENABLE_SIGNUP=${ENABLE_SIGNUP}
 
 RUN bun run build
 
