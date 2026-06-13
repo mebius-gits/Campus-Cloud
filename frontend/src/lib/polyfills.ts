@@ -7,10 +7,7 @@
 // it using `crypto.getRandomValues`, which is available in all secure-and-
 // non-secure contexts, to generate an RFC 4122 v4 UUID.
 
-if (
-  typeof crypto !== "undefined" &&
-  typeof crypto.randomUUID !== "function"
-) {
+if (typeof crypto !== "undefined" && typeof crypto.randomUUID !== "function") {
   const polyfillRandomUUID =
     (): `${string}-${string}-${string}-${string}-${string}` => {
       const bytes = crypto.getRandomValues(new Uint8Array(16))
