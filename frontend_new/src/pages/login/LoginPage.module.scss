@@ -186,6 +186,48 @@
   }
 }
 
+.oauthArea {
+  margin-top: $spacing-16;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: $spacing-8;
+  margin-bottom: $spacing-16;
+  color: var(--color-text-muted);
+  font-size: $font-size-14;
+
+  &::before,
+  &::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+  }
+}
+
+.googleButton {
+  min-height: 44px;
+  width: 100%;
+  @include flex-center;
+
+  > div {
+    width: 100%;
+  }
+}
+
+.googleBusy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.oauthHint {
+  margin-top: $spacing-8;
+  color: var(--color-text-secondary);
+  font-size: $font-size-14;
+}
+
 .btn {
   width: 100%;
   padding: 10px $spacing-16;

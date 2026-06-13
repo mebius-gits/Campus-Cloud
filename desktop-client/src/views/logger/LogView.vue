@@ -91,7 +91,7 @@ watch(
       v-loading="loading"
       :element-loading-text="t('logger.loading.text')"
       element-loading-background="rgba(15, 15, 35, 0.8)"
-      class="overflow-y-auto flex-1 p-2 w-full rounded drop-shadow-lg"
+      class="overflow-y-auto flex-1 p-2 w-full rounded"
     >
       <div
         v-for="record in filteredLogRecords"

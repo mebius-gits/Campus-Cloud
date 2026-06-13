@@ -103,7 +103,7 @@ async def google_login(*, session: Session, id_token: str) -> Token:
     user = user_repo.get_user_by_email(session=session, email=email)
     if not user:
         _fail("user not found", email)
-        raise BadRequestError("Invalid Google token")
+        raise BadRequestError("Google account is not registered")
     if not user.is_active:
         _fail("inactive user", email, user.id)
         raise BadRequestError("Inactive user")
