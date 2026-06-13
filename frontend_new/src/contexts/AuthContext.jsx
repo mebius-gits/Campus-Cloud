@@ -10,7 +10,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { AuthStorage } from "../services/auth";
-import { apiGet, apiPostForm, refreshTokens } from "../services/api";
+import { apiGet, apiPost, apiPostForm, refreshTokens } from "../services/api";
 
 const AuthContext = createContext(null);
 
@@ -109,8 +109,19 @@ export function AuthProvider({ children }) {
     scheduleTokenRefresh();
   }, [scheduleTokenRefresh]);
 
+  const googleLogin = useCallback(async (idToken) => {
+    const tokens = await apiPost("/api/v1/login/google", {
+      id_token: idToken,
+    });
+    AuthStorage.setTokens(tokens);
+
+    const me = await apiGet("/api/v1/users/me");
+    setUser(me);
+    scheduleTokenRefresh();
+  }, [scheduleTokenRefresh]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, googleLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );
