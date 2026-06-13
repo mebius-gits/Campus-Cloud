@@ -1,4 +1,8 @@
-﻿import { QueryClientProvider } from "@tanstack/react-query"
+﻿// MUST come first — polyfills `crypto.randomUUID` for HTTP non-secure contexts
+// (LAN IP deploy) before any dependency's top-level code can throw.
+import "./lib/polyfills"
+
+import { QueryClientProvider } from "@tanstack/react-query"
 import { createRouter, RouterProvider } from "@tanstack/react-router"
 import type { AxiosError } from "axios"
 import { StrictMode } from "react"
@@ -66,7 +70,10 @@ client.instance.interceptors.response.use(
   },
 )
 
-const router = createRouter({ routeTree })
+// 跟 vite `base` 同步：production build 時 BASE_URL = "/old/"，
+// router basepath 接收不含尾巴 slash 的字串。
+const basepath = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined
+const router = createRouter({ routeTree, basepath })
 
 declare module "@tanstack/react-router" {
   interface Register {
