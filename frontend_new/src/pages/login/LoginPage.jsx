@@ -1,7 +1,38 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiPost } from "../../services/api";
 import styles from "./LoginPage.module.scss";
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+const ENABLE_SIGNUP = import.meta.env.ENABLE_SIGNUP !== "false";
+let googleIdentityScriptPromise;
+
+function loadGoogleIdentityScript() {
+  if (typeof window === "undefined") return Promise.reject(new Error("Browser unavailable"));
+  if (window.google?.accounts?.id) return Promise.resolve();
+
+  if (!googleIdentityScriptPromise) {
+    googleIdentityScriptPromise = new Promise((resolve, reject) => {
+      const existingScript = document.getElementById("google-identity-services");
+      if (existingScript) {
+        existingScript.addEventListener("load", resolve, { once: true });
+        existingScript.addEventListener("error", reject, { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.id = "google-identity-services";
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  return googleIdentityScriptPromise;
+}
 
 function readResetTokenFromUrl() {
   if (typeof window === "undefined") return "";
@@ -56,14 +87,80 @@ function PasswordField({ id, label, value, onChange, disabled, placeholder }) {
   );
 }
 
+function GoogleSignInButton({ onCredential, onError }) {
+  const buttonRef = useRef(null);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+
+    let cancelled = false;
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled || !buttonRef.current) return;
+
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => {
+            const credential = response?.credential;
+            if (!credential) {
+              onError("Google 登入未取得憑證，請再試一次");
+              return;
+            }
+            onCredential(credential);
+          },
+          ux_mode: "popup",
+        });
+
+        buttonRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          theme: "outline",
+          size: "large",
+          type: "standard",
+          text: "signin_with",
+          shape: "rectangular",
+          logo_alignment: "left",
+          width: Math.min(buttonRef.current.clientWidth || 360, 400),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) onError("無法載入 Google 登入，請檢查網路後再試一次");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onCredential, onError]);
+
+  if (!GOOGLE_CLIENT_ID) return null;
+  return <div ref={buttonRef} className={styles.googleButton} aria-label="Google 登入" />;
+}
+
+function formatGoogleLoginError(err) {
+  const message = err?.message ?? "";
+  if (message === "Google account is not registered") {
+    return "此 Google 信箱尚未註冊，請先建立帳號";
+  }
+  if (message === "Inactive user") {
+    return "此帳號尚未啟用，請等待管理員審核";
+  }
+  if (message === "Invalid Google token audience") {
+    return "Google Client ID 設定不一致，請確認前後端環境變數";
+  }
+  if (message === "Invalid Google token") {
+    return "Google 登入憑證無效，請重新登入 Google 後再試一次";
+  }
+  return message || "Google 登入失敗，請稍後再試";
+}
+
 /* ─── 登入 ──────────────────────────────────────────────── */
 
 function LoginView({ onForgot, onRegister }) {
-  const { login } = useAuth();
+  const { login, googleLogin } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -77,6 +174,22 @@ function LoginView({ onForgot, onRegister }) {
       setLoading(false);
     }
   };
+
+  const handleGoogleCredential = useCallback(async (credential) => {
+    setError("");
+    setGoogleLoading(true);
+    try {
+      await googleLogin(credential);
+    } catch (err) {
+      setError(formatGoogleLoginError(err));
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [googleLogin]);
+
+  const handleGoogleError = useCallback((message) => {
+    setError(message);
+  }, []);
 
   return (
     <>
@@ -121,12 +234,29 @@ function LoginView({ onForgot, onRegister }) {
         </button>
       </form>
 
-      <p className={styles.footerText}>
-        還沒有帳號？{" "}
-        <button type="button" className={styles.link} onClick={onRegister}>
-          立即註冊
-        </button>
-      </p>
+      {GOOGLE_CLIENT_ID && (
+        <div className={styles.oauthArea}>
+          <div className={styles.divider}>
+            <span>或</span>
+          </div>
+          <div className={googleLoading ? styles.googleBusy : undefined}>
+            <GoogleSignInButton
+              onCredential={handleGoogleCredential}
+              onError={handleGoogleError}
+            />
+          </div>
+          {googleLoading && <p className={styles.oauthHint}>Google 登入中…</p>}
+        </div>
+      )}
+
+      {ENABLE_SIGNUP && (
+        <p className={styles.footerText}>
+          還沒有帳號？{" "}
+          <button type="button" className={styles.link} onClick={onRegister}>
+            立即註冊
+          </button>
+        </p>
+      )}
     </>
   );
 }
@@ -410,13 +540,16 @@ export default function LoginPage() {
     setView("login");
   };
 
+  const showRegister = ENABLE_SIGNUP && view === "register";
+
   return (
     <div className={styles.page}>
       <div className={styles.card}>
         {view === "login"    && <LoginView    onForgot={() => setView("forgot")}   onRegister={() => setView("register")} />}
         {view === "forgot"   && <ForgotView   onBack={() => setView("login")} />}
-        {view === "register" && <RegisterView onBack={() => setView("login")} />}
+        {showRegister && <RegisterView onBack={() => setView("login")} />}
         {view === "reset"    && <ResetView    token={resetToken} onDone={goLogin} />}
+        {view === "register" && !ENABLE_SIGNUP && <LoginView onForgot={() => setView("forgot")} onRegister={() => setView("login")} />}
       </div>
     </div>
   );

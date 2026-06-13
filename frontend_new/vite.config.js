@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import fs from "fs";
@@ -28,24 +28,32 @@ function templatesPlugin() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), templatesPlugin()],
-  server: {
-    port: 5174,
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "src"),
+export default defineConfig(({ mode }) => {
+  const rootEnv = loadEnv(mode, path.resolve(__dirname, ".."), "");
+  const enableSignup = process.env.ENABLE_SIGNUP ?? rootEnv.ENABLE_SIGNUP ?? "true";
+
+  return {
+    define: {
+      "import.meta.env.ENABLE_SIGNUP": JSON.stringify(enableSignup),
     },
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        additionalData: `
+    plugins: [react(), templatesPlugin()],
+    server: {
+      port: 5174,
+    },
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "src"),
+      },
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          additionalData: `
           @use "@/assets/styles/variables" as *;
           @use "@/assets/styles/mixins" as *;
         `,
+        },
       },
     },
-  },
+  };
 });

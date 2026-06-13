@@ -55,13 +55,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="flex flex-col justify-center items-center w-full h-screen bg-gradient-to-br from-slate-50 to-slate-200"
-  >
-    <div class="flex flex-col items-center p-10 max-w-md bg-white rounded-2xl shadow-xl">
-      <img src="/logo/only/128x128.png" class="mb-4 w-20 h-20" alt="Logo" />
-      <h1 class="mb-2 text-2xl font-bold">{{ t("login.title") }}</h1>
-      <p class="mb-6 text-sm text-center text-gray-500">
+  <div class="login-page">
+    <div class="login-panel">
+      <img src="/logo/only/128x128.png" class="login-logo" alt="Logo" />
+      <h1 class="login-title">{{ t("login.title") }}</h1>
+      <p class="login-description">
         {{ t("login.description") }}
       </p>
       <el-button
@@ -84,3 +82,51 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style lang="scss" scoped>
+.login-page {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-panel {
+  display: flex;
+  width: min(100%, 400px);
+  flex-direction: column;
+  align-items: center;
+  padding: 32px;
+  text-align: center;
+  background: var(--color-surface-glass);
+  border: 1px solid var(--color-surface-glass-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(16px) saturate(1.25);
+}
+
+.login-logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.login-title {
+  margin-bottom: 8px;
+  color: var(--color-text-primary);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.login-description {
+  margin-bottom: 24px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+</style>
