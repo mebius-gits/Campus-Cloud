@@ -42,6 +42,8 @@ class GatewayConfig:
     port: int
     request_timeout: int
     max_inflight: int
+    per_model_max_inflight: int
+    queue_timeout: float
     default_model: str
 
 
@@ -53,6 +55,10 @@ class GatewayRoute:
     model_name: str
     base_url: str
     api_key: str
+    max_inflight: int
+    queue_timeout: float
+    scheduling_policy: str
+    capabilities: dict[str, Any]
 
 
 def _resolve_path(file_path: str | Path) -> Path:
@@ -87,6 +93,8 @@ def load_gateway_config(base_env_file: str | Path | None = None) -> GatewayConfi
         port=int(os.getenv("GATEWAY_PORT", "3000")),
         request_timeout=int(os.getenv("GATEWAY_REQUEST_TIMEOUT", "300")),
         max_inflight=int(os.getenv("GATEWAY_MAX_INFLIGHT", "48")),
+        per_model_max_inflight=int(os.getenv("GATEWAY_PER_MODEL_MAX_INFLIGHT", "16")),
+        queue_timeout=float(os.getenv("GATEWAY_QUEUE_TIMEOUT", "30")),
         default_model=os.getenv("GATEWAY_DEFAULT_MODEL", ""),
     )
 
@@ -182,8 +190,7 @@ def load_model_instances(
             "generation_config": "GENERATION_CONFIG",
             "enable_request_id_headers": "ENABLE_REQUEST_ID_HEADERS",
             "scheduling_policy": "SCHEDULING_POLICY",
-            "max_num_partial_prefills": "MAX_NUM_PARTIAL_PREFILLS",
-            "max_long_partial_prefills": "MAX_LONG_PARTIAL_PREFILLS",
+            "enable_chunked_prefill": "ENABLE_CHUNKED_PREFILL",
             "long_prefill_token_threshold": "LONG_PREFILL_TOKEN_THRESHOLD",
             "limit_mm_per_prompt": "LIMIT_MM_PER_PROMPT",
             "moe_backend": "MOE_BACKEND",
@@ -226,15 +233,39 @@ def load_model_instances(
     return instances
 
 
-def build_gateway_routes(instances: list[ModelInstanceConfig]) -> dict[str, GatewayRoute]:
+def build_gateway_routes(
+    instances: list[ModelInstanceConfig],
+    default_max_inflight: int | None = None,
+    default_queue_timeout: float | None = None,
+) -> dict[str, GatewayRoute]:
     """由模型實例建立 Gateway 路由表。"""
     routes: dict[str, GatewayRoute] = {}
     for instance in instances:
+        max_inflight = int(
+            instance.model_config.get(
+                "gateway_max_inflight",
+                default_max_inflight if default_max_inflight is not None else instance.settings.max_num_seqs,
+            )
+        )
+        queue_timeout = float(
+            instance.model_config.get(
+                "gateway_queue_timeout",
+                default_queue_timeout if default_queue_timeout is not None else 30,
+            )
+        )
+        capabilities = instance.model_config.get("capabilities", {})
+        if not isinstance(capabilities, dict):
+            raise ValueError(f"模型 {instance.alias} 的 capabilities 必須為物件")
+
         routes[instance.alias] = GatewayRoute(
             alias=instance.alias,
             model_name=instance.settings.resolved_model_path,
             base_url=instance.upstream_base_url,
             api_key=instance.settings.api_key,
+            max_inflight=max(1, max_inflight),
+            queue_timeout=max(0.0, queue_timeout),
+            scheduling_policy=instance.settings.scheduling_policy,
+            capabilities=dict(capabilities),
         )
     return routes
 

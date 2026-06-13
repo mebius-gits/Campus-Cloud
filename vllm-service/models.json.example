@@ -13,7 +13,23 @@
     "enable_auto_tool_choice": true,
     "tool_call_parser": "gemma4",
     "vllm_nvfp4_gemm_backend": "marlin",
-    "moe_backend": "marlin"
+    "moe_backend": "marlin",
+    "scheduling_policy": "priority",
+    "enable_chunked_prefill": true,
+    "long_prefill_token_threshold": 4096,
+    "enable_request_id_headers": true,
+    "gateway_max_inflight": 6,
+    "gateway_queue_timeout": 30,
+    "capabilities": {
+      "chat": true,
+      "stream": true,
+      "reasoning": true,
+      "response_format_json_schema": true,
+      "structured_outputs": true,
+      "tool_use": true,
+      "vision": false,
+      "priority_scheduling": true
+    }
   },
   {
     "alias": "qwen3-14b",
@@ -25,6 +41,24 @@
     "max_num_batched_tokens": 49152,
     "kv_cache_dtype": "fp8",
     "enable_auto_tool_choice": true,
-    "tool_call_parser": "qwen3_coder"
+    "tool_call_parser": "qwen3_coder",
+    "reasoning_parser": "qwen3",
+    "generation_config": "vllm",
+    "scheduling_policy": "priority",
+    "enable_chunked_prefill": true,
+    "long_prefill_token_threshold": 4096,
+    "enable_request_id_headers": true,
+    "gateway_max_inflight": 6,
+    "gateway_queue_timeout": 30,
+    "capabilities": {
+      "chat": true,
+      "stream": true,
+      "reasoning": true,
+      "response_format_json_schema": true,
+      "structured_outputs": true,
+      "tool_use": true,
+      "vision": false,
+      "priority_scheduling": true
+    }
   }
 ]
