@@ -42,3 +42,5 @@ AGENTS.md
 data/teacher-judge/
 vllm-API/models.json
 vllm-service/models.json
+vllm-API/
+vllm-inference/
