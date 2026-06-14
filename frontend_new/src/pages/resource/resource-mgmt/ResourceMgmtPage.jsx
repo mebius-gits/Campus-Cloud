@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import styles from "./ResourceMgmtPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { useToast } from "../../../hooks/useToast";
@@ -373,7 +374,8 @@ function ErrorState({ onRetry }) {
 }
 
 /* ── Page ── */
-export default function ResourceMgmtPage({ onNavigate }) {
+export default function ResourceMgmtPage() {
+  const navigate = useNavigate();
   const [resources, setResources] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(false);
@@ -416,7 +418,7 @@ export default function ResourceMgmtPage({ onNavigate }) {
             <MIcon name="sync" size={16} />
             重新整理
           </button>
-          <button type="button" className={styles.btnPrimary} onClick={() => onNavigate?.("my-requests", { view: "create" })}>
+          <button type="button" className={styles.btnPrimary} onClick={() => navigate("/my-requests")}>
             <MIcon name="add" size={16} />
             建立資源
           </button>

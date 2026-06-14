@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import rawData from "virtual:templates";
 import styles from "./QuickTemplateFormPage.module.scss";
 import MIcon from "../../../components/MIcon";
@@ -106,10 +107,15 @@ function ToggleGroup({ value, onChange }) {
 }
 
 /* ── Page ── */
-export default function QuickTemplateFormPage({ slug, onBack, onSubmitted }) {
+export default function QuickTemplateFormPage() {
+  const { slug } = useParams();
+  const navigate = useNavigate();
   const toast = useToast();
   const { setCompactFooter } = useContext(LayoutContext);
   useEffect(() => { setCompactFooter(true); return () => setCompactFooter(false); }, [setCompactFooter]);
+
+  const onBack       = () => navigate("/dashboard");
+  const onSubmitted  = () => navigate("/my-resources");
 
   const template = getQuickTemplate(slug);
 
