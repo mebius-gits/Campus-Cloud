@@ -1,4 +1,5 @@
 ﻿import { createContext, useEffect, useState } from "react";
+import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar/Sidebar";
 import styles from "./DashboardLayout.module.scss";
 
@@ -6,7 +7,7 @@ export const LayoutContext = createContext({ setCompactFooter: () => {} });
 
 const COLLAPSE_MIN_WIDTH = 1280;
 
-export default function DashboardLayout({ children, activePage, onNavigate }) {
+export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [compactFooter, setCompactFooter] = useState(false);
@@ -38,8 +39,6 @@ export default function DashboardLayout({ children, activePage, onNavigate }) {
         mobileOpen={mobileOpen}
         onToggle={() => setCollapsed((c) => !c)}
         onClose={() => setMobileOpen(false)}
-        activePage={activePage}
-        onNavigate={onNavigate}
       />
 
       <main className={styles.main}>
@@ -55,7 +54,7 @@ export default function DashboardLayout({ children, activePage, onNavigate }) {
             </span>
           </button>
         </div>
-        {children}
+        <Outlet />
         <div className={`${styles.footer} ${compactFooter ? styles.footerCompact : ""}`}>SkyLab · 2026</div>
       </main>
     </div>

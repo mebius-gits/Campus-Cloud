@@ -1,4 +1,5 @@
 ﻿import { useState, useRef, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth }  from "../../contexts/AuthContext";
 import styles from "./Sidebar.module.scss";
@@ -236,8 +237,10 @@ const LANG_OPTIONS = [
   { key: "ja",    label: "日本語",   flag: "🇯🇵" },
 ];
 
-export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, activePage, onNavigate }) {
-  const [active, setActive] = useState(activePage ?? "dashboard");
+export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const active   = location.pathname.split("/")[1] || "dashboard";
   const [lang, setLang] = useState("zh-TW");
   const appearance = usePopup();
   const langPopup  = usePopup();
@@ -248,10 +251,6 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
   const { mode, setMode } = useTheme();
   const { user, logout } = useAuth();
 
-  useEffect(() => {
-    if (activePage) setActive(activePage);
-  }, [activePage]);
-
   const cls = [
     styles.sidebar,
     collapsed && styles.collapsed,
@@ -261,8 +260,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose, acti
     .join(" ");
 
   const handleNav = (key) => {
-    setActive(key);
-    onNavigate?.(key);
+    navigate(`/${key}`);
     onClose?.();
   };
 

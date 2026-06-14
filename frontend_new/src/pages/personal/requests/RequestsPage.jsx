@@ -360,7 +360,7 @@ function ErrorState({ onRetry }) {
 }
 
 /* ── Page ── */
-export default function RequestsPage({ intent }) {
+export default function RequestsPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(false);
@@ -388,10 +388,6 @@ export default function RequestsPage({ intent }) {
     if (view === "list") fetchRequests();
   }, [view, fetchRequests]);
 
-  useEffect(() => {
-    if (intent?.view === VIEW_CREATE) setView(VIEW_CREATE);
-  }, [intent?.nonce, intent?.view]);
-
   function handleUpdated(updated) {
     setRequests((prev) => prev.map((r) => r.id === updated.id ? updated : r));
   }
@@ -401,7 +397,6 @@ export default function RequestsPage({ intent }) {
       <RequestFormPage
         key="create"
         className={styles.animSlideInRight}
-        quickStartPreset={intent?.quickStartPreset}
         onBack={() => { setReturning(true); setView(VIEW_LIST); }}
       />
     );
