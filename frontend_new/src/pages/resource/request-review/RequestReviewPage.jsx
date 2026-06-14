@@ -116,9 +116,12 @@ function normalizeVmRequest(request) {
     timeText: formatRange(request.start_at, request.end_at),
     specText: vmSpecLabel(request),
     reason: request.reason,
-    templateText: request.template_id
-      ? `Template #${request.template_id}`
-      : request.ostemplate || request.service_template_slug || "未設定",
+    paramLabel: "作業系統",
+    paramText:
+      request.os_info ||
+      request.ostemplate ||
+      request.service_template_slug ||
+      (request.template_id ? `Template #${request.template_id}` : "未設定"),
     gpuText: request.gpu_mapping_id || "未申請",
     nodeText: request.assigned_node || request.desired_node || "尚未評估",
     createdAt: request.created_at,
@@ -140,7 +143,8 @@ function normalizeSpecRequest(request) {
     timeText: formatDateTime(request.created_at),
     specText: specChangeLabel(request),
     reason: request.reason,
-    templateText: request.change_type || "-",
+    paramLabel: "變更類型",
+    paramText: request.change_type || "-",
     gpuText: "-",
     nodeText: `VMID ${request.vmid}`,
     createdAt: request.created_at,
@@ -162,7 +166,8 @@ function normalizeDeletionRequest(request) {
     timeText: formatDateTime(request.created_at),
     specText: `${request.resource_type || "resource"} / ${request.node || "unknown node"}`,
     reason: request.error_message || "使用者送出刪除請求",
-    templateText: `purge=${request.purge ? "yes" : "no"} / force=${request.force ? "yes" : "no"}`,
+    paramLabel: "刪除參數",
+    paramText: `purge=${request.purge ? "yes" : "no"} / force=${request.force ? "yes" : "no"}`,
     gpuText: "-",
     nodeText: request.node || "unknown node",
     createdAt: request.created_at,
@@ -472,7 +477,7 @@ export default function RequestReviewPage() {
                             </div>
                             <div>
                               <div className={styles.namePrimary}>{request.title}</div>
-                              <div className={styles.nameSub}>{request.templateText}</div>
+                              <div className={styles.nameSub}>{request.paramText}</div>
                             </div>
                           </div>
                         </td>
@@ -505,7 +510,7 @@ export default function RequestReviewPage() {
                   <InfoRow label="申請類型" value={sourceLabel(selected.source)} />
                   <InfoRow label="規格 / 摘要" value={selected.specText} />
                   <InfoRow label="時間" value={selected.timeText} />
-                  <InfoRow label="模板 / 參數" value={selected.templateText} />
+                  <InfoRow label={selected.paramLabel} value={selected.paramText} />
                   <InfoRow label="GPU" value={selected.gpuText} />
                   <InfoRow label="節點 / VMID" value={context?.projected_node || selected.nodeText} />
                 </div>

@@ -402,13 +402,21 @@ export default function RequestFormPage({ onBack, className }) {
         ...(resourceType === "lxc"
           ? {
               ostemplate: form.ostemplate,
+              os_info: form.ostemplate ? formatOstemplate(form.ostemplate) : null,
               rootfs_size: form.rootfs_size,
               ...(serviceTemplateSlug ? {
                 service_template_slug: serviceTemplateSlug,
                 service_template_script_path: `ct/${serviceTemplateSlug}.sh`,
               } : {}),
             }
-          : { template_id: Number(form.template_id), username: form.username, disk_size: form.disk_size }),
+          : {
+              template_id: Number(form.template_id),
+              username: form.username,
+              disk_size: form.disk_size,
+              os_info:
+                vmTemplates.find((t) => String(t.vmid) === String(form.template_id))?.name ||
+                null,
+            }),
         ...(selectedGpuId ? { gpu_mapping_id: selectedGpuId } : {}),
         ...(mode === "scheduled"
           ? { start_at: form.start_at, end_at: form.end_at }
