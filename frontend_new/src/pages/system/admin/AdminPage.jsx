@@ -24,7 +24,6 @@ function initialForm(user = null) {
     password: "",
     role: user?.role ?? "student",
     is_active: user?.is_active ?? true,
-    is_superuser: user?.is_superuser ?? false,
   };
 }
 
@@ -70,7 +69,6 @@ function UserModal({ mode, user, loading, onClose, onSubmit }) {
       full_name: form.full_name.trim() || null,
       role: form.role,
       is_active: form.is_active,
-      is_superuser: form.is_superuser,
     };
     if (form.password.trim()) payload.password = form.password;
     onSubmit(payload);
@@ -82,7 +80,7 @@ function UserModal({ mode, user, loading, onClose, onSubmit }) {
         <div className={styles.modalHeader}>
           <div>
             <h2>{isEdit ? "編輯使用者" : "新增使用者"}</h2>
-            <p>{isEdit ? "調整帳戶狀態與角色。" : "建立可登入 Campus Cloud 的帳戶。"}</p>
+            <p>{isEdit ? "調整帳戶狀態與角色。" : "建立可登入 SkyLab 的帳戶。"}</p>
           </div>
           <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="關閉">
             <MIcon name="close" size={18} />
@@ -143,14 +141,6 @@ function UserModal({ mode, user, loading, onClose, onSubmit }) {
             />
             <span>啟用帳戶</span>
           </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              checked={form.is_superuser}
-              onChange={(e) => setField("is_superuser", e.target.checked)}
-            />
-            <span>超級管理者</span>
-          </label>
         </div>
 
         <div className={styles.modalActions}>
@@ -205,7 +195,6 @@ function UserRow({ user, currentUserId, onEdit, onDelete }) {
         <MIcon name={role.icon} size={13} />
         {role.label}
       </span>
-      {user.is_superuser && <span className={`${styles.badge} ${styles.badge_super}`}>Superuser</span>}
       <span className={`${styles.statusBadge} ${user.is_active ? styles.statusActive : styles.statusInactive}`}>
         {user.is_active ? "啟用" : "停用"}
       </span>
@@ -269,7 +258,7 @@ export default function AdminPage() {
 
   const stats = useMemo(() => ({
     active: users.filter((item) => item.is_active).length,
-    admins: users.filter((item) => item.role === "admin" || item.is_superuser).length,
+    admins: users.filter((item) => item.role === "admin").length,
     teachers: users.filter((item) => item.role === "teacher").length,
   }), [users]);
 

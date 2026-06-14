@@ -30,7 +30,7 @@ from app.schemas.vm_request import (
     VMRequestWindowAvailabilityRequest,
     VMRequestWindowAvailabilityResponse,
 )
-from app.services.vm import vm_request_placement_service
+from app.services.vm import placement_support, vm_request_placement_service
 
 GIB = 1024**3
 
@@ -103,6 +103,7 @@ def assess_existing_request(
         rootfs_size=int(db_request.rootfs_size or 0) or None,
         instance_count=1,
         gpu_required=1 if db_request.gpu_mapping_id else 0,
+        gpu_mapping_id=db_request.gpu_mapping_id,
         days=days,
         timezone=timezone,
         policy_role=role,
@@ -139,6 +140,7 @@ def validate_request_window(
         ),
         instance_count=1,
         gpu_required=1 if bool(getattr(request_in, "gpu_mapping_id", None)) else 0,
+        gpu_mapping_id=getattr(request_in, "gpu_mapping_id", None),
     )
     selection = vm_request_placement_service.select_reserved_target_node_for_request(
         session=session,
@@ -185,7 +187,11 @@ def assess_request_window(
             rootfs_size=request_in.rootfs_size,
         ),
         instance_count=1,
-        gpu_required=int(request_in.gpu_required or 0),
+        gpu_required=max(
+            int(request_in.gpu_required or 0),
+            1 if request_in.gpu_mapping_id else 0,
+        ),
+        gpu_mapping_id=request_in.gpu_mapping_id,
     )
     selection = vm_request_placement_service.select_reserved_target_node_for_request(
         session=session,
@@ -262,6 +268,7 @@ def _build_availability_response(
     )
     placement_strategy = vm_request_placement_service.get_placement_strategy(session)
     node_priorities = vm_request_placement_service.get_node_priorities(session)
+    allowed_gpu_nodes = placement_support.allowed_gpu_nodes_for_request(placement_request)
 
     now_local = datetime.now(tz)
     start_anchor = now_local.replace(minute=0, second=0, microsecond=0)
@@ -386,6 +393,7 @@ def _build_availability_response(
                         has_managed_storage=lite_has_managed_storage,
                         disk_overcommit_ratio=disk_overcommit_ratio,
                         tuning=lite_tuning,
+                        allowed_gpu_nodes=allowed_gpu_nodes,
                         slot_start=slot_start,
                         slot_end=slot_end,
                         demand_ratio=demand_ratio,
@@ -638,6 +646,7 @@ def _lightweight_fit_nodes(
     has_managed_storage: bool,
     disk_overcommit_ratio: float,
     tuning,
+    allowed_gpu_nodes: set[str] | None = None,
 ) -> list[str]:
     required_cpu = placement_advisor._effective_cpu_cores(request, effective_resource_type)
     required_memory = placement_advisor._effective_memory_bytes(
@@ -645,6 +654,10 @@ def _lightweight_fit_nodes(
         effective_resource_type,
     )
     required_disk = int(request.disk_gb * GIB)
+    node_disk_bytes = placement_support.node_disk_bytes_for_capacity(
+        disk_bytes=required_disk,
+        has_managed_storage=has_managed_storage,
+    )
     working_nodes = [item.model_copy(deep=True) for item in adjusted_nodes]
     working_storage = deepcopy(storage_pools_by_node)
     placed_nodes: list[str] = []
@@ -652,14 +665,14 @@ def _lightweight_fit_nodes(
     for _ in range(int(request.instance_count or 1)):
         candidates = []
         for node in working_nodes:
-            if not node.candidate:
-                continue
-            if not placement_advisor._can_fit(
+            if not placement_support.node_can_host_request(
                 node,
                 cores=required_cpu,
                 memory_bytes=required_memory,
                 disk_bytes=required_disk,
                 gpu_required=request.gpu_required,
+                has_managed_storage=has_managed_storage,
+                allowed_gpu_nodes=allowed_gpu_nodes,
             ):
                 continue
 
@@ -687,7 +700,7 @@ def _lightweight_fit_nodes(
                 candidate[0],
                 required_cpu=required_cpu,
                 required_memory=required_memory,
-                required_disk=required_disk,
+                required_disk=node_disk_bytes,
             ),
         )
         chosen.allocatable_cpu_cores = max(
@@ -698,17 +711,16 @@ def _lightweight_fit_nodes(
             chosen.allocatable_memory_bytes - required_memory,
             0,
         )
-        chosen.allocatable_disk_bytes = max(
-            chosen.allocatable_disk_bytes - required_disk,
-            0,
-        )
+        chosen.allocatable_disk_bytes = max(chosen.allocatable_disk_bytes - node_disk_bytes, 0)
         chosen.running_resources += 1
-        chosen.candidate = (
-            chosen.status == "online"
-            and chosen.allocatable_cpu_cores > 0
-            and chosen.allocatable_memory_bytes > 0
-            and chosen.allocatable_disk_bytes > 0
-            and chosen.running_resources < chosen.guest_soft_limit
+        chosen.candidate = placement_support.node_can_host_request(
+            chosen,
+            cores=required_cpu,
+            memory_bytes=required_memory,
+            disk_bytes=required_disk,
+            gpu_required=request.gpu_required,
+            has_managed_storage=has_managed_storage,
+            allowed_gpu_nodes=allowed_gpu_nodes,
         )
         if chosen_storage is not None:
             reserve_storage_pool(
@@ -730,6 +742,7 @@ def _lite_slot_from_capacities(
     has_managed_storage: bool,
     disk_overcommit_ratio: float,
     tuning,
+    allowed_gpu_nodes: set[str] | None = None,
     slot_start: datetime,
     slot_end: datetime,
     demand_ratio: float,
@@ -744,6 +757,7 @@ def _lite_slot_from_capacities(
         has_managed_storage=has_managed_storage,
         disk_overcommit_ratio=disk_overcommit_ratio,
         tuning=tuning,
+        allowed_gpu_nodes=allowed_gpu_nodes,
     )
     feasible = len(placed_nodes) >= int(request.instance_count or 1)
     partial = bool(placed_nodes)
@@ -816,7 +830,11 @@ def _to_placement_request(request_in: VMRequestAvailabilityRequest) -> Placement
             rootfs_size=request_in.rootfs_size,
         ),
         instance_count=int(request_in.instance_count),
-        gpu_required=int(request_in.gpu_required),
+        gpu_required=max(
+            int(request_in.gpu_required),
+            1 if request_in.gpu_mapping_id else 0,
+        ),
+        gpu_mapping_id=request_in.gpu_mapping_id,
     )
 
 

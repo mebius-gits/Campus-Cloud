@@ -26,6 +26,7 @@ from app.domain.placement.storage import (
 )
 from app.models import VMRequest
 from app.repositories import proxmox_storage as proxmox_storage_repo
+from app.services.proxmox import gpu_service
 
 GIB = 1024**3
 
@@ -197,6 +198,49 @@ def refresh_node_candidate(node: NodeCapacity) -> None:
     )
 
 
+def node_can_host_request(
+    node: NodeCapacity,
+    *,
+    cores: float,
+    memory_bytes: int,
+    disk_bytes: int,
+    gpu_required: int,
+    has_managed_storage: bool,
+    allowed_gpu_nodes: set[str] | None = None,
+) -> bool:
+    if gpu_required > 0:
+        if allowed_gpu_nodes is not None:
+            if node.node not in allowed_gpu_nodes:
+                return False
+        elif node.gpu_count < gpu_required:
+            return False
+    if (
+        node.status != "online"
+        or node.allocatable_cpu_cores < cores
+        or node.allocatable_memory_bytes < memory_bytes
+        or node.running_resources >= node.guest_soft_limit
+    ):
+        return False
+    if has_managed_storage:
+        return True
+    return node.allocatable_disk_bytes >= disk_bytes
+
+
+def node_disk_bytes_for_capacity(*, disk_bytes: int, has_managed_storage: bool) -> int:
+    return 0 if has_managed_storage else disk_bytes
+
+
+def allowed_gpu_nodes_for_request(request: PlacementRequest) -> set[str] | None:
+    mapping_id = str(request.gpu_mapping_id or "").strip()
+    if not mapping_id:
+        return None
+    return {
+        node
+        for node, count in gpu_service.get_gpu_node_counts(mapping_id=mapping_id).items()
+        if count > 0
+    }
+
+
 def release_request_from_capacities(
     *,
     node_capacities: list[NodeCapacity],
@@ -329,18 +373,25 @@ def build_plan(
     required_cpu = placement_advisor._effective_cpu_cores(request, effective_resource_type)
     required_memory = placement_advisor._effective_memory_bytes(request, effective_resource_type)
     required_disk = request.disk_gb * GIB
+    node_disk_bytes = node_disk_bytes_for_capacity(
+        disk_bytes=required_disk,
+        has_managed_storage=has_managed_storage,
+    )
+    allowed_gpu_nodes = allowed_gpu_nodes_for_request(request)
     placements: dict[str, int] = {item.node: 0 for item in working_nodes}
     remaining = request.instance_count
 
     while remaining > 0:
         candidates: list[tuple[NodeCapacity, StorageSelection | None]] = []
         for item in working_nodes:
-            if not item.candidate or not placement_advisor._can_fit(
+            if not node_can_host_request(
                 item,
                 cores=required_cpu,
                 memory_bytes=required_memory,
                 disk_bytes=required_disk,
                 gpu_required=request.gpu_required,
+                has_managed_storage=has_managed_storage,
+                allowed_gpu_nodes=allowed_gpu_nodes,
             ):
                 continue
             storage_selection: StorageSelection | None = None
@@ -367,7 +418,7 @@ def build_plan(
                 strategy=strategy,
                 cores=required_cpu,
                 memory_bytes=required_memory,
-                disk_bytes=required_disk,
+                disk_bytes=node_disk_bytes,
                 storage_selection=candidate[1],
                 tuning=tuning,
                 current_node=current_node,
@@ -376,7 +427,7 @@ def build_plan(
         placements[chosen.node] += 1
         chosen.allocatable_cpu_cores = max(chosen.allocatable_cpu_cores - required_cpu, 0.0)
         chosen.allocatable_memory_bytes = max(chosen.allocatable_memory_bytes - required_memory, 0)
-        chosen.allocatable_disk_bytes = max(chosen.allocatable_disk_bytes - required_disk, 0)
+        chosen.allocatable_disk_bytes = max(chosen.allocatable_disk_bytes - node_disk_bytes, 0)
         chosen.running_resources += 1
         refresh_node_candidate(chosen)
         if chosen_storage is not None:
@@ -608,4 +659,5 @@ def to_placement_request(db_request: VMRequest) -> PlacementRequest:
         disk_gb=disk_gb,
         instance_count=1,
         gpu_required=1 if bool(getattr(db_request, "gpu_mapping_id", None)) else 0,
+        gpu_mapping_id=getattr(db_request, "gpu_mapping_id", None),
     )
