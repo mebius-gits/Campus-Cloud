@@ -1,6 +1,6 @@
 # Stage 0, "build-stage": 用 Bun 編譯 frontend_new
 # 注意：build context 必須是專案根目錄（vite.config.js 的 templatesPlugin
-# 會讀 ../frontend/src/json）
+# reads ../backend/app/ai/template_recommendation/catalog_json)
 FROM oven/bun:1 AS build-stage
 
 WORKDIR /app/frontend_new
@@ -9,8 +9,8 @@ COPY frontend_new/package.json frontend_new/bun.lock ./
 
 RUN bun install
 
-# templatesPlugin 需要的範本 JSON（來自舊版 frontend）
-COPY frontend/src/json /app/frontend/src/json
+# Template JSON used by templatesPlugin.
+COPY backend/app/ai/template_recommendation/catalog_json /app/backend/app/ai/template_recommendation/catalog_json
 
 COPY ./frontend_new /app/frontend_new
 

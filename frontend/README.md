@@ -39,7 +39,8 @@ frontend/
 │   ├── providers/            # LanguageProvider、ThemeProvider
 │   ├── lib/                  # i18n 設定
 │   ├── locales/              # en / zh-TW / ja 翻譯資源
-│   ├── json/                 # 靜態模板資料（透過 virtual:templates 載入）
+│   ├── ../backend/app/ai/template_recommendation/catalog_json/
+│   │                         # 靜態模板資料（透過 virtual:templates 載入）
 │   ├── types/                # 自訂型別
 │   ├── routeTree.gen.ts      # 自動生成的路由樹
 │   └── utils.ts
@@ -173,7 +174,7 @@ bunx playwright test --ui     # UI 模式
 ## Vite / TypeScript / Biome
 
 - 路徑別名：`@/` → `./src/`
-- Vite 自訂 `virtual:templates` plugin 載入 `src/json/`
+- Vite 自訂 `virtual:templates` plugin 載入 `../backend/app/ai/template_recommendation/catalog_json/`
 - CORS header `Cross-Origin-Opener-Policy: same-origin-allow-popups`（VNC popup 需要）
 - Biome 排除 `src/client/**`、`src/components/ui/**`、`routeTree.gen.ts`
 

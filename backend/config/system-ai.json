@@ -1,6 +1,6 @@
 {
   "template_recommendation": {
-    "templates_dir": "../frontend/src/json",
+    "templates_dir": "app/ai/template_recommendation/catalog_json",
     "backend_node_gpu_map": {
       "pve": 1
     },
