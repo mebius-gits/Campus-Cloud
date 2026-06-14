@@ -40,7 +40,7 @@ class SystemAIVLLMConfig(BaseModel):
 
 
 class TemplateRecommendationConfig(BaseModel):
-    templates_dir: str = "../frontend/src/json"
+    templates_dir: str = "app/ai/template_recommendation/catalog_json"
     backend_node_gpu_map: dict[str, int] = Field(default_factory=dict)
     vllm: SystemAIVLLMConfig = Field(default_factory=SystemAIVLLMConfig)
 

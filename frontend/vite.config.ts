@@ -13,8 +13,11 @@ function templatesPlugin() {
     },
     load(id: string) {
       if (id === "\0virtual:templates") {
-        const jsonDir = path.resolve(__dirname, "src/json")
-        const jsonKeyPrefix = `${path.relative(__dirname, jsonDir).split(path.sep).join("/")}/`
+        const jsonDir = path.resolve(
+          __dirname,
+          "../backend/app/ai/template_recommendation/catalog_json",
+        )
+        const jsonKeyPrefix = "template_catalog/"
         if (!fs.existsSync(jsonDir))
           return { code: "export default {}", moduleType: "js" }
         const files = fs.readdirSync(jsonDir).filter((f) => f.endsWith(".json"))

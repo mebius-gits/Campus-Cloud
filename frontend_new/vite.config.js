@@ -11,7 +11,10 @@ function templatesPlugin() {
     },
     load(id) {
       if (id === "\0virtual:templates") {
-        const jsonDir = path.resolve(__dirname, "../frontend/src/json");
+        const jsonDir = path.resolve(
+          __dirname,
+          "../backend/app/ai/template_recommendation/catalog_json",
+        );
         if (!fs.existsSync(jsonDir)) return "export default {}";
         const files = fs.readdirSync(jsonDir).filter((f) => f.endsWith(".json"));
         const allData = {};

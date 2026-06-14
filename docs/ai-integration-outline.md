@@ -89,7 +89,7 @@ SkyLab 的 AI 功能定位不是單一聊天機器人，而是「嵌入校園雲
 3. `/api/v1/ai/template-recommendation/recommend` 先抽取意圖，再生成推薦方案。
 4. 後端會合併：
    - 使用者對話與角色情境。
-   - 模板 catalog，來源預設為 `frontend/src/json`。
+   - 模板 catalog，來源預設為 `backend/app/ai/template_recommendation/catalog_json`。
    - 支援的能力表，目前聚焦 `wordpress`、`n8n`、`postgresql`、`openwebui`。
    - 節點與 GPU 即時資訊，含短 TTL cache。
    - 使用者已填的起訖時間、資源類型與 GPU 選擇。

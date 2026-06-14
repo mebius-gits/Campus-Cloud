@@ -11,6 +11,7 @@ WORKDIR /app/frontend
 
 RUN bun install
 
+COPY backend/app/ai/template_recommendation/catalog_json /app/backend/app/ai/template_recommendation/catalog_json/
 COPY ./frontend /app/frontend
 ARG VITE_API_URL
 # 讓 vite build 讀得到 build arg；留空時前端走相對路徑（同源），自動適應訪問用的 host
