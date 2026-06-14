@@ -17,10 +17,7 @@ export function Logo({
 }: LogoProps) {
   const renderBrand = (sizeClass: string, extraClass = "") => (
     <span
-      className={cn(
-        "inline-flex items-center gap-2 font-semibold",
-        extraClass,
-      )}
+      className={cn("inline-flex items-center gap-2 font-semibold", extraClass)}
     >
       <img
         src={ICON_SRC}
@@ -43,11 +40,7 @@ export function Logo({
             className,
           )}
         >
-          <img
-            src={ICON_SRC}
-            alt="SkyLab"
-            className="size-5 object-contain"
-          />
+          <img src={ICON_SRC} alt="SkyLab" className="size-5 object-contain" />
         </span>
       </>
     ) : (
