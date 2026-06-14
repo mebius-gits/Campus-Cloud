@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useDragScroll } from "../../../hooks/useDragScroll";
 import MIcon from "../../../components/MIcon";
 import styles from "./DashboardPage.module.scss";
-import QuickTemplateFormPage from "./QuickTemplateFormPage";
 import {
   COURSES,
   TEMPLATE_CATEGORIES,
@@ -112,32 +112,19 @@ function CourseCard({ title, description, subjects, teacher, classGroup, icon, a
 }
 
 /* ── Page ── */
-export default function DashboardPage({ onNavigate }) {
+export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const firstName = user?.full_name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "同學";
 
   const scrollRef = useRef(null);
   const [activeCategory, setActiveCategory] = useState("all");
-  const [quickSlug, setQuickSlug]           = useState(null);
 
   const filteredTemplates = activeCategory === "all"
     ? TEMPLATES
     : TEMPLATES.filter((t) => t.categoryId === activeCategory);
 
   useDragScroll(scrollRef, { draggingClass: styles.dragging });
-
-  if (quickSlug) {
-    return (
-      <QuickTemplateFormPage
-        slug={quickSlug}
-        onBack={() => setQuickSlug(null)}
-        onSubmitted={() => {
-          setQuickSlug(null);
-          onNavigate?.("my-resources");
-        }}
-      />
-    );
-  }
 
   return (
     <div className={styles.page}>
@@ -204,7 +191,7 @@ export default function DashboardPage({ onNavigate }) {
               {...t}
               accent={CATEGORY_ACCENT[t.categoryId]}
               categoryTitle={CATEGORY_BY_ID[t.categoryId].title}
-              onSelect={() => setQuickSlug(t.slug)}
+              onSelect={() => navigate(`/quick-template/${t.slug}`)}
             />
           ))}
         </div>

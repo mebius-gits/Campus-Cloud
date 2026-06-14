@@ -511,8 +511,6 @@
 
     "acorn": ["acorn@8.16.0", "", { "bin": "bin/acorn" }, ""],
 
-    "agent-base": ["agent-base@6.0.2", "", { "dependencies": { "debug": "4" } }, "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ=="],
-
     "ansi-colors": ["ansi-colors@4.1.3", "", {}, ""],
 
     "ansis": ["ansis@4.2.0", "", {}, ""],

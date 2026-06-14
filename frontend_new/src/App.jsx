@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import DashboardLayout from "./layout/DashboardLayout";
 import LoginPage from "./pages/login/LoginPage";
 
 // 個人
-import DashboardPage   from "./pages/personal/dashboard/DashboardPage";
-import ResourcesPage   from "./pages/personal/resources/ResourcesPage";
-import RequestsPage    from "./pages/personal/requests/RequestsPage";
+import DashboardPage         from "./pages/personal/dashboard/DashboardPage";
+import QuickTemplateFormPage from "./pages/personal/dashboard/QuickTemplateFormPage";
+import ResourcesPage         from "./pages/personal/resources/ResourcesPage";
+import RequestsPage          from "./pages/personal/requests/RequestsPage";
 
 // 資源
 import ResourceMgmtPage  from "./pages/resource/resource-mgmt/ResourceMgmtPage";
@@ -38,55 +39,60 @@ import IpManagementPage   from "./pages/network/ip-management/IpManagementPage";
 
 function App() {
   const { user, loading } = useAuth();
-  const [activePage, setActivePage] = useState("dashboard");
-  const [pageIntent, setPageIntent] = useState(null);
-
-  // 初始化時驗證 token，避免未登入畫面閃爍
-
-  // 未登入 → 顯示登入頁
-
-  const handleNavigate = useCallback((page, intent = null) => {
-    setPageIntent(intent ? { ...intent, nonce: Date.now() } : null);
-    setActivePage(page);
-  }, []);
-
-  const page = useMemo(() => {
-    const pages = {
-      dashboard:        <DashboardPage onNavigate={handleNavigate} />,
-      "my-resources":   <ResourcesPage />,
-      "my-requests":    <RequestsPage intent={pageIntent} />,
-      "resource-mgmt":  <ResourceMgmtPage onNavigate={handleNavigate} />,
-      "request-review": <RequestReviewPage />,
-      "gpu-mgmt":       <GpuMgmtPage />,
-      "batch-review":   <BatchReviewPage />,
-      "ai-api":         <AiApiPage />,
-      "ai-api-review":  <AiApiReviewPage />,
-      "ai-api-keys":    <AiApiKeysPage />,
-      "ai-monitoring":  <AiMonitoringPage />,
-      "ai-management":  <AiManagementPage />,
-      groups:           <GroupsPage />,
-      admin:            <AdminPage />,
-      settings:         <SettingsPage />,
-      migration:        <MigrationPage />,
-      audit:            <AuditPage />,
-      jobs:             <JobsPage />,
-      firewall:         <FirewallPage />,
-      domain:           <DomainPage />,
-      gateway:          <GatewayPage />,
-      "reverse-proxy":  <ReverseProxyPage />,
-      "ip-management":  <IpManagementPage />,
-    };
-    return pages[activePage] ?? pages.dashboard;
-  }, [activePage, handleNavigate, pageIntent]);
 
   if (loading) return null;
 
-  if (!user) return <LoginPage />;
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
+  }
 
   return (
-    <DashboardLayout activePage={activePage} onNavigate={handleNavigate}>
-      {page}
-    </DashboardLayout>
+    <Routes>
+      <Route element={<DashboardLayout />}>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+
+        {/* 個人 */}
+        <Route path="/dashboard"            element={<DashboardPage />} />
+        <Route path="/quick-template/:slug" element={<QuickTemplateFormPage />} />
+        <Route path="/my-resources"         element={<ResourcesPage />} />
+        <Route path="/my-requests"          element={<RequestsPage />} />
+
+        {/* 資源 */}
+        <Route path="/resource-mgmt"  element={<ResourceMgmtPage />} />
+        <Route path="/request-review" element={<RequestReviewPage />} />
+        <Route path="/gpu-mgmt"       element={<GpuMgmtPage />} />
+        <Route path="/batch-review"   element={<BatchReviewPage />} />
+
+        {/* AI */}
+        <Route path="/ai-api"         element={<AiApiPage />} />
+        <Route path="/ai-api-review"  element={<AiApiReviewPage />} />
+        <Route path="/ai-api-keys"    element={<AiApiKeysPage />} />
+        <Route path="/ai-monitoring"  element={<AiMonitoringPage />} />
+        <Route path="/ai-management"  element={<AiManagementPage />} />
+
+        {/* 系統管理 */}
+        <Route path="/groups"    element={<GroupsPage />} />
+        <Route path="/admin"     element={<AdminPage />} />
+        <Route path="/settings"  element={<SettingsPage />} />
+        <Route path="/migration" element={<MigrationPage />} />
+        <Route path="/audit"     element={<AuditPage />} />
+        <Route path="/jobs"      element={<JobsPage />} />
+
+        {/* 網路 */}
+        <Route path="/firewall"       element={<FirewallPage />} />
+        <Route path="/domain"         element={<DomainPage />} />
+        <Route path="/gateway"        element={<GatewayPage />} />
+        <Route path="/reverse-proxy"  element={<ReverseProxyPage />} />
+        <Route path="/ip-management"  element={<IpManagementPage />} />
+
+        {/* fallback */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Route>
+    </Routes>
   );
 }
 
