@@ -1,7 +1,7 @@
 /**
  * FastTemplatesPanel
  * 服務模板選擇面板（Modal overlay）
- * 資料來自 virtual:templates（讀取 frontend/src/json/）
+ * Data comes from virtual:templates.
  */
 import { useMemo, useState } from "react";
 import rawData from "virtual:templates";
