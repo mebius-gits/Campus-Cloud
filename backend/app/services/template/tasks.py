@@ -11,7 +11,7 @@ import uuid
 from typing import Any
 
 from app.infrastructure.queue import queue_task
-from app.services.template import template_service
+from app.services.template import clone_service, template_service
 
 
 @queue_task("queue.ping", timeout_seconds=30)
@@ -70,4 +70,14 @@ async def update_template_cancel(
     """更新循環：取消並銷毀暫存母機。"""
     return await asyncio.to_thread(
         template_service.run_update_cancel_task, task_id, payload
+    )
+
+
+@queue_task(clone_service.TASK_CLONE, timeout_seconds=3600)
+async def clone_from_template(
+    task_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """從範本克隆一台（linked 優先退 full，克隆後重配置）。"""
+    return await asyncio.to_thread(
+        clone_service.run_clone_task, task_id, payload
     )

@@ -17,13 +17,15 @@ from app.repositories import task_record as task_record_repo
 from app.schemas.template import (
     TaskRecordPublic,
     TaskRecordsPublic,
+    TemplateCloneRequest,
+    TemplateCloneResponse,
     VMTemplateCreate,
     VMTemplatePublic,
     VMTemplatesPublic,
     VMTemplateTaskResponse,
     VMTemplateUpdate,
 )
-from app.services.template import template_service
+from app.services.template import clone_service, template_service
 
 router = APIRouter(prefix="/templates", tags=["templates"])
 
@@ -112,6 +114,22 @@ async def delete_template(
         session=session, user=current_user, template_id=template_id
     )
     return TaskRecordPublic.from_record(record)
+
+
+@router.post("/{template_id}/clone", response_model=TemplateCloneResponse)
+async def clone_template(
+    session: SessionDep,
+    current_user: CurrentUser,
+    template_id: uuid.UUID,
+    body: TemplateCloneRequest,
+) -> TemplateCloneResponse:
+    """從範本克隆開通（student 單台套配額；teacher/admin 可批量）。"""
+    records = await clone_service.request_clone(
+        session=session, user=current_user, template_id=template_id, data=body
+    )
+    return TemplateCloneResponse(
+        tasks=[TaskRecordPublic.from_record(r) for r in records]
+    )
 
 
 # --- 更新循環：Clone → Modify → Convert ---

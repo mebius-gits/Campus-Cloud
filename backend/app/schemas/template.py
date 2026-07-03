@@ -127,3 +127,27 @@ class VMTemplateTaskResponse(BaseModel):
 
     template: VMTemplatePublic
     task: TaskRecordPublic
+
+
+class TemplateCloneRequest(BaseModel):
+    """從範本克隆開通。student 僅能單台且受配額限制；teacher/admin 可批量。"""
+
+    hostname: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=63,
+        description="主機名稱；未填時以範本名產生。count > 1 時自動加序號",
+    )
+    count: int = Field(default=1, ge=1, le=50)
+    cores: int | None = Field(default=None, ge=1, le=64)
+    memory: int | None = Field(default=None, ge=128, description="MB")
+    disk: int | None = Field(
+        default=None, ge=1, description="GB，僅能放大（僅 qemu 生效）"
+    )
+    start: bool = True
+
+
+class TemplateCloneResponse(BaseModel):
+    """每台克隆一個背景任務"""
+
+    tasks: list[TaskRecordPublic]

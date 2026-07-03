@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # so scheduler ticks don't block test startup on connection timeouts.
     SCHEDULER_ENABLED: bool = True
 
+    # 範本系統 2.0：學生自助克隆時，名下資源總數上限（teacher/admin 不受限）
+    TEMPLATE_CLONE_STUDENT_MAX_INSTANCES: int = 3
+
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)
     ] = []
