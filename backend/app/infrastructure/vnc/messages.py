@@ -12,6 +12,9 @@ PIXEL_BYTES = 4
 # KeyEvent, PointerEvent, ClientCutText
 CLIENT_INPUT_TYPES = frozenset({4, 5, 6})
 
+# QEMU Client Message（PVE 的 noVNC 會用 submessage 0 = Extended Key Event 送按鍵）
+CLIENT_QEMU_TYPE = 255
+
 _HEXTILE_RAW = 0x01
 _HEXTILE_BACKGROUND = 0x02
 _HEXTILE_FOREGROUND = 0x04
@@ -168,6 +171,11 @@ class ClientMessageSplitter:
     def __init__(self) -> None:
         self._buf = bytearray()
 
+    @property
+    def pending(self) -> bytes:
+        """尚未構成完整訊息的緩衝 bytes（失去同步後 fail-open 原樣轉發用）。"""
+        return bytes(self._buf)
+
     def feed(self, data: bytes) -> list[tuple[int, bytes]]:
         self._buf.extend(data)
         messages: list[tuple[int, bytes]] = []
@@ -197,4 +205,26 @@ class ClientMessageSplitter:
             length = reader.u32()
             reader.take(length)
             return msg_type, reader.pos
+        if msg_type == CLIENT_QEMU_TYPE:
+            submessage = reader.u8()
+            if submessage == 0:  # Extended Key Event
+                reader.take(10)  # down-flag(2) + keysym(4) + keycode(4)
+                return msg_type, reader.pos
+            raise RfbStreamError(f"unsupported QEMU client submessage {submessage}")
         raise RfbStreamError(f"unsupported client message type {msg_type}")
+
+
+def filter_client_bytes(
+    splitter: ClientMessageSplitter, data: bytes, *, blocked: bool
+) -> list[bytes]:
+    """把 client 位元組流切成完整訊息，並在 blocked 時丟棄輸入訊息。
+
+    未攔截時 splitter 也必須持續 feed（維持訊息邊界同步），
+    這樣攔截旗標中途切換時仍能在正確的訊息邊界過濾。
+    """
+    forwarded: list[bytes] = []
+    for msg_type, message in splitter.feed(data):
+        if blocked and (msg_type in CLIENT_INPUT_TYPES or msg_type == CLIENT_QEMU_TYPE):
+            continue
+        forwarded.append(message)
+    return forwarded
