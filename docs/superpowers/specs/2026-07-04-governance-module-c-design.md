@@ -120,12 +120,15 @@ reasons: list[str] }`（理由為使用者可讀的中文字串）。
 
 ### API 整合
 
-- `POST /vm-requests/advise`：傳入表單欄位 → 回傳建議 + 理由（前端即時預覽）。
-- `VMRequestCreate.resource_type` 接受 `"auto"`：建立時 service 呼叫 advisor
-  定案實際 resource_type，記錄 `requested_mode="auto"` 與
+- `POST /vm-requests/advise`：傳入表單欄位 → 回傳建議 + 理由。前端 Auto 模式
+  以此決定實際 resource_type 並顯示對應的範本欄位（LXC 需 ostemplate、
+  VM 需 template_id+username 的既有驗證因此不受影響）。
+- `VMRequestCreate` 新增 `requested_mode: "manual"|"auto"`（預設 manual）；
+  `resource_type` 維持具體值（vm|lxc）。requested_mode=auto 時 create() 於
+  伺服器端重跑 advisor（同一純函式、確定性結果）並記錄
   `auto_decision_reason`（VMRequest 新欄位，migration；審核者與申請者可見）。
-- 手動模式（resource_type = vm|lxc）行為完全不變；`workload_advisor_enabled=false`
-  時 API 拒絕 auto 模式。
+- 手動模式行為完全不變；`workload_advisor_enabled=false` 時 advise API 與
+  auto 模式回 400。
 
 ## C-4 LDAP/AD SSO
 
