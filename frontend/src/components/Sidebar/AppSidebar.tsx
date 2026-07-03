@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookCopy,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -46,6 +47,7 @@ export function AppSidebar() {
 
   const resourceItems: Item[] = [
     { icon: ServerCog, title: t("sidebar.myResources"), path: "/my-resources" },
+    { icon: BookCopy, title: "範本", path: "/templates" },
     { icon: Shield, title: "防火牆", path: "/firewall" },
     { icon: Globe, title: "反向代理", path: "/reverse-proxy" },
     { icon: Cpu, title: t("sidebar.gpuManagement"), path: "/gpu-management" },

@@ -848,6 +848,10 @@ export type BatchProvisionJobSpec = {
      */
     template_id?: number | null;
     /**
+     * Vm Template Id
+     */
+    vm_template_id?: string | null;
+    /**
      * Username
      */
     username?: string | null;
@@ -882,9 +886,13 @@ export type BatchProvisionRequest = {
      */
     hostname_prefix: string;
     /**
+     * Vm Template Id
+     */
+    vm_template_id?: string | null;
+    /**
      * Password
      */
-    password: string;
+    password?: string | null;
     /**
      * Cores
      */
@@ -5854,10 +5862,78 @@ export type SystemSnapshot = {
 };
 
 /**
+ * TaskRecordPublic
+ */
+export type TaskRecordPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Task Type
+     */
+    task_type: string;
+    status: TaskRecordStatus;
+    /**
+     * Progress
+     */
+    progress: number;
+    /**
+     * Result
+     */
+    result?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Template Id
+     */
+    template_id?: string | null;
+    /**
+     * Resource Vmid
+     */
+    resource_vmid?: number | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Finished At
+     */
+    finished_at?: string | null;
+};
+
+/**
+ * TaskRecordStatus
+ */
+export type TaskRecordStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+/**
+ * TaskRecordsPublic
+ */
+export type TaskRecordsPublic = {
+    /**
+     * Data
+     */
+    data: Array<TaskRecordPublic>;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
  * TeacherJudgeFileAnalysisUpdateRequest
  */
 export type TeacherJudgeFileAnalysisUpdateRequest = {
-    analysis: TeacherJudgeRubricAnalysisInput;
+    analysis: TeacherJudgeRubricAnalysis;
 };
 
 /**
@@ -5913,7 +5989,7 @@ export type TeacherJudgeFilePublic = {
  */
 export type TeacherJudgeFileUploadResponse = {
     file: TeacherJudgeFilePublic;
-    analysis: TeacherJudgeRubricAnalysisOutput;
+    analysis: TeacherJudgeRubricAnalysis;
     /**
      * Ai Metrics
      */
@@ -5931,51 +6007,7 @@ export type TeacherJudgeFileUploadResponse = {
  *
  * AI 分析評分表後的結構化結果。
  */
-export type TeacherJudgeRubricAnalysisInput = {
-    /**
-     * Items
-     */
-    items?: Array<TeacherJudgeRubricItem>;
-    /**
-     * Total Items
-     */
-    total_items?: number;
-    /**
-     * Checked Count
-     */
-    checked_count?: number;
-    /**
-     * Auto Count
-     */
-    auto_count?: number;
-    /**
-     * Partial Count
-     */
-    partial_count?: number;
-    /**
-     * Manual Count
-     */
-    manual_count?: number;
-    /**
-     * Summary
-     *
-     * AI 整體說明（繁體中文）
-     */
-    summary?: string;
-    /**
-     * Raw Text
-     *
-     * 解析後的原始文件文字（供後續對話使用）
-     */
-    raw_text?: string;
-};
-
-/**
- * TeacherJudgeRubricAnalysis
- *
- * AI 分析評分表後的結構化結果。
- */
-export type TeacherJudgeRubricAnalysisOutput = {
+export type TeacherJudgeRubricAnalysis = {
     /**
      * Items
      */
@@ -6208,7 +6240,7 @@ export type TeacherJudgeRubricItem = {
  * 上傳評分表回應。
  */
 export type TeacherJudgeRubricUploadResponse = {
-    analysis: TeacherJudgeRubricAnalysisOutput;
+    analysis: TeacherJudgeRubricAnalysis;
     /**
      * Ai Metrics
      */
@@ -6325,7 +6357,7 @@ export type TeacherJudgeScriptCreateRequest = {
      * Template Key
      */
     template_key?: string;
-    rubric_snapshot: TeacherJudgeRubricAnalysisInput;
+    rubric_snapshot: TeacherJudgeRubricAnalysis;
     /**
      * Source File Id
      */
@@ -6338,7 +6370,7 @@ export type TeacherJudgeScriptCreateRequest = {
  * Regenerate a managed script artifact.
  */
 export type TeacherJudgeScriptRegenerateRequest = {
-    rubric_snapshot?: TeacherJudgeRubricAnalysisInput | null;
+    rubric_snapshot?: TeacherJudgeRubricAnalysis | null;
 };
 
 /**
@@ -6425,6 +6457,56 @@ export type TeacherJudgeScriptRunPublic = {
      * Updated At
      */
     updated_at: string;
+};
+
+/**
+ * TemplateCloneRequest
+ *
+ * 從範本克隆開通。student 僅能單台且受配額限制；teacher/admin 可批量。
+ */
+export type TemplateCloneRequest = {
+    /**
+     * Hostname
+     *
+     * 主機名稱；未填時以範本名產生。count > 1 時自動加序號
+     */
+    hostname?: string | null;
+    /**
+     * Count
+     */
+    count?: number;
+    /**
+     * Cores
+     */
+    cores?: number | null;
+    /**
+     * Memory
+     *
+     * MB
+     */
+    memory?: number | null;
+    /**
+     * Disk
+     *
+     * GB，僅能放大（僅 qemu 生效）
+     */
+    disk?: number | null;
+    /**
+     * Start
+     */
+    start?: boolean;
+};
+
+/**
+ * TemplateCloneResponse
+ *
+ * 每台克隆一個背景任務
+ */
+export type TemplateCloneResponse = {
+    /**
+     * Tasks
+     */
+    tasks: Array<TaskRecordPublic>;
 };
 
 /**
@@ -7912,6 +7994,131 @@ export type VmRequestsPublic = {
 };
 
 /**
+ * VMTemplateCreate
+ *
+ * 把現有 VM/LXC 轉為範本
+ */
+export type VmTemplateCreate = {
+    /**
+     * Source Vmid
+     *
+     * 要轉換的母機 VMID
+     */
+    source_vmid: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    visibility?: VmTemplateVisibility;
+    /**
+     * Group Ids
+     */
+    group_ids?: Array<string>;
+    /**
+     * Default Cores
+     */
+    default_cores?: number | null;
+    /**
+     * Default Memory
+     *
+     * MB
+     */
+    default_memory?: number | null;
+    /**
+     * Default Disk
+     *
+     * GB
+     */
+    default_disk?: number | null;
+};
+
+/**
+ * VMTemplatePublic
+ */
+export type VmTemplatePublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Pve Vmid
+     */
+    pve_vmid: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Owner Id
+     */
+    owner_id?: string | null;
+    /**
+     * Node
+     */
+    node: string;
+    /**
+     * Storage
+     */
+    storage?: string | null;
+    /**
+     * Resource Type
+     */
+    resource_type: string;
+    status: VmTemplateStatus;
+    visibility: VmTemplateVisibility;
+    /**
+     * Group Ids
+     */
+    group_ids?: Array<string>;
+    /**
+     * Default Cores
+     */
+    default_cores?: number | null;
+    /**
+     * Default Memory
+     */
+    default_memory?: number | null;
+    /**
+     * Default Disk
+     */
+    default_disk?: number | null;
+    /**
+     * Source Vmid
+     */
+    source_vmid?: number | null;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Error Message
+     */
+    error_message?: string | null;
+    /**
+     * Pve Exists
+     *
+     * PVE 端對帳結果（False 表示 PVE 找不到此範本）
+     */
+    pve_exists?: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
  * VMTemplateSchema
  *
  * VM template 資訊
@@ -7929,6 +8136,73 @@ export type VmTemplateSchema = {
      * Node
      */
     node: string;
+};
+
+/**
+ * VMTemplateStatus
+ */
+export type VmTemplateStatus = 'creating' | 'ready' | 'updating' | 'failed' | 'deleted';
+
+/**
+ * VMTemplateTaskResponse
+ *
+ * 回傳範本本體 + 觸發的背景任務（前端拿 task.id 輪詢進度）
+ */
+export type VmTemplateTaskResponse = {
+    template: VmTemplatePublic;
+    task: TaskRecordPublic;
+};
+
+/**
+ * VMTemplateUpdate
+ *
+ * 更新範本 metadata / 可見範圍
+ */
+export type VmTemplateUpdate = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Description
+     */
+    description?: string | null;
+    visibility?: VmTemplateVisibility | null;
+    /**
+     * Group Ids
+     */
+    group_ids?: Array<string> | null;
+    /**
+     * Default Cores
+     */
+    default_cores?: number | null;
+    /**
+     * Default Memory
+     */
+    default_memory?: number | null;
+    /**
+     * Default Disk
+     */
+    default_disk?: number | null;
+};
+
+/**
+ * VMTemplateVisibility
+ */
+export type VmTemplateVisibility = 'global' | 'groups';
+
+/**
+ * VMTemplatesPublic
+ */
+export type VmTemplatesPublic = {
+    /**
+     * Data
+     */
+    data: Array<VmTemplatePublic>;
+    /**
+     * Count
+     */
+    count: number;
 };
 
 /**
@@ -14422,6 +14696,317 @@ export type TeacherJudgeArchiveGroupTeacherJudgeScriptResponses = {
 };
 
 export type TeacherJudgeArchiveGroupTeacherJudgeScriptResponse = TeacherJudgeArchiveGroupTeacherJudgeScriptResponses[keyof TeacherJudgeArchiveGroupTeacherJudgeScriptResponses];
+
+export type TemplatesListMyTasksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/templates/tasks';
+};
+
+export type TemplatesListMyTasksErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesListMyTasksError = TemplatesListMyTasksErrors[keyof TemplatesListMyTasksErrors];
+
+export type TemplatesListMyTasksResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordsPublic;
+};
+
+export type TemplatesListMyTasksResponse = TemplatesListMyTasksResponses[keyof TemplatesListMyTasksResponses];
+
+export type TemplatesGetTaskData = {
+    body?: never;
+    path: {
+        /**
+         * Task Id
+         */
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/tasks/{task_id}';
+};
+
+export type TemplatesGetTaskErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesGetTaskError = TemplatesGetTaskErrors[keyof TemplatesGetTaskErrors];
+
+export type TemplatesGetTaskResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordPublic;
+};
+
+export type TemplatesGetTaskResponse = TemplatesGetTaskResponses[keyof TemplatesGetTaskResponses];
+
+export type TemplatesListTemplatesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/templates/';
+};
+
+export type TemplatesListTemplatesResponses = {
+    /**
+     * Successful Response
+     */
+    200: VmTemplatesPublic;
+};
+
+export type TemplatesListTemplatesResponse = TemplatesListTemplatesResponses[keyof TemplatesListTemplatesResponses];
+
+export type TemplatesCreateTemplateData = {
+    body: VmTemplateCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/templates/';
+};
+
+export type TemplatesCreateTemplateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesCreateTemplateError = TemplatesCreateTemplateErrors[keyof TemplatesCreateTemplateErrors];
+
+export type TemplatesCreateTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: VmTemplateTaskResponse;
+};
+
+export type TemplatesCreateTemplateResponse = TemplatesCreateTemplateResponses[keyof TemplatesCreateTemplateResponses];
+
+export type TemplatesDeleteTemplateData = {
+    body?: never;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}';
+};
+
+export type TemplatesDeleteTemplateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesDeleteTemplateError = TemplatesDeleteTemplateErrors[keyof TemplatesDeleteTemplateErrors];
+
+export type TemplatesDeleteTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordPublic;
+};
+
+export type TemplatesDeleteTemplateResponse = TemplatesDeleteTemplateResponses[keyof TemplatesDeleteTemplateResponses];
+
+export type TemplatesGetTemplateData = {
+    body?: never;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}';
+};
+
+export type TemplatesGetTemplateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesGetTemplateError = TemplatesGetTemplateErrors[keyof TemplatesGetTemplateErrors];
+
+export type TemplatesGetTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: VmTemplatePublic;
+};
+
+export type TemplatesGetTemplateResponse = TemplatesGetTemplateResponses[keyof TemplatesGetTemplateResponses];
+
+export type TemplatesUpdateTemplateData = {
+    body: VmTemplateUpdate;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}';
+};
+
+export type TemplatesUpdateTemplateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesUpdateTemplateError = TemplatesUpdateTemplateErrors[keyof TemplatesUpdateTemplateErrors];
+
+export type TemplatesUpdateTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: VmTemplatePublic;
+};
+
+export type TemplatesUpdateTemplateResponse = TemplatesUpdateTemplateResponses[keyof TemplatesUpdateTemplateResponses];
+
+export type TemplatesCloneTemplateData = {
+    body: TemplateCloneRequest;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}/clone';
+};
+
+export type TemplatesCloneTemplateErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesCloneTemplateError = TemplatesCloneTemplateErrors[keyof TemplatesCloneTemplateErrors];
+
+export type TemplatesCloneTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: TemplateCloneResponse;
+};
+
+export type TemplatesCloneTemplateResponse = TemplatesCloneTemplateResponses[keyof TemplatesCloneTemplateResponses];
+
+export type TemplatesStartUpdateCycleData = {
+    body?: never;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}/update-cycle/start';
+};
+
+export type TemplatesStartUpdateCycleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesStartUpdateCycleError = TemplatesStartUpdateCycleErrors[keyof TemplatesStartUpdateCycleErrors];
+
+export type TemplatesStartUpdateCycleResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordPublic;
+};
+
+export type TemplatesStartUpdateCycleResponse = TemplatesStartUpdateCycleResponses[keyof TemplatesStartUpdateCycleResponses];
+
+export type TemplatesFinishUpdateCycleData = {
+    body?: never;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}/update-cycle/finish';
+};
+
+export type TemplatesFinishUpdateCycleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesFinishUpdateCycleError = TemplatesFinishUpdateCycleErrors[keyof TemplatesFinishUpdateCycleErrors];
+
+export type TemplatesFinishUpdateCycleResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordPublic;
+};
+
+export type TemplatesFinishUpdateCycleResponse = TemplatesFinishUpdateCycleResponses[keyof TemplatesFinishUpdateCycleResponses];
+
+export type TemplatesCancelUpdateCycleData = {
+    body?: never;
+    path: {
+        /**
+         * Template Id
+         */
+        template_id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{template_id}/update-cycle/cancel';
+};
+
+export type TemplatesCancelUpdateCycleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TemplatesCancelUpdateCycleError = TemplatesCancelUpdateCycleErrors[keyof TemplatesCancelUpdateCycleErrors];
+
+export type TemplatesCancelUpdateCycleResponses = {
+    /**
+     * Successful Response
+     */
+    200: TaskRecordPublic;
+};
+
+export type TemplatesCancelUpdateCycleResponse = TemplatesCancelUpdateCycleResponses[keyof TemplatesCancelUpdateCycleResponses];
 
 export type TunnelGetMyTunnelConfigData = {
     body?: never;

@@ -1555,6 +1555,17 @@ export const BatchProvisionJobSpecSchema = {
             ],
             title: 'Template Id'
         },
+        vm_template_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vm Template Id'
+        },
         username: {
             anyOf: [
                 {
@@ -1620,9 +1631,28 @@ export const BatchProvisionRequestSchema = {
             title: 'Hostname Prefix',
             description: 'Hostname prefix: ASCII letters, digits, hyphens; cannot start with hyphen'
         },
+        vm_template_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vm Template Id'
+        },
         password: {
-            type: 'string',
-            minLength: 6,
+            anyOf: [
+                {
+                    type: 'string',
+                    minLength: 6
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Password'
         },
         cores: {
@@ -1769,8 +1799,7 @@ export const BatchProvisionRequestSchema = {
     type: 'object',
     required: [
         'resource_type',
-        'hostname_prefix',
-        'password'
+        'hostname_prefix'
     ],
     title: 'BatchProvisionRequest',
     description: 'Payload used to create one batch provisioning job.'
@@ -1913,7 +1942,7 @@ export const Body_groups_import_members_from_csvSchema = {
     properties: {
         file: {
             type: 'string',
-            format: 'binary',
+            contentMediaType: 'application/octet-stream',
             title: 'File'
         }
     },
@@ -2002,7 +2031,7 @@ export const Body_rubric_upload_rubricSchema = {
     properties: {
         file: {
             type: 'string',
-            format: 'binary',
+            contentMediaType: 'application/octet-stream',
             title: 'File'
         },
         template_key: {
@@ -2022,7 +2051,7 @@ export const Body_teacher_judge_upload_group_teacher_judge_fileSchema = {
     properties: {
         file: {
             type: 'string',
-            format: 'binary',
+            contentMediaType: 'application/octet-stream',
             title: 'File'
         },
         template_key: {
@@ -10162,10 +10191,148 @@ export const SystemSnapshotSchema = {
     title: 'SystemSnapshot'
 } as const;
 
+export const TaskRecordPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        task_type: {
+            type: 'string',
+            title: 'Task Type'
+        },
+        status: {
+            $ref: '#/components/schemas/TaskRecordStatus'
+        },
+        progress: {
+            type: 'integer',
+            title: 'Progress'
+        },
+        result: {
+            anyOf: [
+                {
+                    additionalProperties: true,
+                    type: 'object'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Result'
+        },
+        error: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error'
+        },
+        template_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Template Id'
+        },
+        resource_vmid: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Resource Vmid'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        started_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Started At'
+        },
+        finished_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Finished At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'task_type',
+        'status',
+        'progress',
+        'created_at'
+    ],
+    title: 'TaskRecordPublic'
+} as const;
+
+export const TaskRecordStatusSchema = {
+    type: 'string',
+    enum: [
+        'queued',
+        'running',
+        'succeeded',
+        'failed'
+    ],
+    title: 'TaskRecordStatus'
+} as const;
+
+export const TaskRecordsPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                $ref: '#/components/schemas/TaskRecordPublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: [
+        'data',
+        'count'
+    ],
+    title: 'TaskRecordsPublic'
+} as const;
+
 export const TeacherJudgeFileAnalysisUpdateRequestSchema = {
     properties: {
         analysis: {
-            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis-Input'
+            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis'
         }
     },
     type: 'object',
@@ -10252,7 +10419,7 @@ export const TeacherJudgeFileUploadResponseSchema = {
             $ref: '#/components/schemas/TeacherJudgeFilePublic'
         },
         analysis: {
-            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis-Output'
+            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis'
         },
         ai_metrics: {
             additionalProperties: true,
@@ -10274,59 +10441,7 @@ export const TeacherJudgeFileUploadResponseSchema = {
     title: 'TeacherJudgeFileUploadResponse'
 } as const;
 
-export const TeacherJudgeRubricAnalysis_InputSchema = {
-    properties: {
-        items: {
-            items: {
-                $ref: '#/components/schemas/TeacherJudgeRubricItem'
-            },
-            type: 'array',
-            title: 'Items'
-        },
-        total_items: {
-            type: 'integer',
-            title: 'Total Items',
-            default: 0
-        },
-        checked_count: {
-            type: 'integer',
-            title: 'Checked Count',
-            default: 0
-        },
-        auto_count: {
-            type: 'integer',
-            title: 'Auto Count',
-            default: 0
-        },
-        partial_count: {
-            type: 'integer',
-            title: 'Partial Count',
-            default: 0
-        },
-        manual_count: {
-            type: 'integer',
-            title: 'Manual Count',
-            default: 0
-        },
-        summary: {
-            type: 'string',
-            title: 'Summary',
-            description: 'AI 整體說明（繁體中文）',
-            default: ''
-        },
-        raw_text: {
-            type: 'string',
-            title: 'Raw Text',
-            description: '解析後的原始文件文字（供後續對話使用）',
-            default: ''
-        }
-    },
-    type: 'object',
-    title: 'TeacherJudgeRubricAnalysis',
-    description: 'AI 分析評分表後的結構化結果。'
-} as const;
-
-export const TeacherJudgeRubricAnalysis_OutputSchema = {
+export const TeacherJudgeRubricAnalysisSchema = {
     properties: {
         items: {
             items: {
@@ -10635,7 +10750,7 @@ export const TeacherJudgeRubricItemSchema = {
 export const TeacherJudgeRubricUploadResponseSchema = {
     properties: {
         analysis: {
-            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis-Output'
+            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis'
         },
         ai_metrics: {
             additionalProperties: true,
@@ -10824,7 +10939,7 @@ export const TeacherJudgeScriptCreateRequestSchema = {
             default: 'linux'
         },
         rubric_snapshot: {
-            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis-Input'
+            $ref: '#/components/schemas/TeacherJudgeRubricAnalysis'
         },
         source_file_id: {
             anyOf: [
@@ -10853,7 +10968,7 @@ export const TeacherJudgeScriptRegenerateRequestSchema = {
         rubric_snapshot: {
             anyOf: [
                 {
-                    $ref: '#/components/schemas/TeacherJudgeRubricAnalysis-Input'
+                    $ref: '#/components/schemas/TeacherJudgeRubricAnalysis'
                 },
                 {
                     type: 'null'
@@ -11005,6 +11120,97 @@ export const TeacherJudgeScriptRunPublicSchema = {
         'updated_at'
     ],
     title: 'TeacherJudgeScriptRunPublic'
+} as const;
+
+export const TemplateCloneRequestSchema = {
+    properties: {
+        hostname: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 63,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Hostname',
+            description: '主機名稱；未填時以範本名產生。count > 1 時自動加序號'
+        },
+        count: {
+            type: 'integer',
+            maximum: 50,
+            minimum: 1,
+            title: 'Count',
+            default: 1
+        },
+        cores: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 64,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cores'
+        },
+        memory: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 128
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Memory',
+            description: 'MB'
+        },
+        disk: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Disk',
+            description: 'GB，僅能放大（僅 qemu 生效）'
+        },
+        start: {
+            type: 'boolean',
+            title: 'Start',
+            default: true
+        }
+    },
+    type: 'object',
+    title: 'TemplateCloneRequest',
+    description: '從範本克隆開通。student 僅能單台且受配額限制；teacher/admin 可批量。'
+} as const;
+
+export const TemplateCloneResponseSchema = {
+    properties: {
+        tasks: {
+            items: {
+                $ref: '#/components/schemas/TaskRecordPublic'
+            },
+            type: 'array',
+            title: 'Tasks'
+        }
+    },
+    type: 'object',
+    required: [
+        'tasks'
+    ],
+    title: 'TemplateCloneResponse',
+    description: '每台克隆一個背景任務'
 } as const;
 
 export const TemplateSchemaSchema = {
@@ -13759,6 +13965,256 @@ export const VMRequestsPublicSchema = {
     title: 'VMRequestsPublic'
 } as const;
 
+export const VMTemplateCreateSchema = {
+    properties: {
+        source_vmid: {
+            type: 'integer',
+            exclusiveMinimum: 0,
+            title: 'Source Vmid',
+            description: '要轉換的母機 VMID'
+        },
+        name: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        visibility: {
+            $ref: '#/components/schemas/VMTemplateVisibility',
+            default: 'groups'
+        },
+        group_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Group Ids'
+        },
+        default_cores: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 64,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Cores'
+        },
+        default_memory: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 128
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Memory',
+            description: 'MB'
+        },
+        default_disk: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Disk',
+            description: 'GB'
+        }
+    },
+    type: 'object',
+    required: [
+        'source_vmid',
+        'name'
+    ],
+    title: 'VMTemplateCreate',
+    description: '把現有 VM/LXC 轉為範本'
+} as const;
+
+export const VMTemplatePublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        pve_vmid: {
+            type: 'integer',
+            title: 'Pve Vmid'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        owner_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Owner Id'
+        },
+        node: {
+            type: 'string',
+            title: 'Node'
+        },
+        storage: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Storage'
+        },
+        resource_type: {
+            type: 'string',
+            title: 'Resource Type'
+        },
+        status: {
+            $ref: '#/components/schemas/VMTemplateStatus'
+        },
+        visibility: {
+            $ref: '#/components/schemas/VMTemplateVisibility'
+        },
+        group_ids: {
+            items: {
+                type: 'string',
+                format: 'uuid'
+            },
+            type: 'array',
+            title: 'Group Ids'
+        },
+        default_cores: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Cores'
+        },
+        default_memory: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Memory'
+        },
+        default_disk: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Disk'
+        },
+        source_vmid: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Source Vmid'
+        },
+        version: {
+            type: 'integer',
+            title: 'Version'
+        },
+        error_message: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Error Message'
+        },
+        pve_exists: {
+            type: 'boolean',
+            title: 'Pve Exists',
+            description: 'PVE 端對帳結果（False 表示 PVE 找不到此範本）',
+            default: true
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'pve_vmid',
+        'name',
+        'node',
+        'resource_type',
+        'status',
+        'visibility',
+        'version',
+        'created_at',
+        'updated_at'
+    ],
+    title: 'VMTemplatePublic'
+} as const;
+
 export const VMTemplateSchemaSchema = {
     properties: {
         vmid: {
@@ -13782,6 +14238,162 @@ export const VMTemplateSchemaSchema = {
     ],
     title: 'VMTemplateSchema',
     description: 'VM template 資訊'
+} as const;
+
+export const VMTemplateStatusSchema = {
+    type: 'string',
+    enum: [
+        'creating',
+        'ready',
+        'updating',
+        'failed',
+        'deleted'
+    ],
+    title: 'VMTemplateStatus'
+} as const;
+
+export const VMTemplateTaskResponseSchema = {
+    properties: {
+        template: {
+            $ref: '#/components/schemas/VMTemplatePublic'
+        },
+        task: {
+            $ref: '#/components/schemas/TaskRecordPublic'
+        }
+    },
+    type: 'object',
+    required: [
+        'template',
+        'task'
+    ],
+    title: 'VMTemplateTaskResponse',
+    description: '回傳範本本體 + 觸發的背景任務（前端拿 task.id 輪詢進度）'
+} as const;
+
+export const VMTemplateUpdateSchema = {
+    properties: {
+        name: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255,
+                    minLength: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        description: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1000
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Description'
+        },
+        visibility: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/VMTemplateVisibility'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        },
+        group_ids: {
+            anyOf: [
+                {
+                    items: {
+                        type: 'string',
+                        format: 'uuid'
+                    },
+                    type: 'array'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Group Ids'
+        },
+        default_cores: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 64,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Cores'
+        },
+        default_memory: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 128
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Memory'
+        },
+        default_disk: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Default Disk'
+        }
+    },
+    type: 'object',
+    title: 'VMTemplateUpdate',
+    description: '更新範本 metadata / 可見範圍'
+} as const;
+
+export const VMTemplateVisibilitySchema = {
+    type: 'string',
+    enum: [
+        'global',
+        'groups'
+    ],
+    title: 'VMTemplateVisibility'
+} as const;
+
+export const VMTemplatesPublicSchema = {
+    properties: {
+        data: {
+            items: {
+                $ref: '#/components/schemas/VMTemplatePublic'
+            },
+            type: 'array',
+            title: 'Data'
+        },
+        count: {
+            type: 'integer',
+            title: 'Count'
+        }
+    },
+    type: 'object',
+    required: [
+        'data',
+        'count'
+    ],
+    title: 'VMTemplatesPublic'
 } as const;
 
 export const VNCInfoSchemaSchema = {
