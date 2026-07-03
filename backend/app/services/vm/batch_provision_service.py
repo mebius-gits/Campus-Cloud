@@ -11,12 +11,15 @@ from sqlmodel import Session
 
 from app.core.db import engine
 from app.exceptions import BadRequestError
+from app.models import VMTemplateStatus
 from app.models.batch_provision import BatchProvisionJobStatus, BatchProvisionTask
 from app.repositories import batch_provision as bp_repo
 from app.repositories import group as group_repo
+from app.repositories import vm_template as vm_template_repo
 from app.schemas import LXCCreateRequest, VMCreateRequest
 from app.services.network import ip_management_service
 from app.services.proxmox import provisioning_service
+from app.services.template import clone_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,15 @@ def submit_batch_job(
     member_rows = group_repo.get_member_rows(session=session, group_id=group_id)
     if not member_rows:
         raise BadRequestError("群組沒有成員，無法執行批量建立")
+
+    # 範本系統 2.0：指定 vm_template_id 時走克隆路徑，範本必須存在且 ready
+    if params.get("vm_template_id"):
+        template = vm_template_repo.get_template(
+            session=session,
+            template_id=uuid.UUID(str(params["vm_template_id"])),
+        )
+        if template is None or template.status != VMTemplateStatus.ready:
+            raise BadRequestError("指定的範本不存在或尚未就緒")
 
     # 防護：子網必須已設定
     ip_management_service.ensure_subnet_configured(session)
@@ -276,7 +288,29 @@ def _provision_one(
     start: bool = True,
     batch_job_id: uuid.UUID | None = None,
 ) -> int:
-    """呼叫 provisioning_service 建立單一資源，回傳 vmid。"""
+    """建立單一資源，回傳 vmid。
+
+    指定 ``vm_template_id`` 時走範本系統 2.0 統一克隆路徑
+    （linked 優先退 full）；否則沿用 provisioning_service 舊路徑。
+    """
+    if params.get("vm_template_id"):
+        payload = {
+            "template_id": str(params["vm_template_id"]),
+            "user_id": str(user_id),
+            "hostname": hostname,
+            "cores": params.get("cores"),
+            "memory": params.get("memory"),
+            "disk": params.get("disk_size"),
+            "start": start,
+            "batch_job_id": str(batch_job_id) if batch_job_id else None,
+            "environment_type": params.get("environment_type", "批量建立"),
+            "expiry_date": params.get("expiry_date"),
+        }
+        # 同步執行（batch 已在背景執行緒）；task_id 無對應 TaskRecord，
+        # report_progress 會自動 no-op
+        clone_result = clone_service.run_clone_task(uuid.uuid4(), payload)
+        return int(clone_result["vmid"])
+
     if resource_type == "lxc":
         req = LXCCreateRequest(
             hostname=hostname,

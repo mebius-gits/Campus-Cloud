@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import date
 from typing import Any
 from urllib.parse import quote
 
@@ -108,15 +109,20 @@ async def request_clone(
 # worker 端：克隆 + 重配置（同步，tasks.py 以 to_thread 呼叫）
 # ---------------------------------------------------------------------------
 
-def _clone_with_fallback(
+def clone_with_fallback(
     *,
     node: str,
     template_vmid: int,
     new_vmid: int,
     hostname: str,
     resource_type: proxmox_ops.ResourceType,
+    full_kwargs: dict[str, Any] | None = None,
 ) -> str:
-    """linked clone 優先，失敗退 full clone。回傳實際模式。"""
+    """linked clone 優先，失敗退 full clone。回傳實際模式（linked/full）。
+
+    ``full_kwargs`` 只在退 full clone 時併入（例如指定 storage——
+    linked clone 必須與範本同 storage，不能帶該參數）。
+    """
     pool = get_proxmox_settings().pool_name
     name_key = "hostname" if resource_type == "lxc" else "name"
     clone_fn = (
@@ -144,7 +150,7 @@ def _clone_with_fallback(
             provisioning_service.cleanup_provisioned_resource(new_vmid)
         except Exception:
             pass
-        clone_fn(node, template_vmid, full=1, **base_config)
+        clone_fn(node, template_vmid, full=1, **base_config, **(full_kwargs or {}))
         return "full"
 
 
@@ -208,8 +214,21 @@ def _reconfigure_lxc(
     proxmox_ops.update_config(node, vmid, "lxc", **config_updates)
 
 
+def _parse_expiry(raw: Any) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
 def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any]:
-    """克隆一台：分配 IP → clone（linked→full）→ 重配置 → 防火牆 → Resource 紀錄。"""
+    """克隆一台：分配 IP → clone（linked→full）→ 重配置 → 防火牆 → Resource 紀錄。
+
+    選用 payload 鍵（batch provision 走同一條路徑時傳入）：
+    batch_job_id / environment_type / expiry_date。
+    """
     template_id = uuid.UUID(payload["template_id"])
     user_id = uuid.UUID(payload["user_id"])
     hostname = str(payload["hostname"])
@@ -217,6 +236,10 @@ def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any
     memory = payload.get("memory")
     disk = payload.get("disk")
     start = bool(payload.get("start", True))
+    raw_batch = payload.get("batch_job_id")
+    batch_job_id = uuid.UUID(str(raw_batch)) if raw_batch else None
+    environment_type = payload.get("environment_type")
+    expiry_date = _parse_expiry(payload.get("expiry_date"))
 
     with Session(engine) as session:
         template = session.get(VMTemplate, template_id)
@@ -243,7 +266,7 @@ def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any
     clone_mode = "linked"
     try:
         report_progress(task_id, 10)
-        clone_mode = _clone_with_fallback(
+        clone_mode = clone_with_fallback(
             node=node,
             template_vmid=template_vmid,
             new_vmid=new_vmid,
@@ -288,7 +311,8 @@ def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any
                 session=session,
                 vmid=new_vmid,
                 user_id=user_id,
-                environment_type=f"範本 {template_name}",
+                environment_type=environment_type or f"範本 {template_name}",
+                expiry_date=expiry_date,
                 template_id=template_vmid,
                 ssh_private_key_encrypted=(
                     encrypt_value(private_key_pem)
@@ -296,6 +320,7 @@ def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any
                     else None
                 ),
                 ssh_public_key=public_key if resource_type == "qemu" else None,
+                batch_job_id=batch_job_id,
             )
     except Exception:
         # 失敗清理：釋放 IP → 撤防火牆規則 → 刪除半成品
@@ -339,4 +364,9 @@ def run_clone_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any
     }
 
 
-__all__ = ["TASK_CLONE", "request_clone", "run_clone_task"]
+__all__ = [
+    "TASK_CLONE",
+    "clone_with_fallback",
+    "request_clone",
+    "run_clone_task",
+]

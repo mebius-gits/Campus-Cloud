@@ -714,41 +714,53 @@ def execute_provision(plan: dict) -> tuple[int, str]:
             firewall_service.setup_default_rules(target_node, new_vmid, "lxc")
         else:
             template_node = plan["template_node"]
-            clone_config = {
-                "newid": new_vmid,
-                "name": hostname,
-                "full": 1,
-                "storage": plan["target_storage"],
-                "pool": pool_name,
-            }
-            if target_node != template_node:
-                clone_config["target"] = target_node
-            try:
-                proxmox_service.clone_vm(
-                    template_node,
-                    plan["template_id"],
-                    **clone_config,
-                )
-                actual_node = target_node
-            except Exception:
-                if target_node == template_node:
-                    raise
-                logger.warning(
-                    "Cross-node clone failed for VMID %s; falling back to template node %s",
-                    new_vmid,
-                    template_node,
+            if target_node == template_node:
+                # 範本系統 2.0 統一克隆路徑：linked clone 優先、失敗退 full
+                from app.services.template import clone_service
+
+                clone_service.clone_with_fallback(
+                    node=template_node,
+                    template_vmid=plan["template_id"],
+                    new_vmid=new_vmid,
+                    hostname=hostname,
+                    resource_type="qemu",
+                    full_kwargs={"storage": plan["target_storage"]},
                 )
                 actual_node = template_node
-                fallback_storage = plan.get("fallback_storage", plan["target_storage"])
-                proxmox_service.clone_vm(
-                    template_node,
-                    plan["template_id"],
-                    newid=new_vmid,
-                    name=hostname,
-                    full=1,
-                    storage=fallback_storage,
-                    pool=pool_name,
-                )
+            else:
+                # 跨節點只能 full clone（linked clone 需與範本同 storage）
+                clone_config = {
+                    "newid": new_vmid,
+                    "name": hostname,
+                    "full": 1,
+                    "storage": plan["target_storage"],
+                    "pool": pool_name,
+                    "target": target_node,
+                }
+                try:
+                    proxmox_service.clone_vm(
+                        template_node,
+                        plan["template_id"],
+                        **clone_config,
+                    )
+                    actual_node = target_node
+                except Exception:
+                    logger.warning(
+                        "Cross-node clone failed for VMID %s; falling back to template node %s",
+                        new_vmid,
+                        template_node,
+                    )
+                    actual_node = template_node
+                    fallback_storage = plan.get("fallback_storage", plan["target_storage"])
+                    proxmox_service.clone_vm(
+                        template_node,
+                        plan["template_id"],
+                        newid=new_vmid,
+                        name=hostname,
+                        full=1,
+                        storage=fallback_storage,
+                        pool=pool_name,
+                    )
             created = True
 
             config_updates = {
