@@ -438,6 +438,24 @@ def clone_vm(node: str, template_id: int, **clone_config) -> str:
     return task
 
 
+def clone_lxc(node: str, template_id: int, **clone_config) -> str:
+    """Clone an LXC template and wait. Returns UPID."""
+    proxmox = get_proxmox_api()
+    task = proxmox.nodes(node).lxc(template_id).clone.post(**clone_config)
+    basic_blocking_task_status(node, task)
+    return task
+
+
+def convert_to_template(
+    node: str, vmid: int, resource_type: ResourceType = "qemu"
+) -> None:
+    """POST /nodes/{node}/{type}/{vmid}/template — 轉為唯讀範本（不可逆）。
+
+    VM 必須處於 stopped 狀態，呼叫端負責先關機。
+    """
+    _resource_api(node, vmid, resource_type).template.post()
+
+
 def next_vmid() -> int:
     proxmox = get_proxmox_api()
     return int(proxmox.cluster.nextid.get())

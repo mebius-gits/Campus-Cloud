@@ -165,6 +165,32 @@ services:
       - skylab
 
   # -------------------------
+  # Worker (arq 任務隊列)
+  # -------------------------
+  worker:
+    image: '${DOCKER_IMAGE_BACKEND}:${TAG-latest}'
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      - arq
+      - app.infrastructure.queue.worker.WorkerSettings
+    env_file:
+      - .env
+    environment:
+      <<: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prestart:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - skylab
+
+  # -------------------------
   # Frontend
   # -------------------------
   frontend_old:

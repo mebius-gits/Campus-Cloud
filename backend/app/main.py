@@ -30,6 +30,7 @@ from app.core.metrics import PrometheusMiddleware, metrics_endpoint
 from app.core.request_context import RequestContextMiddleware
 from app.exceptions import AppError
 from app.infrastructure.ai import close_ai_clients
+from app.infrastructure.queue import close_arq_pool, init_arq_pool
 from app.infrastructure.redis import close_redis, init_redis
 from app.infrastructure.worker import init_background_runner, shutdown_background_runner
 from app.services.scheduling import vm_request_schedule_service
@@ -137,6 +138,7 @@ async def lifespan(app: FastAPI):
         file_enabled=settings.LOG_FILE_ENABLED,
     )
     await init_redis()
+    await init_arq_pool()
     _recover_orphan_running_deploys()
     init_background_runner()
     stop_event = asyncio.Event()
@@ -158,6 +160,7 @@ async def lifespan(app: FastAPI):
                 pass
         await shutdown_background_runner()
         await close_ai_clients()
+        await close_arq_pool()
         await close_redis()
 
 
