@@ -17,6 +17,7 @@ class Permission(str, enum.Enum):
     REVERSE_PROXY_RULES_SYNC = "reverse_proxy_rules_sync"
     SPEC_CHANGE_DIRECT_APPLY = "spec_change_direct_apply"
     SPEC_CHANGE_REVIEW = "spec_change_review"
+    TEMPLATE_MANAGE = "template_manage"
     USER_MANAGE = "user_manage"
     VM_REQUEST_READ_ALL = "vm_request_read_all"
     VM_REQUEST_REVIEW = "vm_request_review"
@@ -27,7 +28,12 @@ _ALL_PERMISSIONS = frozenset(Permission)
 
 _ROLE_PERMISSION_MATRIX: dict[UserRole, frozenset[Permission]] = {
     UserRole.student: frozenset(),
-    UserRole.teacher: frozenset({Permission.VM_REQUEST_USE_IMMEDIATE_MODE}),
+    UserRole.teacher: frozenset(
+        {
+            Permission.VM_REQUEST_USE_IMMEDIATE_MODE,
+            Permission.TEMPLATE_MANAGE,
+        }
+    ),
     UserRole.admin: _ALL_PERMISSIONS,
 }
 
