@@ -48,6 +48,7 @@ from .spec_change_request import (
     SpecChangeType,
 )
 from .subnet_config import SubnetConfig
+from .task_record import TaskRecord, TaskRecordStatus
 from .teacher_judge_file import TeacherJudgeFile, TeacherJudgeFileStatus
 from .teacher_judge_script_artifact import (
     TeacherJudgeScriptArtifact,
@@ -72,6 +73,12 @@ from .vm_request import (
     VMRequestReviewState,
     VMRequestScheduleState,
     VMRequestStatus,
+)
+from .vm_template import (
+    VMTemplate,
+    VMTemplateGroupLink,
+    VMTemplateStatus,
+    VMTemplateVisibility,
 )
 
 __all__ = [
@@ -157,4 +164,12 @@ __all__ = [
     # Deletion Request
     "DeletionRequest",
     "DeletionRequestStatus",
+    # VM Template (範本系統 2.0)
+    "VMTemplate",
+    "VMTemplateGroupLink",
+    "VMTemplateStatus",
+    "VMTemplateVisibility",
+    # Task Record (背景任務)
+    "TaskRecord",
+    "TaskRecordStatus",
 ]
