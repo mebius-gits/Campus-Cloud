@@ -290,6 +290,12 @@ def get_rrd_data(
     return _resource_api(node, vmid, resource_type).rrddata.get(timeframe=timeframe)
 
 
+def get_node_rrd_data(node: str, timeframe: str) -> list[dict]:
+    """GET /nodes/{node}/rrddata"""
+    proxmox = get_proxmox_api()
+    return proxmox.nodes(node).rrddata.get(timeframe=timeframe)
+
+
 # ---------------------------------------------------------------------------
 # Delete resource
 # ---------------------------------------------------------------------------

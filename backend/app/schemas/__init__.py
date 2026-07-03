@@ -87,6 +87,11 @@ from .group import (
     GroupPublic,
     GroupsPublic,
 )
+from .monitoring import (
+    MonitoringOverview,
+    NodeMetrics,
+    VMTopEntry,
+)
 from .proxmox_config import (
     ProxmoxConfigPublic,
     ProxmoxConfigUpdate,
@@ -285,6 +290,10 @@ __all__ = [
     "TopologyEdge",
     "TopologyResponse",
     "NATRulePublic",
+    # Monitoring
+    "MonitoringOverview",
+    "NodeMetrics",
+    "VMTopEntry",
     # Proxmox Config
     "ProxmoxConfigPublic",
     "ProxmoxConfigUpdate",
