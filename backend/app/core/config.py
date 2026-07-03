@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     # 範本系統 2.0：學生自助克隆時，名下資源總數上限（teacher/admin 不受限）
     TEMPLATE_CLONE_STUDENT_MAX_INSTANCES: int = 3
 
+    # 虛擬教室：單一 VNC session 的下游訂閱者上限
+    CLASSROOM_MAX_SUBSCRIBERS: int = 250
+    # 虛擬教室：每個訂閱者的訊息佇列深度（滿了直接斷開該訂閱者）
+    CLASSROOM_SUBSCRIBER_QUEUE_SIZE: int = 256
+
     BACKEND_CORS_ORIGINS: Annotated[
         list[AnyUrl] | str, BeforeValidator(parse_cors)
     ] = []
