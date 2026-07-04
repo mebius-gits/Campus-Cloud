@@ -175,18 +175,20 @@ class VMCreateRequest(BaseModel):
 
 
 class LXCCreateResponse(BaseModel):
-    """建立 LXC 回應"""
+    """建立 LXC 回應（202：clone 於背景執行，vmid/upid 為 null）"""
 
-    vmid: int
-    upid: str
+    vmid: int | None = None
+    upid: str | None = None
+    task_id: str | None = None
     message: str
 
 
 class VMCreateResponse(BaseModel):
-    """建立 VM 回應"""
+    """建立 VM 回應（202：clone 於背景執行，vmid/upid 為 null）"""
 
-    vmid: int
-    upid: str
+    vmid: int | None = None
+    upid: str | None = None
+    task_id: str | None = None
     message: str
 
 

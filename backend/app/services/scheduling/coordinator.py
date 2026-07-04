@@ -17,13 +17,14 @@ from app.models import (
     VMRequest,
     VMRequestStatus,
 )
+from app.repositories import governance as governance_repo
 from app.repositories import resource as resource_repo
 from app.repositories import vm_migration_job as vm_migration_job_repo
 from app.repositories import vm_request as vm_request_repo
 from app.services.network import ip_management_service
 from app.services.proxmox import provisioning_service, proxmox_service
 from app.services.scheduling import policy as scheduling_policy
-from app.services.scheduling import recurrence_scheduler
+from app.services.scheduling import provision_pool, recurrence_scheduler
 from app.services.scheduling import support as scheduling_support
 from app.services.user import audit_service
 from app.services.vm import vm_request_placement_service
@@ -1004,8 +1005,18 @@ def process_due_request_starts() -> int:
             policy=policy,
             active_requests=active_requests,
         )
+        governance_config = governance_repo.get_governance_config(session=session)
 
         for request in active_requests:
+            if request.vmid is None:
+                # 尚未 provision — fan-out 到背景並行 clone（獨立 semaphore
+                # 限流），tick 不再同步等待重 I/O。防重複由 runner task_id
+                # 去重 + DB SKIP LOCKED + migration_status 再檢查三層保障。
+                provision_pool.submit_provision(
+                    request.id,
+                    concurrency=governance_config.provision_max_concurrency,
+                )
+                continue
             try:
                 started, migrations_used = _ensure_request_running(
                     session=session,
