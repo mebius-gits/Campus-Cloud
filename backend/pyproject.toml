@@ -30,6 +30,7 @@ dependencies = [
     "openpyxl>=3.1.0",
     "prometheus-client>=0.20.0",
     "arq>=0.28.0",
+    "ldap3>=2.9,<3",
 ]
 
 [dependency-groups]
@@ -40,6 +41,7 @@ dev = [
     "ruff<1.0.0,>=0.15.14",
     "prek>=0.2.24,<1.0.0",
     "coverage<8.0.0,>=7.4.3",
+    "types-ldap3>=2.9.13.20260518",
 ]
 
 [tool.pytest.ini_options]

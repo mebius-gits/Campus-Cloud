@@ -87,6 +87,13 @@ from .group import (
     GroupPublic,
     GroupsPublic,
 )
+from .ldap import (
+    LdapConfigPublic,
+    LdapConfigUpdate,
+    LdapLoginRequest,
+    LdapTestResult,
+    LoginMethodsPublic,
+)
 from .monitoring import (
     AlertEventPublic,
     GovernanceConfigPublic,
@@ -297,6 +304,12 @@ __all__ = [
     "TopologyEdge",
     "TopologyResponse",
     "NATRulePublic",
+    # LDAP
+    "LdapConfigPublic",
+    "LdapConfigUpdate",
+    "LdapLoginRequest",
+    "LdapTestResult",
+    "LoginMethodsPublic",
     # Monitoring / Governance
     "AlertEventPublic",
     "GovernanceConfigPublic",

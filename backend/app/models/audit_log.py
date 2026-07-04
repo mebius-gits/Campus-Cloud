@@ -68,6 +68,8 @@ class AuditAction(str, enum.Enum):
     login_failed = "login_failed"
     login_google_success = "login_google_success"
     login_google_failed = "login_google_failed"
+    login_ldap_success = "login_ldap_success"
+    login_ldap_failed = "login_ldap_failed"
     password_change = "password_change"
     password_recovery_request = "password_recovery_request"
     password_reset = "password_reset"

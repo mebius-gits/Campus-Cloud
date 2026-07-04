@@ -15,6 +15,7 @@ from app.api.routes import (
     groups,
     ip_management,
     jobs,
+    ldap_config,
     login,
     lxc,
     migration_jobs,
@@ -51,6 +52,7 @@ api_router.include_router(deletion_requests.router)
 api_router.include_router(migration_jobs.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(governance.router)
+api_router.include_router(ldap_config.router)
 api_router.include_router(ai.router)
 api_router.include_router(spec_change_requests.router)
 api_router.include_router(audit_logs.router)

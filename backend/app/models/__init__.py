@@ -29,6 +29,7 @@ from .governance_config import GovernanceConfig
 from .group import Group
 from .group_member import GroupMember
 from .ip_allocation import IpAllocation
+from .ldap_config import LdapConfig
 from .nat_rule import NatRule
 from .proxmox_config import (
     ProxmoxConfig,
@@ -119,6 +120,8 @@ __all__ = [
     "AlertMetric",
     "AlertScope",
     "GovernanceConfig",
+    # LDAP
+    "LdapConfig",
     # Spec Change Request
     "SpecChangeRequest",
     "SpecChangeRequestStatus",
