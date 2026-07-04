@@ -48,9 +48,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-      frontend_old:
-        condition: service_started
-      frontend_new:
+      frontend:
         condition: service_started
 
   # -------------------------
@@ -193,53 +191,19 @@ services:
   # -------------------------
   # Frontend
   # -------------------------
-  frontend_old:
-    image: '${DOCKER_IMAGE_FRONTEND}:${TAG-latest}'
+  frontend:
+    image: '${DOCKER_IMAGE_FRONTEND:-frontend}:${TAG-latest}'
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
     ports:
       - "5173:80"
     depends_on:
       backend:
         condition: service_healthy
-    networks:
-      - skylab
-
-  # -------------------------
-  # Frontend New
-  # -------------------------
-  frontend_new:
-    image: '${DOCKER_IMAGE_FRONTEND_NEW:-frontend-new}:${TAG-latest}'
-    build:
-      context: .
-      dockerfile: frontend_new/Dockerfile
-      args:
-        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-        ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
-    ports:
-      - "5174:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - skylab
-
-  # -------------------------
-  # Playwright (E2E)
-  # -------------------------
-  playwright:
-    profiles: [e2e]
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile.playwright
-      args:
-        - VITE_API_URL=http://backend:8000
-    depends_on:
-      backend:
-        condition: service_healthy
-      mailcatcher:
-        condition: service_started
     networks:
       - skylab
 

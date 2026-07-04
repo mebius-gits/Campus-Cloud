@@ -18,7 +18,7 @@ function stripThinkTags(text) {
   return String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
-/** 後端導航目標使用舊版前端路徑，映射到 frontend_new 的路由 */
+/** 後端導航目標使用舊版前端路徑，映射到本前端的路由 */
 const PATH_MAP = {
   "/": "/dashboard",
   "/resources": "/resource-mgmt",

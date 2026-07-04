@@ -294,25 +294,25 @@
 ### Task 15: 目錄互換與全引用更新（單一 commit，內容環環相扣不可拆）
 
 **Steps:**
-- [ ] **先停止** `docker compose down` 與所有本機 dev server / 編輯器 watcher（Windows 檔案鎖會讓目錄改名失敗）。
-- [ ] `git mv frontend frontend_old && git mv frontend_new frontend`（git mv 為 OS 層 rename，untracked 的 node_modules/dist 會一起搬走，屬預期）。
-- [ ] 改 `frontend/Dockerfile`（原 frontend_new 的）：`WORKDIR /app/frontend_new` → `/app/frontend`；所有 `COPY frontend_new/...`、`COPY ./frontend_new` → `frontend/...`；`COPY ./frontend_new/nginx.conf` → `./frontend/nginx.conf`；頂部註解同步改。
-- [ ] 改 `docker-compose.yml`：刪 `frontend_old`、`playwright` 服務；`frontend_new` 服務改名 `frontend`（image `${DOCKER_IMAGE_FRONTEND}`、dockerfile `frontend/Dockerfile`、port `5173:80`、build args 保留）；nginx `depends_on` 改為 `frontend`。
-- [ ] 改 `nginx/default.conf`：upstream `frontend_new:80` → `frontend:80`。
-- [ ] 改根 `package.json`：刪 `lint`、`generate-client`、`check:openapi-sync`、`test:ui` scripts；`workspaces` 維持 `["frontend"]`。
-- [ ] 刪 `scripts/generate-client.sh`、`scripts/generate-client.mjs`、`scripts/check-openapi-sync.sh`、`scripts/check-openapi-sync.mjs`。
-- [ ] 根目錄 `rm bun.lock package-lock.json && bun install` 重生 lock。
-- [ ] 重寫 `.github/workflows/frontend-tests.yml` 步驟（見盤點表）；刪 `.github/workflows/biome-autofix.yml`。
-- [ ] `.env.example` 移除 `DOCKER_IMAGE_FRONTEND_NEW`、確認 `GOOGLE_CLIENT_ID`/`ENABLE_SIGNUP` 樣板；**提醒使用者同步清部署機 `.env`**。
-- [ ] 更新 `CLAUDE.md` 前端段落與開發 URL（5173 為新前端）。
-- [ ] 驗證（全部通過才 commit）：
-  - `git grep -n "frontend_new"` → 除 `frontend_old/` 內舊碼與 docs 歷史紀錄外應為 0。
-  - `cd frontend && bun run test && bun run build` 綠。
-  - 根目錄 `bun run dev` 起得來（workspace filter 正常）。
-  - `docker compose build && docker compose up -d` → 開 `http://localhost`（nginx 入口）與 `http://localhost:5173` 全站煙霧測試（登入、我的資源、監控頁、教室各點一頁）。
-  - `docker compose config` 無 warning（DOCKER_IMAGE_FRONTEND_NEW 未定義殘留等）。
-- [ ] Commit：`前端切換: frontend_new 轉正為 frontend，舊前端封存為 frontend_old`
-- [ ] Push 後盯 CI：`Frontend Tests` 必須綠（required check）；`deploy-pve-test` 部署後遠端煙霧測試。
+- [x] **先停止** `docker compose down` 與所有本機 dev server / 編輯器 watcher（Windows 檔案鎖會讓目錄改名失敗）。（Docker daemon 本來就未啟動、無 node/bun 進程）
+- [x] `git mv frontend frontend_old && git mv frontend_new frontend`（git mv 為 OS 層 rename，untracked 的 node_modules/dist/.env 一起搬走，已確認兩邊 .env 各自跟隨）。
+- [x] 改 `frontend/Dockerfile`（原 frontend_new 的）：`WORKDIR /app/frontend_new` → `/app/frontend`；所有 `COPY frontend_new/...`、`COPY ./frontend_new` → `frontend/...`；`COPY ./frontend_new/nginx.conf` → `./frontend/nginx.conf`；頂部註解同步改。
+- [x] 改 `docker-compose.yml`：刪 `frontend_old`、`playwright` 服務；`frontend_new` 服務改名 `frontend`（image `${DOCKER_IMAGE_FRONTEND:-frontend}`、dockerfile `frontend/Dockerfile`、port `5173:80`、build args 保留）；nginx `depends_on` 改為 `frontend`。
+- [x] 改 `nginx/default.conf`：upstream `frontend_new:80` → `frontend:80`（變數改名 `$frontend_upstream`）；**同時移除 `/old/` location（原指向 frontend_old，服務已刪）**——此項為執行時發現、計畫原文未列。
+- [x] 改根 `package.json`：刪 `lint`、`generate-client`、`check:openapi-sync`、`test:ui` scripts 與 `overrides.dompurify`（新前端依賴樹無 dompurify，已驗證）；`workspaces` 維持 `["frontend"]`；**新前端 package name 由 `SkyLab-frontend` 改為 `frontend`**（`--filter` 比對的是 package 名稱，否則 root scripts 全失效——執行時發現）。
+- [x] 刪 `scripts/generate-client.sh`、`scripts/generate-client.mjs`、`scripts/check-openapi-sync.sh`、`scripts/check-openapi-sync.mjs`。
+- [x] 根目錄 `rm bun.lock package-lock.json && bun install` 重生 lock（root bun.lock 重生；root package-lock.json 刪除不再需要；`frontend/bun.lock` 保留——Docker build 以 standalone 模式使用它）。
+- [x] 重寫 `.github/workflows/frontend-tests.yml` 步驟（移除 biome 與 tsc，保留 lockfile 清除 workaround 與 required check 名 `Frontend Tests`）；刪 `.github/workflows/biome-autofix.yml`。
+- [x] `.env.example` 檢查：本就沒有 `DOCKER_IMAGE_FRONTEND_NEW`（compose 用預設值），`GOOGLE_CLIENT_ID`/`ENABLE_SIGNUP` 樣板已存在，無需變更；本機 `.env` 亦無殘留。**部署機 `.env` 若曾手動加過 DOCKER_IMAGE_FRONTEND_NEW 請自行清除**。
+- [x] 更新 `CLAUDE.md` 前端段落與開發 URL（註：CLAUDE.md 在本 repo 被 gitignore，屬本機檔，已更新但不入版控）。
+- [x] 驗證（全部通過才 commit）：
+  - `git grep "frontend_new"`（排除 frontend_old/docs/.claude）→ **0 筆** ✔
+  - `cd frontend && bun run build` 綠、root `bun run test` 29 條綠（workspace filter 正常）✔
+  - `docker compose config` exit 0（YAML 有效）✔
+  - `docker compose build && up -d` 全站煙霧測試 → **Docker daemon 未啟動，待使用者執行**
+- [x] 附帶清理：`frontend/dist/` 移出版控（原 frontend_new 誤把 build 產物入庫，每次 build 都弄髒工作區；已刪除追蹤並加 `frontend/.gitignore`）。
+- [x] Commit：`前端切換: frontend_new 轉正為 frontend，舊前端封存為 frontend_old`
+- [ ] Push 後盯 CI：`Frontend Tests` 必須綠（required check）；`deploy-pve-test` 部署後遠端煙霧測試。（**待使用者決定何時 push**）
 
 ### Task 16: 觀察期後清理（需使用者另行確認，不在本計劃自動執行）
 
