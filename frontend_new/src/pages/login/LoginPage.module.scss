@@ -46,6 +46,42 @@
   }
 }
 
+/* 登入方式切換（Email / 校園帳號），配色同各頁 pill tabs */
+.loginTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-4;
+  padding: $spacing-4;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-8;
+  margin-bottom: $spacing-16;
+}
+
+.loginTab {
+  padding: 6px $spacing-8;
+  border-radius: $radius-8;
+  font-size: $font-size-14;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background $transition-base, color $transition-base;
+
+  &:hover {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+}
+
+.loginTabActive {
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-weight: $font-weight-500;
+
+  &:hover {
+    background: var(--color-text);
+    color: var(--color-surface);
+  }
+}
+
 .form {
   @include flex-column;
   gap: $spacing-8;

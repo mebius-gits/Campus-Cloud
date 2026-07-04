@@ -9,7 +9,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { AuthStorage } from "../services/auth";
+import { AuthStorage, loginLdap } from "../services/auth";
 import { apiGet, apiPost, apiPostForm, refreshTokens } from "../services/api";
 
 const AuthContext = createContext(null);
@@ -120,13 +120,25 @@ export function AuthProvider({ children }) {
     scheduleTokenRefresh();
   }, [scheduleTokenRefresh]);
 
+  /**
+   * ldapLogin - 以校園 LDAP/AD 帳號登入（service 內成功後已儲存 tokens）
+   * @throws {{ status, message }} 登入失敗時
+   */
+  const ldapLogin = useCallback(async (username, password) => {
+    await loginLdap(username, password);
+
+    const me = await apiGet("/api/v1/users/me");
+    setUser(me);
+    scheduleTokenRefresh();
+  }, [scheduleTokenRefresh]);
+
   /** 個人資料更新後（如改名字/Email）同步全域 user 狀態，避免要求重新登入 */
   const updateUser = useCallback((patch) => {
     setUser((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, googleLogin, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, googleLogin, ldapLogin, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

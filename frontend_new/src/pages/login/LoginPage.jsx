@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiPost } from "../../services/api";
+import { getLoginMethods } from "../../services/auth";
 import styles from "./LoginPage.module.scss";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
@@ -155,12 +156,34 @@ function formatGoogleLoginError(err) {
 /* ─── 登入 ──────────────────────────────────────────────── */
 
 function LoginView({ onForgot, onRegister }) {
-  const { login, googleLogin } = useAuth();
+  const { login, googleLogin, ldapLogin } = useAuth();
+  const [mode, setMode] = useState("password"); // "password" | "ldap"
+  const [ldapEnabled, setLdapEnabled] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [ldapUsername, setLdapUsername] = useState("");
+  const [ldapPassword, setLdapPassword] = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // 依後端啟用的登入方式決定是否顯示「校園帳號」分頁（公開端點；取不到就只顯示 Email）
+  useEffect(() => {
+    let cancelled = false;
+    getLoginMethods()
+      .then((methods) => {
+        if (!cancelled) setLdapEnabled(Boolean(methods?.ldap));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const switchMode = (next) => {
+    setMode(next);
+    setError("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -170,6 +193,19 @@ function LoginView({ onForgot, onRegister }) {
       await login(username, password);
     } catch (err) {
       setError(err?.message ?? "登入失敗，請確認帳號與密碼");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLdapSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await ldapLogin(ldapUsername, ldapPassword);
+    } catch (err) {
+      setError(err?.message ?? "登入失敗，請確認校園帳號與密碼");
     } finally {
       setLoading(false);
     }
@@ -191,48 +227,107 @@ function LoginView({ onForgot, onRegister }) {
     setError(message);
   }, []);
 
+  const passwordForm = (
+    <form className={styles.form} onSubmit={handleSubmit}>
+      <div className={styles.field}>
+        <label htmlFor="username">帳號</label>
+        <input
+          id="username"
+          type="text"
+          placeholder="請輸入帳號（電子郵件）"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          disabled={loading}
+          required
+        />
+      </div>
+
+      <PasswordField
+        id="password"
+        label="密碼"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        disabled={loading}
+      />
+
+      <button
+        type="button"
+        className={styles.linkRight}
+        onClick={onForgot}
+        tabIndex={0}
+      >
+        忘記密碼？
+      </button>
+
+      {error && <p className={styles.error}>{error}</p>}
+
+      <button type="submit" className={styles.btn} disabled={loading}>
+        {loading ? "登入中…" : "登入"}
+      </button>
+    </form>
+  );
+
+  const ldapForm = (
+    <form className={styles.form} onSubmit={handleLdapSubmit}>
+      <div className={styles.field}>
+        <label htmlFor="ldap-username">校園帳號</label>
+        <input
+          id="ldap-username"
+          type="text"
+          placeholder="學號 / 教職員帳號"
+          autoComplete="username"
+          value={ldapUsername}
+          onChange={(e) => setLdapUsername(e.target.value)}
+          disabled={loading}
+          required
+        />
+      </div>
+
+      <PasswordField
+        id="ldap-password"
+        label="密碼"
+        value={ldapPassword}
+        onChange={(e) => setLdapPassword(e.target.value)}
+        disabled={loading}
+      />
+
+      {error && <p className={styles.error}>{error}</p>}
+
+      <button type="submit" className={styles.btn} disabled={loading}>
+        {loading ? "登入中…" : "登入"}
+      </button>
+    </form>
+  );
+
   return (
     <>
       <h1 className={styles.title}>SkyLab</h1>
       <p className={styles.subtitle}>雲端校園管理平台</p>
 
-      <form className={styles.form} onSubmit={handleSubmit}>
-        <div className={styles.field}>
-          <label htmlFor="username">帳號</label>
-          <input
-            id="username"
-            type="text"
-            placeholder="請輸入帳號（電子郵件）"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading}
-            required
-          />
+      {ldapEnabled && (
+        <div className={styles.loginTabs} role="tablist" aria-label="登入方式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "password"}
+            className={`${styles.loginTab} ${mode === "password" ? styles.loginTabActive : ""}`}
+            onClick={() => switchMode("password")}
+          >
+            Email
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "ldap"}
+            className={`${styles.loginTab} ${mode === "ldap" ? styles.loginTabActive : ""}`}
+            onClick={() => switchMode("ldap")}
+          >
+            校園帳號
+          </button>
         </div>
+      )}
 
-        <PasswordField
-          id="password"
-          label="密碼"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={loading}
-        />
-
-        <button
-          type="button"
-          className={styles.linkRight}
-          onClick={onForgot}
-          tabIndex={0}
-        >
-          忘記密碼？
-        </button>
-
-        {error && <p className={styles.error}>{error}</p>}
-
-        <button type="submit" className={styles.btn} disabled={loading}>
-          {loading ? "登入中…" : "登入"}
-        </button>
-      </form>
+      {mode === "ldap" && ldapEnabled ? ldapForm : passwordForm}
 
       {GOOGLE_CLIENT_ID && (
         <div className={styles.oauthArea}>
