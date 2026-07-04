@@ -19,6 +19,7 @@ from app.exceptions import (
 )
 from app.infrastructure.worker import submit_sync
 from app.models import VMMigrationStatus, VMRequest, VMRequestStatus
+from app.repositories import governance as governance_repo
 from app.repositories import vm_request as vm_request_repo
 from app.schemas import (
     VMRequestCreate,
@@ -37,6 +38,7 @@ from app.services.user import audit_service
 from app.services.vm import (
     vm_request_availability_service,
     vm_request_placement_service,
+    workload_advisor,
 )
 from app.services.vm.placement_service import CurrentPlacementSelection
 
@@ -89,6 +91,8 @@ def _to_public(req: VMRequest, user_override=None) -> VMRequestPublic:
         disk_size=req.disk_size,
         username=req.username,
         gpu_mapping_id=req.gpu_mapping_id,
+        requested_mode=req.requested_mode,
+        auto_decision_reason=req.auto_decision_reason,
         status=req.status,
         service_template_slug=req.service_template_slug,
         service_template_script_path=req.service_template_script_path,
@@ -294,6 +298,25 @@ def create(
 ) -> VMRequestPublic:
     if request_in.resource_type not in ("lxc", "vm"):
         raise BadRequestError("resource_type must be 'lxc' or 'vm'")
+
+    # ---------- auto mode: 伺服器端重跑規則引擎記錄判斷理由 ----------
+    auto_decision_reason: str | None = None
+    if getattr(request_in, "requested_mode", "manual") == "auto":
+        governance = governance_repo.get_governance_config(session=session)
+        if not governance.workload_advisor_enabled:
+            raise BadRequestError("Auto mode is disabled by administrator")
+        advice = workload_advisor.advise(
+            environment_type=request_in.environment_type,
+            os_info=request_in.os_info,
+            reason=request_in.reason,
+            cores=request_in.cores,
+            memory=request_in.memory,
+            gpu_mapping_id=request_in.gpu_mapping_id,
+            service_template_slug=request_in.service_template_slug,
+        )
+        auto_decision_reason = "；".join(advice.reasons)
+        if advice.resource_type != request_in.resource_type:
+            auto_decision_reason += "（提交值與伺服器建議不同）"
     if request_in.resource_type == "lxc" and not request_in.ostemplate:
         raise BadRequestError("LXC request requires ostemplate")
     if request_in.resource_type == "vm" and (
@@ -352,6 +375,7 @@ def create(
         vm_request_in=request_in,
         user_id=user.id,
         encrypted_password=encrypt_value(request_in.password),
+        auto_decision_reason=auto_decision_reason,
         commit=False,
     )
 

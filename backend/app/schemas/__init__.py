@@ -166,6 +166,8 @@ from .vm_request import (
     VMRequestsPublic,
     VMRequestWindowAvailabilityRequest,
     VMRequestWindowAvailabilityResponse,
+    WorkloadAdviceResponse,
+    WorkloadAdviseRequest,
 )
 
 __all__ = [
@@ -250,6 +252,8 @@ __all__ = [
     "VMRequestReviewProjectedNode",
     "VMRequestReviewRuntimeResource",
     "VMRequestsPublic",
+    "WorkloadAdviceResponse",
+    "WorkloadAdviseRequest",
     # Audit Log
     "AuditLogPublic",
     "AuditLogsPublic",
