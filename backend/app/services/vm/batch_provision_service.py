@@ -19,6 +19,7 @@ from app.repositories import vm_template as vm_template_repo
 from app.schemas import LXCCreateRequest, VMCreateRequest
 from app.services.network import ip_management_service
 from app.services.proxmox import provisioning_service
+from app.services.resource import quota_service
 from app.services.template import clone_service
 
 logger = logging.getLogger(__name__)
@@ -293,6 +294,15 @@ def _provision_one(
     指定 ``vm_template_id`` 時走範本系統 2.0 統一克隆路徑
     （linked 優先退 full）；否則沿用 provisioning_service 舊路徑。
     """
+    quota_service.check_quota(
+        session,
+        user_id,
+        delta_cores=int(params.get("cores") or 0),
+        delta_memory_mb=int(params.get("memory") or 0),
+        delta_disk_gb=int(params.get("disk_size") or params.get("rootfs_size") or 0),
+        delta_instances=1,
+    )
+
     if params.get("vm_template_id"):
         payload = {
             "template_id": str(params["vm_template_id"]),

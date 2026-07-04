@@ -33,6 +33,7 @@ from app.schemas import (
     VMRequestsPublic,
 )
 from app.services.proxmox import proxmox_service
+from app.services.resource import quota_service
 from app.services.scheduling import vm_request_schedule_service
 from app.services.user import audit_service
 from app.services.vm import (
@@ -298,6 +299,16 @@ def create(
 ) -> VMRequestPublic:
     if request_in.resource_type not in ("lxc", "vm"):
         raise BadRequestError("resource_type must be 'lxc' or 'vm'")
+
+    # ---------- 配額執法（E7）：寫入前先擋 ----------
+    quota_service.check_quota(
+        session,
+        user.id,
+        delta_cores=int(request_in.cores or 0),
+        delta_memory_mb=int(request_in.memory or 0),
+        delta_disk_gb=int(request_in.disk_size or request_in.rootfs_size or 0),
+        delta_instances=1,
+    )
 
     # ---------- auto mode: 伺服器端重跑規則引擎記錄判斷理由 ----------
     auto_decision_reason: str | None = None
