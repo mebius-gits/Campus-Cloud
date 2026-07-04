@@ -3,10 +3,21 @@ import uuid
 
 from sqlmodel import Session
 
+from app.core.permissions import is_admin as _is_admin
+from app.exceptions import BadRequestError, ConflictError, PermissionDeniedError
+from app.repositories import governance as governance_repo
 from app.services.proxmox import proxmox_service
 from app.services.user import audit_service
 
 logger = logging.getLogger(__name__)
+
+INIT_SNAPSHOT_NAME = "skylab-init"
+
+
+def _snapshot_max_count(session: Session) -> int:
+    return int(
+        governance_repo.get_governance_config(session=session).student_snapshot_max_count
+    )
 
 
 def list_snapshots(*, vmid: int, resource_info: dict) -> list[dict]:
@@ -36,9 +47,25 @@ def create_snapshot(
     vmstate: bool,
     resource_info: dict,
     user_id: uuid.UUID,
+    user,
 ) -> dict:
     node = resource_info["node"]
     resource_type = resource_info["type"]
+
+    if snapname == INIT_SNAPSHOT_NAME and not _is_admin(user):
+        raise BadRequestError("skylab-init 為系統保留快照名稱")
+    if not _is_admin(user):
+        existing = proxmox_service.list_snapshots(node, vmid, resource_type)
+        countable = [
+            s
+            for s in existing
+            if s.get("name") not in ("current", INIT_SNAPSHOT_NAME)
+        ]
+        limit = _snapshot_max_count(session)
+        if len(countable) >= limit:
+            raise ConflictError(
+                f"快照數量已達上限（{limit}），請先刪除舊快照再建立"
+            )
 
     params = {"snapname": snapname}
     if description:
@@ -70,9 +97,13 @@ def delete_snapshot(
     snapname: str,
     resource_info: dict,
     user_id: uuid.UUID,
+    user,
 ) -> dict:
     node = resource_info["node"]
     resource_type = resource_info["type"]
+
+    if snapname == INIT_SNAPSHOT_NAME and not _is_admin(user):
+        raise PermissionDeniedError("skylab-init 受保護，僅管理員可刪除")
 
     task = proxmox_service.delete_snapshot(node, vmid, resource_type, snapname)
 

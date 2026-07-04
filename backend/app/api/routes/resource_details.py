@@ -62,7 +62,7 @@ def get_rrd_stats(
 
 
 @router.get("/{vmid}/snapshots", response_model=list[SnapshotInfo])
-def list_snapshots(vmid: int, resource_info: ResourceInfoDep):
+def list_snapshots(vmid: int, resource_info: TeachingResourceInfoDep):
     return snapshot_service.list_snapshots(vmid=vmid, resource_info=resource_info)
 
 
@@ -70,7 +70,7 @@ def list_snapshots(vmid: int, resource_info: ResourceInfoDep):
 def create_snapshot(
     vmid: int,
     request: SnapshotCreateRequest,
-    resource_info: ResourceInfoDep,
+    resource_info: TeachingResourceInfoDep,
     session: SessionDep,
     current_user: CurrentUser,
 ):
@@ -82,6 +82,7 @@ def create_snapshot(
         vmstate=request.vmstate,
         resource_info=resource_info,
         user_id=current_user.id,
+        user=current_user,
     )
 
 
@@ -89,7 +90,7 @@ def create_snapshot(
 def delete_snapshot(
     vmid: int,
     snapname: str,
-    resource_info: ResourceInfoDep,
+    resource_info: TeachingResourceInfoDep,
     session: SessionDep,
     current_user: CurrentUser,
 ):
@@ -99,6 +100,7 @@ def delete_snapshot(
         snapname=snapname,
         resource_info=resource_info,
         user_id=current_user.id,
+        user=current_user,
     )
 
 
@@ -108,7 +110,7 @@ def delete_snapshot(
 def rollback_snapshot(
     vmid: int,
     snapname: str,
-    resource_info: ResourceInfoDep,
+    resource_info: TeachingResourceInfoDep,
     session: SessionDep,
     current_user: CurrentUser,
 ):
