@@ -111,6 +111,13 @@ from .proxmox_config import (
     ProxmoxConfigUpdate,
     ProxmoxConnectionTestResult,
 )
+from .quota import (
+    EffectiveQuotaPublic,
+    QuotaUsagePublic,
+    ResourceQuotaCreate,
+    ResourceQuotaPublic,
+    ResourceQuotaUpdate,
+)
 from .resource import (
     BatchActionRequest,
     BatchActionResponse,
@@ -328,6 +335,12 @@ __all__ = [
     "ProxmoxConfigPublic",
     "ProxmoxConfigUpdate",
     "ProxmoxConnectionTestResult",
+    # Quota (module E)
+    "EffectiveQuotaPublic",
+    "QuotaUsagePublic",
+    "ResourceQuotaCreate",
+    "ResourceQuotaPublic",
+    "ResourceQuotaUpdate",
     # Script Deploy
     "ScriptDeployRequest",
     "ScriptDeployResponse",
