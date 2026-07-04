@@ -81,10 +81,10 @@ def get_vm_rrd(session: Session, *, vmid: int, timeframe: str, user: User) -> li
 - `get_node_rrd` timeframe 白名單：`"month"` → `BadRequestError`。
 - `get_vm_rrd` 擁有者檢查：monkeypatch `resource_repo.get_resource_by_vmid` 與 `proxmox_service`，student 存取他人 vmid → `PermissionDeniedError`（確認 `exceptions.py` 內實際類名，若無則用 `AppError(403, ...)` 既有慣例）。
 
-- [ ] C1-1 寫 `get_node_rrd_data` + schemas + `build_overview` 純函式與測試（先寫測試跑 FAIL）
-- [ ] C1-2 實作 service I/O 包裝 + routes + main.py 註冊，測試 PASS
-- [ ] C1-3 `uv run ruff check . && uv run mypy .` 全過
-- [ ] C1-4 Commit：「模組C運維治理: 監控 overview/RRD service + routes (C1)」
+- [x] C1-1 寫 `get_node_rrd_data` + schemas + `build_overview` 純函式與測試（先寫測試跑 FAIL）
+- [x] C1-2 實作 service I/O 包裝 + routes + main.py 註冊，測試 PASS
+- [x] C1-3 `uv run ruff check . && uv run mypy .` 全過
+- [x] C1-4 Commit：「模組C運維治理: 監控 overview/RRD service + routes (C1)」
 
 ---
 
@@ -184,11 +184,11 @@ def process_resource_alerts() -> int
 - `evaluate`：首次超標 → new；已 open → 不重建；冷卻期內（最近事件 10 分鐘前、cooldown 30）→ 不建；回落 87%（threshold 90、遲滯 85）→ 不 resolve；回落 84% → resolve。
 - ack/repository 測試併入 C7 的 DB-backed 測試（可選）。
 
-- [ ] C2-1 models + migration gov01 + repositories（測試先行：evaluate/collect_samples FAIL）
-- [ ] C2-2 alert_service 純函式實作，測試 PASS
-- [ ] C2-3 process_resource_alerts I/O 協調 + email + coordinator 掛載 + routes/schemas
-- [ ] C2-4 ruff + mypy 全過
-- [ ] C2-5 Commit：「模組C運維治理: GovernanceConfig/AlertEvent + 告警排程 (C2)」
+- [x] C2-1 models + migration gov01 + repositories（測試先行：evaluate/collect_samples FAIL）
+- [x] C2-2 alert_service 純函式實作，測試 PASS
+- [x] C2-3 process_resource_alerts I/O 協調 + email + coordinator 掛載 + routes/schemas
+- [x] C2-4 ruff + mypy 全過
+- [x] C2-5 Commit：「模組C運維治理: GovernanceConfig/AlertEvent + 告警排程 (C2)」
 
 ---
 
@@ -257,10 +257,10 @@ def process_idle_detection() -> int
 - `average_cpu_percent`：視窗過濾、空 rrd → None、缺 cpu 鍵的點忽略。
 - `decide_idle_action`：低於閾值首次 → mark、已 mark 未滿寬限 → none、滿寬限 → stop、恢復活躍 → clear、avg=None → none。
 
-- [ ] C3-1 model 欄位 + migration gov02 + policy 純函式（測試先行 FAIL→PASS）
-- [ ] C3-2 repository helpers + lifecycle_service + coordinator 掛載
-- [ ] C3-3 ruff + mypy 全過
-- [ ] C3-4 Commit：「模組C運維治理: TTL 漸進回收與閒置偵測排程 (C3)」
+- [x] C3-1 model 欄位 + migration gov02 + policy 純函式（測試先行 FAIL→PASS）
+- [x] C3-2 repository helpers + lifecycle_service + coordinator 掛載
+- [x] C3-3 ruff + mypy 全過
+- [x] C3-4 Commit：「模組C運維治理: TTL 漸進回收與閒置偵測排程 (C3)」
 
 ---
 
@@ -325,10 +325,10 @@ if request_in.requested_mode == "auto":
 
 **Tests（表驅動）：** 每條規則一案 + 優先序衝突案（gpu+service_template → vm；windows+輕量 → vm）+ 全空輸入 → lxc/low。
 
-- [ ] C4-1 advisor 純函式 + 表驅動測試（FAIL→PASS）
-- [ ] C4-2 model/schema 欄位 + migration gov03 + create() 整合 + advise route
-- [ ] C4-3 ruff + mypy 全過
-- [ ] C4-4 Commit：「模組C運維治理: VM vs LXC 自動判斷規則引擎 + Auto 模式 (C4)」
+- [x] C4-1 advisor 純函式 + 表驅動測試（FAIL→PASS）
+- [x] C4-2 model/schema 欄位 + migration gov03 + create() 整合 + advise route
+- [x] C4-3 ruff + mypy 全過
+- [x] C4-4 Commit：「模組C運維治理: VM vs LXC 自動判斷規則引擎 + Auto 模式 (C4)」
 
 ---
 
@@ -410,11 +410,11 @@ def get_login_methods(*, session: Session) -> dict
 - auto_create=False + 無帳號 → BadRequestError + audit failed。
 - infrastructure 丟 AuthenticationError → 透傳 + audit failed。
 
-- [ ] C5-1 ldap3 依賴 + LdapConfig model/migration gov04 + AuditAction
-- [ ] C5-2 infrastructure client（escape、雙 bind、例外轉換）
-- [ ] C5-3 service + routes + schemas + main.py 註冊；測試 FAIL→PASS
-- [ ] C5-4 ruff + mypy 全過
-- [ ] C5-5 Commit：「模組C運維治理: LDAP/AD 登入與管理設定 (C5)」
+- [x] C5-1 ldap3 依賴 + LdapConfig model/migration gov04 + AuditAction
+- [x] C5-2 infrastructure client（escape、雙 bind、例外轉換）
+- [x] C5-3 service + routes + schemas + main.py 註冊；測試 FAIL→PASS
+- [x] C5-4 ruff + mypy 全過
+- [x] C5-5 Commit：「模組C運維治理: LDAP/AD 登入與管理設定 (C5)」
 
 ---
 
@@ -441,12 +441,12 @@ def get_login_methods(*, session: Session) -> dict
 - 設定頁兩區塊：react-hook-form + zod，數字欄位範圍與後端 Field 約束一致；LDAP 區塊含「測試連線」按鈕（呼叫 test endpoint 顯示結果 toast）；bind password 欄位 placeholder「已設定（留空表示不變）」。
 - 完成後：`bun run lint`、`bun run build` 必須全過。
 
-- [ ] C6-1 後端起 dev server → regenerate client
-- [ ] C6-2 admin.monitoring 頁 + 側欄入口
-- [ ] C6-3 configuration 治理/LDAP 區塊 + 測試連線
-- [ ] C6-4 applications-create Auto 模式 + 登入頁 LDAP 分頁 + my-resources badges
-- [ ] C6-5 `bun run lint && bun run build` 全過
-- [ ] C6-6 Commit：「模組C運維治理: 前端監控/設定/Auto申請/LDAP登入 (C6)」
+- [x] C6-1 後端起 dev server → regenerate client
+- [x] C6-2 admin.monitoring 頁 + 側欄入口
+- [x] C6-3 configuration 治理/LDAP 區塊 + 測試連線
+- [x] C6-4 applications-create Auto 模式 + 登入頁 LDAP 分頁 + my-resources badges
+- [x] C6-5 `bun run lint && bun run build` 全過
+- [x] C6-6 Commit：「模組C運維治理: 前端監控/設定/Auto申請/LDAP登入 (C6)」
 
 ---
 
@@ -457,10 +457,10 @@ def get_login_methods(*, session: Session) -> dict
 - Modify: `docs/superpowers/plans/2026-07-04-governance-module-c.md`（勾選完成項）
 
 **步驟：**
-- [ ] C7-1 後端全量：`uv run ruff check . && uv run mypy .` + `docker compose exec backend bash scripts/tests-start.sh -x`（或本地 `bash ./scripts/test.sh`）；新增測試全綠、既有測試無回歸
-- [ ] C7-2 檢查 4 個 migration 鏈：`alembic heads` 單一 head；`alembic upgrade head` 在 dev DB 成功
-- [ ] C7-3 CLAUDE.md 更新（模組C架構與 API）
-- [ ] C7-4 Commit：「模組C運維治理: 測試收尾與文檔更新 (C7)」
+- [x] C7-1 後端全量：`uv run ruff check . && uv run mypy .` + `docker compose exec backend bash scripts/tests-start.sh -x`（或本地 `bash ./scripts/test.sh`）；新增測試全綠、既有測試無回歸
+- [x] C7-2 檢查 4 個 migration 鏈：`alembic heads` 單一 head；`alembic upgrade head` 在 dev DB 成功
+- [x] C7-3 CLAUDE.md 更新（模組C架構與 API）
+- [x] C7-4 Commit：「模組C運維治理: 測試收尾與文檔更新 (C7)」
 
 ---
 
