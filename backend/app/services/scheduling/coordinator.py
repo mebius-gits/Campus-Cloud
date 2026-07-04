@@ -1216,6 +1216,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                 name="process_mining_detection",
                 handler=process_mining_detection_task,
             ),
+            ScheduledTask(
+                name="process_snapshot_cleanup",
+                handler=process_snapshot_cleanup_task,
+            ),
         ],
     )
     logger.info("VM request scheduler stopped")
@@ -1255,6 +1259,15 @@ def process_mining_detection_task() -> int:
     )
 
     return mining_service.process_mining_detection()
+
+
+def process_snapshot_cleanup_task() -> int:
+    """Scheduler tick：快照自動清理（超過保留天數的一般快照）。"""
+    from app.services.governance import (
+        snapshot_cleanup_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    return snapshot_cleanup_service.process_snapshot_cleanup()
 
 
 def process_pending_deletions_task() -> int:

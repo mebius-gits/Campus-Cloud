@@ -94,6 +94,9 @@ class GovernanceConfigPublic(BaseModel):
     mining_scan_batch_size: int
     mining_auto_suspend: bool
     provision_max_concurrency: int
+    snapshot_cleanup_enabled: bool
+    snapshot_retention_days: int
+    student_snapshot_max_count: int
     updated_at: datetime
 
 
@@ -122,3 +125,6 @@ class GovernanceConfigUpdate(BaseModel):
     mining_scan_batch_size: int | None = Field(default=None, ge=1, le=200)
     mining_auto_suspend: bool | None = None
     provision_max_concurrency: int | None = Field(default=None, ge=1, le=16)
+    snapshot_cleanup_enabled: bool | None = None
+    snapshot_retention_days: int | None = Field(default=None, ge=1, le=90)
+    student_snapshot_max_count: int | None = Field(default=None, ge=1, le=10)
