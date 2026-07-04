@@ -1,4 +1,5 @@
 ﻿import { zodResolver } from "@hookform/resolvers/zod"
+import { useQuery } from "@tanstack/react-query"
 import {
   createFileRoute,
   Link as RouterLink,
@@ -12,7 +13,7 @@ import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
 import type { Body_login_login_access_token as AccessToken } from "@/client"
-import { OpenAPI } from "@/client"
+import { LoginService, OpenAPI } from "@/client"
 import { AuthLayout } from "@/components/Common/AuthLayout"
 import {
   Form,
@@ -25,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import useAuth, { isLoggedIn } from "@/hooks/useAuth"
 import { AuthSessionService } from "@/services/authSession"
 import { isTokenExpiredOrNearExpiry } from "@/services/openApiAuth"
@@ -140,7 +142,7 @@ function Login() {
     }
     return ok
   }, [deviceCode, deviceApprovalPending])
-  const { loginMutation, googleLoginMutation } = useAuth({
+  const { loginMutation, googleLoginMutation, ldapLoginMutation } = useAuth({
     onLoginSuccess: deviceCode
       ? async () => {
           await approveDesktopClient()
@@ -148,6 +150,15 @@ function Login() {
         }
       : undefined,
   })
+
+  // 依後端啟用的登入方式決定是否顯示「校園帳號」分頁（公開端點）
+  const { data: loginMethods } = useQuery({
+    queryKey: ["loginMethods"],
+    queryFn: () => LoginService.loginMethods(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  })
+  const ldapEnabled = Boolean(loginMethods?.ldap)
   const { t } = useTranslation(["auth", "validation"])
   const navigate = useNavigate()
   const googleButtonRef = useRef<HTMLDivElement>(null)
@@ -224,6 +235,33 @@ function Login() {
     loginMutation.mutate(data)
   }
 
+  const ldapFormSchema = useMemo(
+    () =>
+      z.object({
+        username: z.string().min(1, { message: "請輸入校園帳號" }),
+        password: z
+          .string()
+          .min(1, { message: t("validation:password.required") }),
+      }),
+    [t],
+  )
+
+  type LdapFormData = z.infer<typeof ldapFormSchema>
+
+  const ldapForm = useForm<LdapFormData>({
+    resolver: zodResolver(ldapFormSchema),
+    mode: "onBlur",
+    defaultValues: {
+      username: "",
+      password: "",
+    },
+  })
+
+  const onLdapSubmit = (data: LdapFormData) => {
+    if (ldapLoginMutation.isPending) return
+    ldapLoginMutation.mutate(data)
+  }
+
   // Show success screen after device code approval.
   // IMPORTANT: Must be rendered AFTER all hooks above — an early return before
   // hooks would violate the Rules of Hooks and crash on re-render.
@@ -271,111 +309,177 @@ function Login() {
     )
   }
 
+  const emailLoginForm = (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+        <FormField
+          control={form.control}
+          name="username"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t("auth:login.email")}</FormLabel>
+              <FormControl>
+                <Input
+                  data-testid="email-input"
+                  placeholder="user@example.com"
+                  type="email"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage className="text-xs" />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="password"
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-center">
+                <FormLabel>{t("auth:login.password")}</FormLabel>
+                <RouterLink
+                  to="/recover-password"
+                  className="ml-auto text-sm underline-offset-4 hover:underline"
+                >
+                  {t("auth:login.forgotPassword")}
+                </RouterLink>
+              </div>
+              <FormControl>
+                <PasswordInput
+                  data-testid="password-input"
+                  placeholder={t("auth:login.password")}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage className="text-xs" />
+            </FormItem>
+          )}
+        />
+
+        <LoadingButton type="submit" loading={loginMutation.isPending}>
+          {t("auth:login.submitButton")}
+        </LoadingButton>
+      </form>
+    </Form>
+  )
+
+  const ldapLoginForm = (
+    <Form {...ldapForm}>
+      <form
+        onSubmit={ldapForm.handleSubmit(onLdapSubmit)}
+        className="grid gap-4"
+      >
+        <FormField
+          control={ldapForm.control}
+          name="username"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>校園帳號</FormLabel>
+              <FormControl>
+                <Input
+                  data-testid="ldap-username-input"
+                  placeholder="學號 / 教職員帳號"
+                  autoComplete="username"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage className="text-xs" />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={ldapForm.control}
+          name="password"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t("auth:login.password")}</FormLabel>
+              <FormControl>
+                <PasswordInput
+                  data-testid="ldap-password-input"
+                  placeholder={t("auth:login.password")}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage className="text-xs" />
+            </FormItem>
+          )}
+        />
+
+        <LoadingButton type="submit" loading={ldapLoginMutation.isPending}>
+          {t("auth:login.submitButton")}
+        </LoadingButton>
+      </form>
+    </Form>
+  )
+
   return (
     <AuthLayout>
-      <Form {...form}>
-        <form
-          onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col gap-6"
-        >
-          <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-2xl font-bold">{t("auth:login.title")}</h1>
-          </div>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h1 className="text-2xl font-bold">{t("auth:login.title")}</h1>
+        </div>
 
-          {deviceCode && (
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
-              {deviceApprovalPending
-                ? "正在授權桌面連線工具..."
-                : "請登入以授權桌面連線工具"}
+        {deviceCode && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-center text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+            {deviceApprovalPending
+              ? "正在授權桌面連線工具..."
+              : "請登入以授權桌面連線工具"}
+          </div>
+        )}
+
+        {deviceApprovalError && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-center text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+            <p>{deviceApprovalError}</p>
+            {isLoggedIn() && (
+              <button
+                type="button"
+                className="mt-2 underline underline-offset-4"
+                disabled={deviceApprovalPending}
+                onClick={() => void approveDesktopClient()}
+              >
+                重新授權
+              </button>
+            )}
+          </div>
+        )}
+
+        {ldapEnabled ? (
+          <Tabs defaultValue="password">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="password">Email</TabsTrigger>
+              <TabsTrigger value="ldap">校園帳號</TabsTrigger>
+            </TabsList>
+            <TabsContent value="password" className="mt-4">
+              {emailLoginForm}
+            </TabsContent>
+            <TabsContent value="ldap" className="mt-4">
+              {ldapLoginForm}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          emailLoginForm
+        )}
+
+        {GOOGLE_CLIENT_ID && (
+          <>
+            <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+              <span className="relative z-10 bg-background px-2 text-muted-foreground">
+                {t("auth:login.orContinueWith")}
+              </span>
             </div>
-          )}
+            <div ref={googleButtonRef} className="flex justify-center" />
+          </>
+        )}
 
-          {deviceApprovalError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-center text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
-              <p>{deviceApprovalError}</p>
-              {isLoggedIn() && (
-                <button
-                  type="button"
-                  className="mt-2 underline underline-offset-4"
-                  disabled={deviceApprovalPending}
-                  onClick={() => void approveDesktopClient()}
-                >
-                  重新授權
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="grid gap-4">
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("auth:login.email")}</FormLabel>
-                  <FormControl>
-                    <Input
-                      data-testid="email-input"
-                      placeholder="user@example.com"
-                      type="email"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage className="text-xs" />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <div className="flex items-center">
-                    <FormLabel>{t("auth:login.password")}</FormLabel>
-                    <RouterLink
-                      to="/recover-password"
-                      className="ml-auto text-sm underline-offset-4 hover:underline"
-                    >
-                      {t("auth:login.forgotPassword")}
-                    </RouterLink>
-                  </div>
-                  <FormControl>
-                    <PasswordInput
-                      data-testid="password-input"
-                      placeholder={t("auth:login.password")}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage className="text-xs" />
-                </FormItem>
-              )}
-            />
-
-            <LoadingButton type="submit" loading={loginMutation.isPending}>
-              {t("auth:login.submitButton")}
-            </LoadingButton>
-          </div>
-
-          {GOOGLE_CLIENT_ID && (
-            <>
-              <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
-                <span className="relative z-10 bg-background px-2 text-muted-foreground">
-                  {t("auth:login.orContinueWith")}
-                </span>
-              </div>
-              <div ref={googleButtonRef} className="flex justify-center" />
-            </>
-          )}
-
-          <div className="text-center text-sm">
-            {t("auth:login.noAccount")}{" "}
-            <RouterLink to="/signup" className="underline underline-offset-4">
-              {t("auth:login.signUpLink")}
-            </RouterLink>
-          </div>
-        </form>
-      </Form>
+        <div className="text-center text-sm">
+          {t("auth:login.noAccount")}{" "}
+          <RouterLink to="/signup" className="underline underline-offset-4">
+            {t("auth:login.signUpLink")}
+          </RouterLink>
+        </div>
+      </div>
     </AuthLayout>
   )
 }

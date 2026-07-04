@@ -41,6 +41,8 @@ import {
 import { toast } from "sonner"
 import { OpenAPI } from "@/client/core/OpenAPI"
 import { request as __request } from "@/client/core/request"
+import GovernanceConfigTab from "@/components/Admin/GovernanceConfigTab"
+import LdapConfigTab from "@/components/Admin/LdapConfigTab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -1599,11 +1601,29 @@ function AdminConfigPage() {
                 <Database className="h-3.5 w-3.5" />
                 Storage
               </TabsTrigger>
+              <TabsTrigger value="governance" className="gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                治理
+              </TabsTrigger>
+              <TabsTrigger value="ldap" className="gap-1.5">
+                <Lock className="h-3.5 w-3.5" />
+                LDAP
+              </TabsTrigger>
             </TabsList>
 
             {/* ═══ 叢集概覽 ═══ */}
             <TabsContent value="overview" className="mt-5">
               <ClusterOverviewTab />
+            </TabsContent>
+
+            {/* ═══ 治理（告警/TTL/閒置/Auto 判斷）═══ */}
+            <TabsContent value="governance" className="mt-5">
+              <GovernanceConfigTab />
+            </TabsContent>
+
+            {/* ═══ LDAP 登入設定 ═══ */}
+            <TabsContent value="ldap" className="mt-5">
+              <LdapConfigTab />
             </TabsContent>
 
             {/* ═══ PVE 連線 ═══ */}

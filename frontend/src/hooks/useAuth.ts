@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router"
 
 import {
   type Body_login_login_access_token as AccessToken,
+  type LdapLoginRequest,
   LoginService,
   type UserRegister,
   UsersService,
@@ -81,6 +82,15 @@ const useAuth = (options?: {
     onError: handleError.bind(showErrorToast),
   })
 
+  const ldapLoginMutation = useMutation({
+    mutationFn: async (data: LdapLoginRequest) => {
+      const response = await LoginService.loginLdap({ requestBody: data })
+      AuthSessionService.setTokens(response)
+    },
+    onSuccess: afterLogin,
+    onError: handleError.bind(showErrorToast),
+  })
+
   const logout = () => {
     // Fire-and-forget: revoke server-side blacklist entry. We don't await
     // because the user expects logout to be instant; if the request fails
@@ -96,6 +106,7 @@ const useAuth = (options?: {
     signUpMutation,
     loginMutation,
     googleLoginMutation,
+    ldapLoginMutation,
     logout,
     user,
   }

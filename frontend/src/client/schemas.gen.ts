@@ -1046,6 +1046,8 @@ export const AuditActionSchema = {
         'login_failed',
         'login_google_success',
         'login_google_failed',
+        'login_ldap_success',
+        'login_ldap_failed',
         'password_change',
         'password_recovery_request',
         'password_reset',
@@ -6231,6 +6233,327 @@ export const LayoutUpdateSchema = {
     description: '批次更新圖形佈局'
 } as const;
 
+export const LdapConfigPublicSchema = {
+    properties: {
+        enabled: {
+            type: 'boolean',
+            title: 'Enabled'
+        },
+        server_uri: {
+            type: 'string',
+            title: 'Server Uri'
+        },
+        use_starttls: {
+            type: 'boolean',
+            title: 'Use Starttls'
+        },
+        bind_dn: {
+            type: 'string',
+            title: 'Bind Dn'
+        },
+        bind_password_set: {
+            type: 'boolean',
+            title: 'Bind Password Set'
+        },
+        user_search_base: {
+            type: 'string',
+            title: 'User Search Base'
+        },
+        user_filter_template: {
+            type: 'string',
+            title: 'User Filter Template'
+        },
+        email_attribute: {
+            type: 'string',
+            title: 'Email Attribute'
+        },
+        name_attribute: {
+            type: 'string',
+            title: 'Name Attribute'
+        },
+        teacher_group_dn: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Teacher Group Dn'
+        },
+        admin_group_dn: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Admin Group Dn'
+        },
+        auto_create_users: {
+            type: 'boolean',
+            title: 'Auto Create Users'
+        },
+        connect_timeout_seconds: {
+            type: 'integer',
+            title: 'Connect Timeout Seconds'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'enabled',
+        'server_uri',
+        'use_starttls',
+        'bind_dn',
+        'bind_password_set',
+        'user_search_base',
+        'user_filter_template',
+        'email_attribute',
+        'name_attribute',
+        'auto_create_users',
+        'connect_timeout_seconds',
+        'updated_at'
+    ],
+    title: 'LdapConfigPublic',
+    description: 'LDAP 設定（不含 bind 密碼本體，只回報是否已設定）。'
+} as const;
+
+export const LdapConfigUpdateSchema = {
+    properties: {
+        enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Enabled'
+        },
+        server_uri: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 255
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Server Uri'
+        },
+        use_starttls: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Use Starttls'
+        },
+        bind_dn: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bind Dn'
+        },
+        bind_password: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Bind Password'
+        },
+        user_search_base: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Search Base'
+        },
+        user_filter_template: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'User Filter Template'
+        },
+        email_attribute: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Email Attribute'
+        },
+        name_attribute: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 64
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name Attribute'
+        },
+        teacher_group_dn: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Teacher Group Dn'
+        },
+        admin_group_dn: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 512
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Admin Group Dn'
+        },
+        auto_create_users: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Auto Create Users'
+        },
+        connect_timeout_seconds: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 60,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Connect Timeout Seconds'
+        }
+    },
+    type: 'object',
+    title: 'LdapConfigUpdate',
+    description: 'LDAP 設定更新（partial；bind_password 有值才覆寫）。'
+} as const;
+
+export const LdapLoginRequestSchema = {
+    properties: {
+        username: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Username'
+        },
+        password: {
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+            title: 'Password'
+        }
+    },
+    type: 'object',
+    required: [
+        'username',
+        'password'
+    ],
+    title: 'LdapLoginRequest'
+} as const;
+
+export const LdapTestResultSchema = {
+    properties: {
+        ok: {
+            type: 'boolean',
+            title: 'Ok'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        }
+    },
+    type: 'object',
+    required: [
+        'ok',
+        'message'
+    ],
+    title: 'LdapTestResult'
+} as const;
+
+export const LoginMethodsPublicSchema = {
+    properties: {
+        password: {
+            type: 'boolean',
+            title: 'Password'
+        },
+        google: {
+            type: 'boolean',
+            title: 'Google'
+        },
+        ldap: {
+            type: 'boolean',
+            title: 'Ldap'
+        }
+    },
+    type: 'object',
+    required: [
+        'password',
+        'google',
+        'ldap'
+    ],
+    title: 'LoginMethodsPublic'
+} as const;
+
 export const MessageSchema = {
     properties: {
         message: {
@@ -8704,6 +9027,18 @@ export const ResourcePublicSchema = {
                 }
             ],
             title: 'Auto Stop Reason'
+        },
+        idle_since: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Since'
         }
     },
     type: 'object',
@@ -13578,6 +13913,15 @@ export const VMRequestCreateSchema = {
                 }
             ],
             title: 'Service Template Script Path'
+        },
+        requested_mode: {
+            type: 'string',
+            enum: [
+                'manual',
+                'auto'
+            ],
+            title: 'Requested Mode',
+            default: 'manual'
         }
     },
     type: 'object',
@@ -13791,6 +14135,22 @@ export const VMRequestPublicSchema = {
                 }
             ],
             title: 'Service Template Script Path'
+        },
+        requested_mode: {
+            type: 'string',
+            title: 'Requested Mode',
+            default: 'manual'
+        },
+        auto_decision_reason: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Auto Decision Reason'
         },
         status: {
             $ref: '#/components/schemas/VMRequestStatus'
@@ -15314,6 +15674,127 @@ export const ValidationErrorSchema = {
         'type'
     ],
     title: 'ValidationError'
+} as const;
+
+export const WorkloadAdviceResponseSchema = {
+    properties: {
+        resource_type: {
+            type: 'string',
+            enum: [
+                'vm',
+                'lxc'
+            ],
+            title: 'Resource Type'
+        },
+        confidence: {
+            type: 'string',
+            enum: [
+                'high',
+                'medium',
+                'low'
+            ],
+            title: 'Confidence'
+        },
+        reasons: {
+            items: {
+                type: 'string'
+            },
+            type: 'array',
+            title: 'Reasons'
+        }
+    },
+    type: 'object',
+    required: [
+        'resource_type',
+        'confidence',
+        'reasons'
+    ],
+    title: 'WorkloadAdviceResponse'
+} as const;
+
+export const WorkloadAdviseRequestSchema = {
+    properties: {
+        environment_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Environment Type'
+        },
+        os_info: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Os Info'
+        },
+        reason: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reason'
+        },
+        cores: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Cores'
+        },
+        memory: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Memory'
+        },
+        gpu_mapping_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Gpu Mapping Id'
+        },
+        service_template_slug: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Service Template Slug'
+        }
+    },
+    type: 'object',
+    title: 'WorkloadAdviseRequest',
+    description: 'VM vs LXC 自動判斷輸入（申請表單欄位子集）。'
 } as const;
 
 export const app__ai__pve_log__schemas__ChatRequestSchema = {

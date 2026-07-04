@@ -12,7 +12,7 @@
 export { AiApiService, AiMonitoringService, AiProxyService, AiPveLogService, BatchProvisionService, CloudflareService, DesktopClientService, FirewallService, GatewayService, GpuService, IpManagementService, JobsService, MigrationJobsService, type Options, ProxmoxConfigService, ReverseProxyService, RubricService, TunnelService, UtilsService } from './sdk.gen';
 
 // Facaded services (legacy short method names + auto-unwrap)
-export { AiTemplateRecommendationService, AuditLogsService, DeletionRequestsService, GroupsService, LoginService, LxcService, PrivateService, ResourceDetailsService, ResourcesService, ScriptDeployService, SpecChangeRequestsService, UsersService, VmRequestsService, VmService, VncConsoleService } from './legacy-services';
+export { AiTemplateRecommendationService, AuditLogsService, DeletionRequestsService, GovernanceService, GroupsService, LdapConfigService, LoginService, LxcService, MonitoringService, PrivateService, ResourceDetailsService, ResourcesService, ScriptDeployService, SpecChangeRequestsService, UsersService, VmRequestsService, VmService, VncConsoleService } from './legacy-services';
 
 // Compatibility shims (hand-maintained - re-add these lines after regenerating the client)
 export { ApiError } from './core/ApiError'

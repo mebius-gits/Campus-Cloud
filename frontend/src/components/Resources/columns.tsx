@@ -6,6 +6,7 @@ import {
   InfinityIcon,
   Loader2,
   Monitor,
+  MoonStar,
   XCircle,
 } from "lucide-react"
 
@@ -376,7 +377,23 @@ export const createColumns = (
         if (c) return <CreatingStatusBadge meta={c} />
         const d = row.original._deleting
         if (d) return <DeletingStatusBadge meta={d} />
-        return <StatusBadge status={row.original.status} t={t} />
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusBadge status={row.original.status} t={t} />
+            {row.original.idle_since && row.original.status === "running" && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+                )}
+                title={`自 ${new Date(row.original.idle_since).toLocaleString("zh-TW")} 起偵測為閒置，持續閒置將自動關機`}
+              >
+                <MoonStar className="h-3 w-3" />
+                閒置
+              </span>
+            )}
+          </div>
+        )
       },
     },
     {
@@ -394,11 +411,42 @@ export const createColumns = (
             </div>
           )
         }
-        return (
-          <span className="text-sm">
-            {new Date(row.original.expiry_date).toLocaleDateString("zh-TW")}
-          </span>
-        )
+        const expiry = new Date(`${row.original.expiry_date}T00:00:00`)
+        const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86_400_000)
+        const dateLabel = expiry.toLocaleDateString("zh-TW")
+        if (daysLeft < 0) {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span
+                className={cn(
+                  "inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                  "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+                )}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                已到期
+              </span>
+              <span className="text-xs text-muted-foreground">{dateLabel}</span>
+            </div>
+          )
+        }
+        if (daysLeft <= 7) {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span
+                className={cn(
+                  "inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+                )}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                {daysLeft === 0 ? "今天到期" : `${daysLeft} 天後到期`}
+              </span>
+              <span className="text-xs text-muted-foreground">{dateLabel}</span>
+            </div>
+          )
+        }
+        return <span className="text-sm">{dateLabel}</span>
       },
     },
     {

@@ -214,6 +214,7 @@ class ResourcePublic(BaseModel):
     uptime: int | None = None
     auto_stop_at: datetime | None = None
     auto_stop_reason: Literal["window_grace", "practice_quota"] | None = None
+    idle_since: datetime | None = None
 
 
 class SessionStatusResponse(BaseModel):

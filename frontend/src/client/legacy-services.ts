@@ -55,6 +55,12 @@ export const LoginService = {
     unwrap<T.Token>(Sdk.LoginService.loginRefreshToken({ body: opts.requestBody })),
 
   testToken: () => unwrap<T.UserPublic>(Sdk.LoginService.loginTestToken()),
+
+  loginLdap: (opts: { requestBody: T.LdapLoginRequest }) =>
+    unwrap<T.Token>(Sdk.LoginService.loginLoginLdap({ body: opts.requestBody })),
+
+  loginMethods: () =>
+    unwrap<T.LoginMethodsPublic>(Sdk.LoginService.loginLoginMethods()),
 }
 
 // ---------------------------------------------------------------------------
@@ -342,6 +348,83 @@ export const VmRequestsService = {
       Sdk.VmRequestsService.vmRequestsReviewVmRequest({
         path: { request_id: opts.requestId },
         body: opts.requestBody,
+      }),
+    ),
+
+  adviseWorkload: (opts: { requestBody: T.WorkloadAdviseRequest }) =>
+    unwrap<T.WorkloadAdviceResponse>(
+      Sdk.VmRequestsService.vmRequestsAdviseWorkload({ body: opts.requestBody }),
+    ),
+}
+
+// ---------------------------------------------------------------------------
+// Monitoring (module C)
+// ---------------------------------------------------------------------------
+
+export const MonitoringService = {
+  getOverview: () =>
+    unwrap<T.MonitoringOverview>(Sdk.MonitoringService.monitoringGetOverview()),
+
+  getNodeRrd: (opts: { node: string; timeframe?: string }) =>
+    unwrap<Array<{ [key: string]: unknown }>>(
+      Sdk.MonitoringService.monitoringGetNodeRrd({
+        path: { node: opts.node },
+        query: { timeframe: opts.timeframe },
+      }),
+    ),
+
+  getVmRrd: (opts: { vmid: number; timeframe?: string }) =>
+    unwrap<Array<{ [key: string]: unknown }>>(
+      Sdk.MonitoringService.monitoringGetVmRrd({
+        path: { vmid: opts.vmid },
+        query: { timeframe: opts.timeframe },
+      }),
+    ),
+
+  listAlerts: (opts: { active?: boolean; limit?: number } = {}) =>
+    unwrap<Array<T.AlertEventPublic>>(
+      Sdk.MonitoringService.monitoringListAlerts({ query: opts }),
+    ),
+
+  acknowledgeAlert: (opts: { alertId: string }) =>
+    unwrap<T.AlertEventPublic>(
+      Sdk.MonitoringService.monitoringAcknowledgeAlert({
+        path: { alert_id: opts.alertId },
+      }),
+    ),
+}
+
+// ---------------------------------------------------------------------------
+// Governance config (module C)
+// ---------------------------------------------------------------------------
+
+export const GovernanceService = {
+  getConfig: () =>
+    unwrap<T.GovernanceConfigPublic>(Sdk.GovernanceService.governanceGetConfig()),
+
+  updateConfig: (opts: { requestBody: T.GovernanceConfigUpdate }) =>
+    unwrap<T.GovernanceConfigPublic>(
+      Sdk.GovernanceService.governanceUpdateConfig({ body: opts.requestBody }),
+    ),
+}
+
+// ---------------------------------------------------------------------------
+// LDAP config (module C)
+// ---------------------------------------------------------------------------
+
+export const LdapConfigService = {
+  getConfig: () =>
+    unwrap<T.LdapConfigPublic>(Sdk.LdapConfigService.ldapConfigGetConfig()),
+
+  updateConfig: (opts: { requestBody: T.LdapConfigUpdate }) =>
+    unwrap<T.LdapConfigPublic>(
+      Sdk.LdapConfigService.ldapConfigUpdateConfig({ body: opts.requestBody }),
+    ),
+
+  testConnection: (opts: { requestBody?: T.LdapConfigUpdate | null } = {}) =>
+    unwrap<T.LdapTestResult>(
+      Sdk.LdapConfigService.ldapConfigTestConnection({
+        body: opts.requestBody ?? undefined,
       }),
     ),
 }

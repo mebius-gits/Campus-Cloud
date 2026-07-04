@@ -586,7 +586,7 @@ export type AlertScope = 'cluster' | 'node' | 'vm';
  *
  * 審計操作類型
  */
-export type AuditAction = 'spec_change_request' | 'spec_change_apply' | 'snapshot_create' | 'snapshot_delete' | 'snapshot_rollback' | 'config_update' | 'vm_create' | 'lxc_create' | 'resource_start' | 'resource_stop' | 'resource_reboot' | 'resource_shutdown' | 'resource_reset' | 'resource_delete' | 'resource_extend_session' | 'vm_request_submit' | 'vm_request_submit_auto_approved' | 'vm_request_review' | 'ai_api_request_submit' | 'ai_api_request_review' | 'user_create' | 'user_update' | 'user_delete' | 'group_create' | 'group_delete' | 'group_member_add' | 'group_member_remove' | 'batch_provision_vm' | 'batch_provision_lxc' | 'script_deploy' | 'login_success' | 'login_failed' | 'login_google_success' | 'login_google_failed' | 'password_change' | 'password_recovery_request' | 'password_reset' | 'firewall_layout_update' | 'firewall_connection_create' | 'firewall_connection_delete' | 'firewall_rule_create' | 'firewall_rule_update' | 'firewall_rule_delete' | 'nat_rule_delete' | 'nat_rule_sync' | 'reverse_proxy_rule_delete' | 'reverse_proxy_rule_sync' | 'gateway_config_update' | 'gateway_keypair_generate' | 'gateway_config_write' | 'gateway_service_control' | 'cloudflare_config_update' | 'cloudflare_zone_create' | 'cloudflare_dns_record_create' | 'cloudflare_dns_record_update' | 'cloudflare_dns_record_delete' | 'proxmox_config_update' | 'proxmox_node_update' | 'proxmox_storage_update' | 'proxmox_sync_nodes' | 'proxmox_sync_now' | 'migration_job_retry' | 'migration_job_cancel' | 'spec_direct_update' | 'ai_api_credential_rotate' | 'ai_api_credential_delete' | 'ai_api_credential_update';
+export type AuditAction = 'spec_change_request' | 'spec_change_apply' | 'snapshot_create' | 'snapshot_delete' | 'snapshot_rollback' | 'config_update' | 'vm_create' | 'lxc_create' | 'resource_start' | 'resource_stop' | 'resource_reboot' | 'resource_shutdown' | 'resource_reset' | 'resource_delete' | 'resource_extend_session' | 'vm_request_submit' | 'vm_request_submit_auto_approved' | 'vm_request_review' | 'ai_api_request_submit' | 'ai_api_request_review' | 'user_create' | 'user_update' | 'user_delete' | 'group_create' | 'group_delete' | 'group_member_add' | 'group_member_remove' | 'batch_provision_vm' | 'batch_provision_lxc' | 'script_deploy' | 'login_success' | 'login_failed' | 'login_google_success' | 'login_google_failed' | 'login_ldap_success' | 'login_ldap_failed' | 'password_change' | 'password_recovery_request' | 'password_reset' | 'firewall_layout_update' | 'firewall_connection_create' | 'firewall_connection_delete' | 'firewall_rule_create' | 'firewall_rule_update' | 'firewall_rule_delete' | 'nat_rule_delete' | 'nat_rule_sync' | 'reverse_proxy_rule_delete' | 'reverse_proxy_rule_sync' | 'gateway_config_update' | 'gateway_keypair_generate' | 'gateway_config_write' | 'gateway_service_control' | 'cloudflare_config_update' | 'cloudflare_zone_create' | 'cloudflare_dns_record_create' | 'cloudflare_dns_record_update' | 'cloudflare_dns_record_delete' | 'proxmox_config_update' | 'proxmox_node_update' | 'proxmox_storage_update' | 'proxmox_sync_nodes' | 'proxmox_sync_now' | 'migration_job_retry' | 'migration_job_cancel' | 'spec_direct_update' | 'ai_api_credential_rotate' | 'ai_api_credential_delete' | 'ai_api_credential_update';
 
 /**
  * AuditActionMeta
@@ -3450,6 +3450,176 @@ export type LayoutUpdate = {
 };
 
 /**
+ * LdapConfigPublic
+ *
+ * LDAP 設定（不含 bind 密碼本體，只回報是否已設定）。
+ */
+export type LdapConfigPublic = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Server Uri
+     */
+    server_uri: string;
+    /**
+     * Use Starttls
+     */
+    use_starttls: boolean;
+    /**
+     * Bind Dn
+     */
+    bind_dn: string;
+    /**
+     * Bind Password Set
+     */
+    bind_password_set: boolean;
+    /**
+     * User Search Base
+     */
+    user_search_base: string;
+    /**
+     * User Filter Template
+     */
+    user_filter_template: string;
+    /**
+     * Email Attribute
+     */
+    email_attribute: string;
+    /**
+     * Name Attribute
+     */
+    name_attribute: string;
+    /**
+     * Teacher Group Dn
+     */
+    teacher_group_dn?: string | null;
+    /**
+     * Admin Group Dn
+     */
+    admin_group_dn?: string | null;
+    /**
+     * Auto Create Users
+     */
+    auto_create_users: boolean;
+    /**
+     * Connect Timeout Seconds
+     */
+    connect_timeout_seconds: number;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * LdapConfigUpdate
+ *
+ * LDAP 設定更新（partial；bind_password 有值才覆寫）。
+ */
+export type LdapConfigUpdate = {
+    /**
+     * Enabled
+     */
+    enabled?: boolean | null;
+    /**
+     * Server Uri
+     */
+    server_uri?: string | null;
+    /**
+     * Use Starttls
+     */
+    use_starttls?: boolean | null;
+    /**
+     * Bind Dn
+     */
+    bind_dn?: string | null;
+    /**
+     * Bind Password
+     */
+    bind_password?: string | null;
+    /**
+     * User Search Base
+     */
+    user_search_base?: string | null;
+    /**
+     * User Filter Template
+     */
+    user_filter_template?: string | null;
+    /**
+     * Email Attribute
+     */
+    email_attribute?: string | null;
+    /**
+     * Name Attribute
+     */
+    name_attribute?: string | null;
+    /**
+     * Teacher Group Dn
+     */
+    teacher_group_dn?: string | null;
+    /**
+     * Admin Group Dn
+     */
+    admin_group_dn?: string | null;
+    /**
+     * Auto Create Users
+     */
+    auto_create_users?: boolean | null;
+    /**
+     * Connect Timeout Seconds
+     */
+    connect_timeout_seconds?: number | null;
+};
+
+/**
+ * LdapLoginRequest
+ */
+export type LdapLoginRequest = {
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * LdapTestResult
+ */
+export type LdapTestResult = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
+ * LoginMethodsPublic
+ */
+export type LoginMethodsPublic = {
+    /**
+     * Password
+     */
+    password: boolean;
+    /**
+     * Google
+     */
+    google: boolean;
+    /**
+     * Ldap
+     */
+    ldap: boolean;
+};
+
+/**
  * Message
  *
  * 通用訊息回應
@@ -4946,6 +5116,10 @@ export type ResourcePublic = {
      * Auto Stop Reason
      */
     auto_stop_reason?: 'window_grace' | 'practice_quota' | null;
+    /**
+     * Idle Since
+     */
+    idle_since?: string | null;
 };
 
 /**
@@ -7854,6 +8028,10 @@ export type VmRequestCreate = {
      * Service Template Script Path
      */
     service_template_script_path?: string | null;
+    /**
+     * Requested Mode
+     */
+    requested_mode?: 'manual' | 'auto';
 };
 
 /**
@@ -7956,6 +8134,14 @@ export type VmRequestPublic = {
      * Service Template Script Path
      */
     service_template_script_path?: string | null;
+    /**
+     * Requested Mode
+     */
+    requested_mode?: string;
+    /**
+     * Auto Decision Reason
+     */
+    auto_decision_reason?: string | null;
     status: VmRequestStatus;
     /**
      * Reviewer Id
@@ -8745,6 +8931,60 @@ export type ValidationError = {
 };
 
 /**
+ * WorkloadAdviceResponse
+ */
+export type WorkloadAdviceResponse = {
+    /**
+     * Resource Type
+     */
+    resource_type: 'vm' | 'lxc';
+    /**
+     * Confidence
+     */
+    confidence: 'high' | 'medium' | 'low';
+    /**
+     * Reasons
+     */
+    reasons: Array<string>;
+};
+
+/**
+ * WorkloadAdviseRequest
+ *
+ * VM vs LXC 自動判斷輸入（申請表單欄位子集）。
+ */
+export type WorkloadAdviseRequest = {
+    /**
+     * Environment Type
+     */
+    environment_type?: string | null;
+    /**
+     * Os Info
+     */
+    os_info?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Cores
+     */
+    cores?: number | null;
+    /**
+     * Memory
+     */
+    memory?: number | null;
+    /**
+     * Gpu Mapping Id
+     */
+    gpu_mapping_id?: string | null;
+    /**
+     * Service Template Slug
+     */
+    service_template_slug?: string | null;
+};
+
+/**
  * ChatRequest
  */
 export type AppAiPveLogSchemasChatRequest = {
@@ -8938,6 +9178,47 @@ export type LoginLoginGoogleResponses = {
 };
 
 export type LoginLoginGoogleResponse = LoginLoginGoogleResponses[keyof LoginLoginGoogleResponses];
+
+export type LoginLoginLdapData = {
+    body: LdapLoginRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/login/ldap';
+};
+
+export type LoginLoginLdapErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LoginLoginLdapError = LoginLoginLdapErrors[keyof LoginLoginLdapErrors];
+
+export type LoginLoginLdapResponses = {
+    /**
+     * Successful Response
+     */
+    200: Token;
+};
+
+export type LoginLoginLdapResponse = LoginLoginLdapResponses[keyof LoginLoginLdapResponses];
+
+export type LoginLoginMethodsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/login/methods';
+};
+
+export type LoginLoginMethodsResponses = {
+    /**
+     * Successful Response
+     */
+    200: LoginMethodsPublic;
+};
+
+export type LoginLoginMethodsResponse = LoginLoginMethodsResponses[keyof LoginLoginMethodsResponses];
 
 export type LoginRefreshTokenData = {
     body: RefreshTokenRequest;
@@ -10281,6 +10562,31 @@ export type VmRequestsCreateVmRequestResponses = {
 
 export type VmRequestsCreateVmRequestResponse = VmRequestsCreateVmRequestResponses[keyof VmRequestsCreateVmRequestResponses];
 
+export type VmRequestsAdviseWorkloadData = {
+    body: WorkloadAdviseRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/vm-requests/advise';
+};
+
+export type VmRequestsAdviseWorkloadErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VmRequestsAdviseWorkloadError = VmRequestsAdviseWorkloadErrors[keyof VmRequestsAdviseWorkloadErrors];
+
+export type VmRequestsAdviseWorkloadResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkloadAdviceResponse;
+};
+
+export type VmRequestsAdviseWorkloadResponse = VmRequestsAdviseWorkloadResponses[keyof VmRequestsAdviseWorkloadResponses];
+
 export type VmRequestsGetVmRequestAvailabilityData = {
     body: VmRequestAvailabilityRequest;
     path?: never;
@@ -11030,6 +11336,75 @@ export type GovernanceUpdateConfigResponses = {
 };
 
 export type GovernanceUpdateConfigResponse = GovernanceUpdateConfigResponses[keyof GovernanceUpdateConfigResponses];
+
+export type LdapConfigGetConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ldap-config';
+};
+
+export type LdapConfigGetConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: LdapConfigPublic;
+};
+
+export type LdapConfigGetConfigResponse = LdapConfigGetConfigResponses[keyof LdapConfigGetConfigResponses];
+
+export type LdapConfigUpdateConfigData = {
+    body: LdapConfigUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ldap-config';
+};
+
+export type LdapConfigUpdateConfigErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LdapConfigUpdateConfigError = LdapConfigUpdateConfigErrors[keyof LdapConfigUpdateConfigErrors];
+
+export type LdapConfigUpdateConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: LdapConfigPublic;
+};
+
+export type LdapConfigUpdateConfigResponse = LdapConfigUpdateConfigResponses[keyof LdapConfigUpdateConfigResponses];
+
+export type LdapConfigTestConnectionData = {
+    /**
+     * Config In
+     */
+    body?: LdapConfigUpdate | null;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ldap-config/test';
+};
+
+export type LdapConfigTestConnectionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LdapConfigTestConnectionError = LdapConfigTestConnectionErrors[keyof LdapConfigTestConnectionErrors];
+
+export type LdapConfigTestConnectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: LdapTestResult;
+};
+
+export type LdapConfigTestConnectionResponse = LdapConfigTestConnectionResponses[keyof LdapConfigTestConnectionResponses];
 
 export type AiApiListAllAiApiRequestsData = {
     body?: never;

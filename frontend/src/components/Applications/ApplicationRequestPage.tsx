@@ -1,7 +1,15 @@
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, LayoutTemplate, RefreshCw, X } from "lucide-react"
+import {
+  ArrowLeft,
+  Box,
+  LayoutTemplate,
+  MonitorCog,
+  RefreshCw,
+  Wand2,
+  X,
+} from "lucide-react"
 import {
   type CSSProperties,
   useCallback,
@@ -14,7 +22,13 @@ import { useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { z } from "zod"
 
-import { type ApiError, LxcService, VmService } from "@/client"
+import {
+  type ApiError,
+  LxcService,
+  VmRequestsService,
+  VmService,
+  type WorkloadAdviseRequest,
+} from "@/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -208,6 +222,9 @@ export function ApplicationRequestPage({
   const showAiAssistant = true
   const [showTemplateSelector, setShowTemplateSelector] = useState(false)
   const [resourceType, setResourceType] = useState<"lxc" | "vm">("lxc")
+  const [typeSelectionMode, setTypeSelectionMode] = useState<"manual" | "auto">(
+    "manual",
+  )
   const [serviceTemplateName, setServiceTemplateName] = useState("")
   const [serviceTemplateSlug, setServiceTemplateSlug] = useState("")
   const [serviceTemplateScriptPath, setServiceTemplateScriptPath] = useState("")
@@ -561,6 +578,67 @@ export function ApplicationRequestPage({
     [form],
   )
 
+  // ── VM vs LXC 自動判斷（Auto 模式）────────────────────────────────────────
+  const watchedOsInfo = useWatch({ control: form.control, name: "os_info" })
+  const adviseRequest = useMemo<WorkloadAdviseRequest>(
+    () => ({
+      os_info: watchedOsInfo?.trim() || null,
+      reason: watchedReason?.trim() || null,
+      cores: Number(watchedCores || 0) || null,
+      memory: Number(watchedMemory || 0) || null,
+      gpu_mapping_id: watchedGpuMappingId?.trim() || null,
+      service_template_slug: serviceTemplateSlug || null,
+    }),
+    [
+      serviceTemplateSlug,
+      watchedCores,
+      watchedGpuMappingId,
+      watchedMemory,
+      watchedOsInfo,
+      watchedReason,
+    ],
+  )
+
+  // 500ms debounce，避免每個按鍵都打 advise API
+  const [debouncedAdviseRequest, setDebouncedAdviseRequest] =
+    useState<WorkloadAdviseRequest>(adviseRequest)
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedAdviseRequest(adviseRequest),
+      500,
+    )
+    return () => clearTimeout(timer)
+  }, [adviseRequest])
+
+  const {
+    data: workloadAdvice,
+    error: adviseError,
+    isFetching: adviseLoading,
+  } = useQuery({
+    queryKey: ["workloadAdvise", debouncedAdviseRequest],
+    queryFn: () =>
+      VmRequestsService.adviseWorkload({ requestBody: debouncedAdviseRequest }),
+    enabled: typeSelectionMode === "auto",
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  // 建議結果 → 同步 resource_type（範本欄位區隨之切換）
+  useEffect(() => {
+    if (typeSelectionMode !== "auto" || !workloadAdvice) return
+    if (workloadAdvice.resource_type !== resourceType) {
+      setResourceType(workloadAdvice.resource_type)
+      updateFormValue("resource_type", workloadAdvice.resource_type)
+    }
+  }, [resourceType, typeSelectionMode, updateFormValue, workloadAdvice])
+
+  // advisor 被管理員停用（400）→ 退回手動模式
+  useEffect(() => {
+    if (typeSelectionMode !== "auto" || !adviseError) return
+    setTypeSelectionMode("manual")
+    showErrorToast("自動判斷目前未啟用，已切換為手動選擇。")
+  }, [adviseError, showErrorToast, typeSelectionMode])
+
   useEffect(() => {
     if (watchedMode !== "scheduled") return
     const orderedEndDate = getOrderedEndDate(researchStartDate, researchEndDate)
@@ -662,7 +740,10 @@ export function ApplicationRequestPage({
       }
 
       return VmRequestsApi.create({
-        requestBody: toVmRequestCreateRequestBody(enrichedData, payloadOptions),
+        requestBody: {
+          ...toVmRequestCreateRequestBody(enrichedData, payloadOptions),
+          requested_mode: typeSelectionMode,
+        },
       })
     },
     onSuccess: () => {
@@ -1017,6 +1098,84 @@ export function ApplicationRequestPage({
                   </div>
                 )}
 
+                {/* 資源類型：自動判斷 / 手動選擇 */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTypeSelectionMode("auto")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm transition-colors",
+                      typeSelectionMode === "auto"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    自動判斷（推薦）
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTypeSelectionMode("manual")}
+                    className={cn(
+                      "rounded-lg border px-4 py-2 text-sm transition-colors",
+                      typeSelectionMode === "manual"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    手動選擇
+                  </button>
+                </div>
+
+                {typeSelectionMode === "auto" && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                    {adviseLoading && !workloadAdvice ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        分析工作負載中...
+                      </div>
+                    ) : workloadAdvice ? (
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {workloadAdvice.resource_type === "vm" ? (
+                            <MonitorCog className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Box className="h-4 w-4 text-primary" />
+                          )}
+                          <span className="text-sm font-semibold">
+                            建議使用{" "}
+                            {workloadAdvice.resource_type === "vm"
+                              ? "QEMU 虛擬機"
+                              : "LXC 容器"}
+                          </span>
+                          <Badge variant="outline">
+                            {workloadAdvice.confidence === "high"
+                              ? "高信心"
+                              : workloadAdvice.confidence === "medium"
+                                ? "中信心"
+                                : "低信心"}
+                          </Badge>
+                          {adviseLoading && (
+                            <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+                          {workloadAdvice.reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                        <p className="text-xs text-muted-foreground">
+                          建議會依「用途說明、OS、規格、GPU」即時更新；如需固定類型請改用手動選擇。
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        填寫用途說明與規格後即會顯示建議。
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <Tabs
                   value={resourceType}
                   onValueChange={(value) => {
@@ -1026,7 +1185,12 @@ export function ApplicationRequestPage({
                   }}
                   className="w-full"
                 >
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList
+                    className={cn(
+                      "grid w-full grid-cols-2",
+                      typeSelectionMode === "auto" && "hidden",
+                    )}
+                  >
                     <TabsTrigger value="lxc">
                       {t("resources:form.type.lxc")}
                     </TabsTrigger>
