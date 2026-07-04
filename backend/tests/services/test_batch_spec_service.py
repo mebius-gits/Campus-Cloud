@@ -95,3 +95,47 @@ def test_single_error_does_not_stop_batch(
     stored = svc._tasks.get(task.id)
     assert stored.items[101].status == "error"
     assert stored.items[102].status == "ok"
+
+
+def test_group_id_resolution_filters_none_and_dedupes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """group_id= 路徑：get_member_vmids 回傳 {user_id: vmid|None}，需過濾
+    None 並去重，僅剩的 vmid 才進入 targets（間接證明 start_batch_spec 走到
+    _resolve_targets 的 group_id 分支並正確解析）。"""
+    from app.repositories import group as group_repo
+
+    member_vmids = {uuid.uuid4(): 101, uuid.uuid4(): None, uuid.uuid4(): 101}
+    monkeypatch.setattr(
+        group_repo, "get_member_vmids", lambda *, session, group_id: member_vmids
+    )
+    monkeypatch.setattr(
+        svc, "require_vm_teaching_access", lambda session, user, vmid: SimpleNamespace(
+            user_id=uuid.uuid4()
+        )
+    )
+    monkeypatch.setattr(
+        svc.proxmox_service,
+        "find_resource",
+        lambda vmid: {"node": "pve1", "type": "qemu"},
+    )
+    monkeypatch.setattr(svc, "_max_concurrency", lambda: 2)
+    submitted: list = []
+    monkeypatch.setattr(
+        svc.background_tasks,
+        "submit_factory",
+        lambda coro_factory, **kwargs: submitted.append(kwargs) or "task-id",
+    )
+
+    task_id = svc.start_batch_spec(
+        None,
+        vmids=None,
+        group_id=uuid.uuid4(),
+        cores=4,
+        memory_mb=None,
+        user=TEACHER,
+    )
+
+    task = svc._tasks.get(task_id)
+    assert list(task.items.keys()) == [101]
+    assert len(submitted) == 1
