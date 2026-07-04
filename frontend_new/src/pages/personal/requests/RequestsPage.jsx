@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import styles from "./RequestsPage.module.scss";
 import { VmRequestsService } from "../../../services/vmRequests";
 import { useToast } from "../../../hooks/useToast";
+import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import RequestFormPage from "./RequestFormPage";
 import MIcon from "../../../components/MIcon";
 
@@ -192,7 +193,7 @@ function RequestCard({ req, onUpdated }) {
     try {
       const updated = await VmRequestsService.retry(req.id);
       onUpdated(updated);
-      toast.success("已重新觸發開通，請稍後重新整理查看進度");
+      toast.success("已重新觸發開通，進度將自動更新");
     } catch (err) {
       toast.error(err?.message ?? "重試失敗，請稍後再試。");
     } finally {
@@ -367,9 +368,12 @@ export default function RequestsPage() {
   const [view, setView]         = useState(VIEW_LIST);
   const [returning, setReturning] = useState(false);
 
-  const fetchRequests = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  /** silent = true 時不觸發 loading / error state，供背景自動刷新使用 */
+  const fetchRequests = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(false);
+    }
     try {
       const res = await VmRequestsService.list();
       setRequests(
@@ -378,15 +382,19 @@ export default function RequestsPage() {
         )
       );
     } catch {
-      setError(true);
+      if (!silent) setError(true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (view === "list") fetchRequests();
   }, [view, fetchRequests]);
+
+  useAutoRefresh(() => {
+    if (view === "list") fetchRequests(true);
+  });
 
   function handleUpdated(updated) {
     setRequests((prev) => prev.map((r) => r.id === updated.id ? updated : r));

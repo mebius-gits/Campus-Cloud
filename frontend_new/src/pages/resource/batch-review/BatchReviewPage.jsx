@@ -3,6 +3,7 @@ import styles from "./BatchReviewPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { BatchProvisionService } from "../../../services/batchProvision";
 import { useToast } from "../../../hooks/useToast";
+import useAutoRefresh from "../../../hooks/useAutoRefresh";
 
 const STATUS_LABELS = {
   pending_review: "待審核",
@@ -90,19 +91,21 @@ export default function BatchReviewPage() {
     }
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /** silent = true 時不觸發 loading 與錯誤提示，供背景自動刷新使用 */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await BatchProvisionService.listPending();
       setBatches(Array.isArray(res) ? res : []);
     } catch (e) {
-      toast.error(e?.message ?? "載入批量申請失敗");
+      if (!silent) toast.error(e?.message ?? "載入批量申請失敗");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+  useAutoRefresh(() => load(true));
 
   const review = async (jobId, decision) => {
     if (!window.confirm(decision === "approved" ? "確定核准此批次?" : "確定駁回此批次?")) return;
@@ -144,12 +147,6 @@ export default function BatchReviewPage() {
         <div className={styles.pageHeading}>
           <h1 className={styles.pageTitle}>批量建立審核</h1>
           <p className={styles.pageSubtitle}>審核教師提交的批次 VM 配置申請</p>
-        </div>
-        <div className={styles.pageActions}>
-          <button type="button" className={styles.btnSecondary} onClick={load} disabled={loading}>
-            <MIcon name="sync" size={16} />
-            {loading ? "載入中…" : "重新整理"}
-          </button>
         </div>
       </div>
 

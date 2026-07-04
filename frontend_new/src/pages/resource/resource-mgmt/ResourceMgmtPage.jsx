@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import styles from "./ResourceMgmtPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { useToast } from "../../../hooks/useToast";
+import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import { ResourcesService } from "../../../services/resources";
 import TerminalDialog from "../../personal/resources/TerminalDialog";
 import VncDialog from "../../personal/resources/VncDialog";
@@ -386,22 +387,26 @@ export default function ResourceMgmtPage() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(false);
 
-  const fetchResources = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  /** silent = true 時不觸發 loading / error state，供背景自動刷新使用 */
+  const fetchResources = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(false);
+    }
     try {
       const data = await ResourcesService.listAll();
       setResources(data ?? []);
     } catch {
-      setError(true);
+      if (!silent) setError(true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchResources();
   }, [fetchResources]);
+  useAutoRefresh(() => fetchResources(true));
 
   function handleUpdated(updated) {
     setResources((prev) => prev.map((r) => r.vmid === updated.vmid ? updated : r));
@@ -420,10 +425,6 @@ export default function ResourceMgmtPage() {
           <p className={styles.pageSubtitle}>查看與管理系統中所有虛擬機與 LXC 容器</p>
         </div>
         <div className={styles.pageActions}>
-          <button type="button" className={styles.btnSecondary} onClick={fetchResources} disabled={loading}>
-            <MIcon name="sync" size={16} />
-            重新整理
-          </button>
           <button type="button" className={styles.btnPrimary} onClick={() => navigate("/my-requests")}>
             <MIcon name="add" size={16} />
             建立資源
