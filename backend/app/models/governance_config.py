@@ -48,6 +48,11 @@ class GovernanceConfig(SQLModel, table=True):
     # ── 克隆並行化（模組 D）──────────────────────────────────────────────
     provision_max_concurrency: int = Field(default=4, ge=1, le=16)
 
+    # ── 快照治理（模組 E）─────────────────────────────────────────────────────────
+    snapshot_cleanup_enabled: bool = Field(default=True)
+    snapshot_retention_days: int = Field(default=7, ge=1, le=90)
+    student_snapshot_max_count: int = Field(default=3, ge=1, le=10)
+
     updated_at: datetime = Field(
         default_factory=get_datetime_utc,
         sa_column=Column(DateTime(timezone=True), nullable=False),
