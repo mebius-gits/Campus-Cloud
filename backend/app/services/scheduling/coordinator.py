@@ -335,6 +335,11 @@ def _provision_new_resource(
             finish_session.add(req)
         finish_session.commit()
 
+    # E1：provision 完成即建受保護初始快照（best-effort，不阻斷）
+    from app.services.resource import reset_service  # noqa: PLC0415 — 避免 import cycle
+
+    reset_service.ensure_init_snapshot(new_vmid)
+
     logger.info(
         "Provisioned request %s → VMID %s on node %s",
         request_id, new_vmid, actual_node,

@@ -263,6 +263,11 @@ def _process_task(*, job_id: uuid.UUID, task_id: uuid.UUID) -> None:
                 batch_job_id=job_id,
             )
 
+        # E1：批量建立完成點也建初始快照（best-effort）
+        from app.services.resource import reset_service  # noqa: PLC0415
+
+        reset_service.ensure_init_snapshot(vmid)
+
         with Session(engine) as session:
             bp_repo.update_task_done(session=session, task_id=task_id, vmid=vmid)
             bp_repo.increment_job_done(session=session, job_id=job_id)
