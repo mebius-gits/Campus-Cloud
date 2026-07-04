@@ -11,6 +11,7 @@ import {
   Gauge,
   Globe,
   Home,
+  LayoutGrid,
   Monitor,
   MonitorPlay,
   Network,
@@ -78,6 +79,7 @@ export function AppSidebar() {
     ...aiItems,
     { icon: UsersRound, title: "Groups", path: "/groups" },
     { icon: MonitorPlay, title: "教室", path: "/classroom" },
+    { icon: LayoutGrid, title: "教學面板", path: "/teaching" },
     jobsItem,
   ]
 
@@ -91,6 +93,7 @@ export function AppSidebar() {
     { icon: Bot, title: "AI 管理中心", path: "/admin/ai-management" },
     { icon: UsersRound, title: "Groups", path: "/groups" },
     { icon: MonitorPlay, title: "教室", path: "/classroom" },
+    { icon: LayoutGrid, title: "教學面板", path: "/teaching" },
     { icon: Users, title: t("sidebar.admin"), path: "/admin" },
     { icon: Gauge, title: "資源監控", path: "/admin/monitoring" },
     { icon: Settings2, title: "System Settings", path: "/admin/configuration" },

@@ -69,7 +69,10 @@ export function request<T>(
       const data = options.formData as Record<string, unknown>
       for (const [key, value] of Object.entries(data)) {
         if (value instanceof File || value instanceof Blob) fd.append(key, value)
-        else if (value !== undefined && value !== null) fd.append(key, String(value))
+        else if (Array.isArray(value)) {
+          // FastAPI 的 list Form 欄位需要重複欄位而非逗號串接
+          for (const item of value) fd.append(key, String(item))
+        } else if (value !== undefined && value !== null) fd.append(key, String(value))
       }
       body = fd
     } else if (options.body !== undefined) {

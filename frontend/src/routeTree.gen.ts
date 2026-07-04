@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
 import { Route as LayoutTemplatesRouteImport } from './routes/_layout/templates'
+import { Route as LayoutTeachingRouteImport } from './routes/_layout/teaching'
 import { Route as LayoutSettingsRouteImport } from './routes/_layout/settings'
 import { Route as LayoutReverseProxyRouteImport } from './routes/_layout/reverse-proxy'
 import { Route as LayoutResourcesCreateRouteImport } from './routes/_layout/resources-create'
@@ -82,6 +83,11 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
 const LayoutTemplatesRoute = LayoutTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutTeachingRoute = LayoutTeachingRouteImport.update({
+  id: '/teaching',
+  path: '/teaching',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutSettingsRoute = LayoutSettingsRouteImport.update({
@@ -278,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/resources-create': typeof LayoutResourcesCreateRoute
   '/reverse-proxy': typeof LayoutReverseProxyRoute
   '/settings': typeof LayoutSettingsRoute
+  '/teaching': typeof LayoutTeachingRoute
   '/templates': typeof LayoutTemplatesRoute
   '/admin/ai-management': typeof LayoutAdminAiManagementRoute
   '/admin/ai-monitoring': typeof LayoutAdminAiMonitoringRoute
@@ -317,6 +324,7 @@ export interface FileRoutesByTo {
   '/resources-create': typeof LayoutResourcesCreateRoute
   '/reverse-proxy': typeof LayoutReverseProxyRoute
   '/settings': typeof LayoutSettingsRoute
+  '/teaching': typeof LayoutTeachingRoute
   '/templates': typeof LayoutTemplatesRoute
   '/': typeof LayoutIndexRoute
   '/admin/ai-management': typeof LayoutAdminAiManagementRoute
@@ -360,6 +368,7 @@ export interface FileRoutesById {
   '/_layout/resources-create': typeof LayoutResourcesCreateRoute
   '/_layout/reverse-proxy': typeof LayoutReverseProxyRoute
   '/_layout/settings': typeof LayoutSettingsRoute
+  '/_layout/teaching': typeof LayoutTeachingRoute
   '/_layout/templates': typeof LayoutTemplatesRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/admin/ai-management': typeof LayoutAdminAiManagementRoute
@@ -404,6 +413,7 @@ export interface FileRouteTypes {
     | '/resources-create'
     | '/reverse-proxy'
     | '/settings'
+    | '/teaching'
     | '/templates'
     | '/admin/ai-management'
     | '/admin/ai-monitoring'
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/resources-create'
     | '/reverse-proxy'
     | '/settings'
+    | '/teaching'
     | '/templates'
     | '/'
     | '/admin/ai-management'
@@ -485,6 +496,7 @@ export interface FileRouteTypes {
     | '/_layout/resources-create'
     | '/_layout/reverse-proxy'
     | '/_layout/settings'
+    | '/_layout/teaching'
     | '/_layout/templates'
     | '/_layout/'
     | '/_layout/admin/ai-management'
@@ -562,6 +574,13 @@ declare module '@tanstack/react-router' {
       path: '/templates'
       fullPath: '/templates'
       preLoaderRoute: typeof LayoutTemplatesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/teaching': {
+      id: '/_layout/teaching'
+      path: '/teaching'
+      fullPath: '/teaching'
+      preLoaderRoute: typeof LayoutTeachingRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/settings': {
@@ -850,6 +869,7 @@ interface LayoutRouteChildren {
   LayoutResourcesCreateRoute: typeof LayoutResourcesCreateRoute
   LayoutReverseProxyRoute: typeof LayoutReverseProxyRoute
   LayoutSettingsRoute: typeof LayoutSettingsRoute
+  LayoutTeachingRoute: typeof LayoutTeachingRoute
   LayoutTemplatesRoute: typeof LayoutTemplatesRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutApprovalsRequestIdRoute: typeof LayoutApprovalsRequestIdRoute
@@ -876,6 +896,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutResourcesCreateRoute: LayoutResourcesCreateRoute,
   LayoutReverseProxyRoute: LayoutReverseProxyRoute,
   LayoutSettingsRoute: LayoutSettingsRoute,
+  LayoutTeachingRoute: LayoutTeachingRoute,
   LayoutTemplatesRoute: LayoutTemplatesRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutApprovalsRequestIdRoute: LayoutApprovalsRequestIdRoute,
