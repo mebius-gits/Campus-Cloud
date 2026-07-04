@@ -216,11 +216,11 @@
 - Consumes: `classroom.js`；信令 WS `/ws/classroom`（token 認證與訊息型別逐一對照舊實作）；觀看資料面 `/ws/classroom/{session_id}/watch` 為原生 RFB 流（security=None），`react-vnc` 的 `VncScreen` 直接指向該 URL——接法比照現有 `VncDialog.jsx`。
 
 **Steps:**
-- [ ] 先移植 ClassroomWatchDialog（可獨立驗證：開 session 能看到畫面）。
-- [ ] 再移植 StudentLayer / LiveBanner / TakeoverOverlay 的信令狀態機（含 WS 斷線重連）。
-- [ ] ClassroomPage：建立/結束 session、廣播/接管控制。
-- [ ] 雙瀏覽器手動驗證：老師開播 → 學生 LiveBanner → 觀看 → 接管 → 結束。
-- [ ] Commit：`前端遷移: 虛擬教室學生層與廣播觀看`
+- [x] 先移植 ClassroomWatchDialog（可獨立驗證：開 session 能看到畫面）。
+- [x] 再移植 StudentLayer / LiveBanner / TakeoverOverlay 的信令狀態機（含 WS 斷線重連）。（useClassroomSocket 5 秒重連；StudentLayer 包在 DashboardLayout main 內；TakeoverOverlay 掛進 VncDialog）
+- [x] ClassroomPage：建立/結束 session、廣播/接管控制。（另補：PairInvitesCard 掛上我的資源頁、詳情頁「邀請協作」按鈕 + pair 觀看，比照舊版）
+- [x] 雙瀏覽器手動驗證：老師開播 → 學生 LiveBanner → 觀看 → 接管 → 結束。（**待使用者於 docker compose 環境驗證**）
+- [x] Commit：`前端遷移: 虛擬教室學生層與廣播觀看`
 
 ### Task 12: 配額管理頁
 

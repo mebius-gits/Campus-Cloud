@@ -2,6 +2,7 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/Sidebar/Sidebar";
 import AiFloatingChat from "../components/AiFloatingChat/AiFloatingChat";
+import ClassroomStudentLayer from "../components/Classroom/ClassroomStudentLayer";
 import styles from "./DashboardLayout.module.scss";
 
 export const LayoutContext = createContext({ setCompactFooter: () => {} });
@@ -43,21 +44,24 @@ export default function DashboardLayout() {
       />
 
       <main className={styles.main}>
-        <div className={styles.mobileTopBar}>
-          <button
-            className={styles.mobileMenuBtn}
-            onClick={() => setMobileOpen(true)}
-            aria-label="開啟選單"
-            type="button"
-          >
-            <span className="material-icons-outlined" style={{ fontSize: 22 }}>
-              segment
-            </span>
-          </button>
-        </div>
-        <Outlet />
-        <div className={`${styles.footer} ${compactFooter ? styles.footerCompact : ""}`}>SkyLab · 2026</div>
-        <AiFloatingChat />
+        {/* 教室學生層：直播橫幅 / 觀看視窗 / 接管狀態（模組 E） */}
+        <ClassroomStudentLayer>
+          <div className={styles.mobileTopBar}>
+            <button
+              className={styles.mobileMenuBtn}
+              onClick={() => setMobileOpen(true)}
+              aria-label="開啟選單"
+              type="button"
+            >
+              <span className="material-icons-outlined" style={{ fontSize: 22 }}>
+                segment
+              </span>
+            </button>
+          </div>
+          <Outlet />
+          <div className={`${styles.footer} ${compactFooter ? styles.footerCompact : ""}`}>SkyLab · 2026</div>
+          <AiFloatingChat />
+        </ClassroomStudentLayer>
       </main>
     </div>
     </LayoutContext.Provider>

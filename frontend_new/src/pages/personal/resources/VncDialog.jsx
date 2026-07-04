@@ -3,6 +3,8 @@ import { VncScreen } from "react-vnc";
 import { AuthStorage } from "../../../services/auth";
 import { ResourcesService } from "../../../services/resources";
 import MIcon from "../../../components/MIcon";
+import { useClassroomTakeover } from "../../../components/Classroom/ClassroomStudentLayer";
+import TakeoverOverlay from "../../../components/Classroom/TakeoverOverlay";
 import styles from "./ConsoleDialog.module.scss";
 
 const CONSOLE_INFO_TIMEOUT_MS = 15000;
@@ -17,6 +19,7 @@ export default function VncDialog({ resource, onClose }) {
   const [vncTicket, setVncTicket]       = useState("");
   const [error, setError]               = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const underTakeover = useClassroomTakeover(resource?.vmid);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -136,6 +139,7 @@ export default function VncDialog({ resource, onClose }) {
 
         {wsUrl && (
           <div className={styles.vncWrap}>
+            {underTakeover && <TakeoverOverlay />}
             <VncScreen
               ref={vncRef}
               url={wsUrl}

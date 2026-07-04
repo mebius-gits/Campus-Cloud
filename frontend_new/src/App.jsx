@@ -27,6 +27,7 @@ import AiManagementPage from "./pages/ai/ai-management/AiManagementPage";
 
 // 教學
 import TeachingPage from "./pages/teaching/TeachingPage";
+import ClassroomPage from "./pages/classroom/ClassroomPage";
 
 // 系統管理
 import GroupsPage    from "./pages/system/groups/GroupsPage";
@@ -86,6 +87,7 @@ function App() {
 
           {/* 教學 */}
           <Route path="/teaching"  element={<TeachingPage />} />
+          <Route path="/classroom" element={<ClassroomPage />} />
 
           {/* 系統管理 */}
           <Route path="/groups"    element={<GroupsPage />} />

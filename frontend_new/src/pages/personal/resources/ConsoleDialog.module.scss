@@ -206,6 +206,8 @@
   overflow: hidden;
   background: #1e1e1e;
   display: flex;
+  /* 教室接管覆蓋層需要定位基準 */
+  position: relative;
 
   :global(canvas) { display: block; }
 }

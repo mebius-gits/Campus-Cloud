@@ -7,7 +7,7 @@ export const ClassroomService = {
     return apiGet(`/api/v1/classroom/groups/${groupId}/students`);
   },
 
-  /** 開啟 session（mode: "broadcast" 需帶 group_id；"watch" 只看單台） */
+  /** 開啟 session（mode: "broadcast" 需帶 group_id；"monitor" 只看單台） */
   createSession({ vmid, mode, group_id = null }) {
     return apiPost("/api/v1/classroom/sessions", { vmid, mode, group_id });
   },
