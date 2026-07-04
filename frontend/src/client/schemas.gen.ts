@@ -903,6 +903,112 @@ export const AIUsersUsageResponseSchema = {
     description: '使用者用量彙總回應'
 } as const;
 
+export const AlertEventPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        scope: {
+            $ref: '#/components/schemas/AlertScope'
+        },
+        target: {
+            type: 'string',
+            title: 'Target'
+        },
+        metric: {
+            $ref: '#/components/schemas/AlertMetric'
+        },
+        value: {
+            type: 'number',
+            title: 'Value'
+        },
+        threshold: {
+            type: 'number',
+            title: 'Threshold'
+        },
+        message: {
+            type: 'string',
+            title: 'Message'
+        },
+        created_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Created At'
+        },
+        resolved_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Resolved At'
+        },
+        acknowledged_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acknowledged By'
+        },
+        acknowledged_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Acknowledged At'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'scope',
+        'target',
+        'metric',
+        'value',
+        'threshold',
+        'message',
+        'created_at'
+    ],
+    title: 'AlertEventPublic',
+    description: '告警事件（open = resolved_at 為 None）。'
+} as const;
+
+export const AlertMetricSchema = {
+    type: 'string',
+    enum: [
+        'cpu',
+        'memory',
+        'disk'
+    ],
+    title: 'AlertMetric'
+} as const;
+
+export const AlertScopeSchema = {
+    type: 'string',
+    enum: [
+        'cluster',
+        'node',
+        'vm'
+    ],
+    title: 'AlertScope'
+} as const;
+
 export const AuditActionSchema = {
     type: 'string',
     enum: [
@@ -2400,6 +2506,232 @@ export const ChatMessage_OutputSchema = {
     ],
     title: 'ChatMessage',
     description: '聊天消息'
+} as const;
+
+export const ClassroomControlRequestSchema = {
+    properties: {
+        action: {
+            type: 'string',
+            enum: [
+                'take',
+                'release'
+            ],
+            title: 'Action'
+        }
+    },
+    type: 'object',
+    required: [
+        'action'
+    ],
+    title: 'ClassroomControlRequest',
+    description: '接管 / 釋放學生 VM 控制權（僅 monitor session 發起者）'
+} as const;
+
+export const ClassroomLivePublicSchema = {
+    properties: {
+        session: {
+            anyOf: [
+                {
+                    $ref: '#/components/schemas/ClassroomSessionPublic'
+                },
+                {
+                    type: 'null'
+                }
+            ]
+        }
+    },
+    type: 'object',
+    title: 'ClassroomLivePublic',
+    description: '學生查詢自己群組進行中的直播（無直播時 session 為 null）'
+} as const;
+
+export const ClassroomSessionCreateSchema = {
+    properties: {
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        mode: {
+            type: 'string',
+            enum: [
+                'monitor',
+                'broadcast'
+            ],
+            title: 'Mode'
+        },
+        group_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Group Id'
+        }
+    },
+    type: 'object',
+    required: [
+        'vmid',
+        'mode'
+    ],
+    title: 'ClassroomSessionCreate',
+    description: '建立教室 session（monitor=觀看學生 VM；broadcast=直播自己的 VM 給群組）'
+} as const;
+
+export const ClassroomSessionPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            title: 'Id'
+        },
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        mode: {
+            type: 'string',
+            title: 'Mode'
+        },
+        group_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Group Id'
+        },
+        started_by: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Started By'
+        },
+        controller_user_id: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Controller User Id'
+        },
+        subscriber_count: {
+            type: 'integer',
+            title: 'Subscriber Count',
+            default: 0
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'vmid',
+        'mode',
+        'started_by'
+    ],
+    title: 'ClassroomSessionPublic',
+    description: '教室 session 公開資料'
+} as const;
+
+export const ClassroomStudentSchema = {
+    properties: {
+        user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'User Id'
+        },
+        email: {
+            type: 'string',
+            format: 'email',
+            title: 'Email'
+        },
+        full_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Full Name'
+        },
+        vms: {
+            items: {
+                $ref: '#/components/schemas/ClassroomVm'
+            },
+            type: 'array',
+            title: 'Vms'
+        },
+        online: {
+            type: 'boolean',
+            title: 'Online',
+            default: false
+        }
+    },
+    type: 'object',
+    required: [
+        'user_id',
+        'email'
+    ],
+    title: 'ClassroomStudent',
+    description: '教室學生卡片資料'
+} as const;
+
+export const ClassroomVmSchema = {
+    properties: {
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Name'
+        },
+        status: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Status'
+        },
+        vm_type: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Vm Type'
+        }
+    },
+    type: 'object',
+    required: [
+        'vmid'
+    ],
+    title: 'ClassroomVm',
+    description: '學生的 VM 摘要'
 } as const;
 
 export const CloudflareConfigPublicSchema = {
@@ -4781,6 +5113,307 @@ export const GoogleLoginRequestSchema = {
     title: 'GoogleLoginRequest'
 } as const;
 
+export const GovernanceConfigPublicSchema = {
+    properties: {
+        alerts_enabled: {
+            type: 'boolean',
+            title: 'Alerts Enabled'
+        },
+        alert_cpu_threshold: {
+            type: 'number',
+            title: 'Alert Cpu Threshold'
+        },
+        alert_memory_threshold: {
+            type: 'number',
+            title: 'Alert Memory Threshold'
+        },
+        alert_disk_threshold: {
+            type: 'number',
+            title: 'Alert Disk Threshold'
+        },
+        alert_cooldown_minutes: {
+            type: 'integer',
+            title: 'Alert Cooldown Minutes'
+        },
+        alert_check_interval_seconds: {
+            type: 'integer',
+            title: 'Alert Check Interval Seconds'
+        },
+        alert_email_enabled: {
+            type: 'boolean',
+            title: 'Alert Email Enabled'
+        },
+        ttl_enabled: {
+            type: 'boolean',
+            title: 'Ttl Enabled'
+        },
+        expiry_warn_days: {
+            type: 'integer',
+            title: 'Expiry Warn Days'
+        },
+        expiry_grace_delete_days: {
+            type: 'integer',
+            title: 'Expiry Grace Delete Days'
+        },
+        idle_detection_enabled: {
+            type: 'boolean',
+            title: 'Idle Detection Enabled'
+        },
+        idle_cpu_threshold_percent: {
+            type: 'number',
+            title: 'Idle Cpu Threshold Percent'
+        },
+        idle_window_hours: {
+            type: 'integer',
+            title: 'Idle Window Hours'
+        },
+        idle_grace_hours: {
+            type: 'integer',
+            title: 'Idle Grace Hours'
+        },
+        idle_scan_batch_size: {
+            type: 'integer',
+            title: 'Idle Scan Batch Size'
+        },
+        workload_advisor_enabled: {
+            type: 'boolean',
+            title: 'Workload Advisor Enabled'
+        },
+        updated_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Updated At'
+        }
+    },
+    type: 'object',
+    required: [
+        'alerts_enabled',
+        'alert_cpu_threshold',
+        'alert_memory_threshold',
+        'alert_disk_threshold',
+        'alert_cooldown_minutes',
+        'alert_check_interval_seconds',
+        'alert_email_enabled',
+        'ttl_enabled',
+        'expiry_warn_days',
+        'expiry_grace_delete_days',
+        'idle_detection_enabled',
+        'idle_cpu_threshold_percent',
+        'idle_window_hours',
+        'idle_grace_hours',
+        'idle_scan_batch_size',
+        'workload_advisor_enabled',
+        'updated_at'
+    ],
+    title: 'GovernanceConfigPublic'
+} as const;
+
+export const GovernanceConfigUpdateSchema = {
+    properties: {
+        alerts_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alerts Enabled'
+        },
+        alert_cpu_threshold: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 100,
+                    minimum: 50
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Cpu Threshold'
+        },
+        alert_memory_threshold: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 100,
+                    minimum: 50
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Memory Threshold'
+        },
+        alert_disk_threshold: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 100,
+                    minimum: 50
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Disk Threshold'
+        },
+        alert_cooldown_minutes: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 1440,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Cooldown Minutes'
+        },
+        alert_check_interval_seconds: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 3600,
+                    minimum: 15
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Check Interval Seconds'
+        },
+        alert_email_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Alert Email Enabled'
+        },
+        ttl_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Ttl Enabled'
+        },
+        expiry_warn_days: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 30,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Expiry Warn Days'
+        },
+        expiry_grace_delete_days: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 90,
+                    minimum: 0
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Expiry Grace Delete Days'
+        },
+        idle_detection_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Detection Enabled'
+        },
+        idle_cpu_threshold_percent: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 20,
+                    minimum: 0.1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Cpu Threshold Percent'
+        },
+        idle_window_hours: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 720,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Window Hours'
+        },
+        idle_grace_hours: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 720,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Grace Hours'
+        },
+        idle_scan_batch_size: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 200,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Idle Scan Batch Size'
+        },
+        workload_advisor_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Workload Advisor Enabled'
+        }
+    },
+    type: 'object',
+    title: 'GovernanceConfigUpdate',
+    description: '治理設定更新（partial；範圍約束與 model 一致）。'
+} as const;
+
 export const GroupCreateSchema = {
     properties: {
         name: {
@@ -5879,6 +6512,100 @@ export const ModelsResponseSchema = {
     description: '模型列表响应'
 } as const;
 
+export const MonitoringOverviewSchema = {
+    properties: {
+        nodes_online: {
+            type: 'integer',
+            title: 'Nodes Online'
+        },
+        nodes_total: {
+            type: 'integer',
+            title: 'Nodes Total'
+        },
+        cpu_used: {
+            type: 'number',
+            title: 'Cpu Used'
+        },
+        cpu_total: {
+            type: 'integer',
+            title: 'Cpu Total'
+        },
+        mem_used: {
+            type: 'integer',
+            title: 'Mem Used'
+        },
+        mem_total: {
+            type: 'integer',
+            title: 'Mem Total'
+        },
+        disk_used: {
+            type: 'integer',
+            title: 'Disk Used'
+        },
+        disk_total: {
+            type: 'integer',
+            title: 'Disk Total'
+        },
+        vms_running: {
+            type: 'integer',
+            title: 'Vms Running'
+        },
+        vms_stopped: {
+            type: 'integer',
+            title: 'Vms Stopped'
+        },
+        lxc_running: {
+            type: 'integer',
+            title: 'Lxc Running'
+        },
+        lxc_stopped: {
+            type: 'integer',
+            title: 'Lxc Stopped'
+        },
+        nodes: {
+            items: {
+                $ref: '#/components/schemas/NodeMetrics'
+            },
+            type: 'array',
+            title: 'Nodes'
+        },
+        top_cpu: {
+            items: {
+                $ref: '#/components/schemas/VMTopEntry'
+            },
+            type: 'array',
+            title: 'Top Cpu'
+        },
+        top_mem: {
+            items: {
+                $ref: '#/components/schemas/VMTopEntry'
+            },
+            type: 'array',
+            title: 'Top Mem'
+        }
+    },
+    type: 'object',
+    required: [
+        'nodes_online',
+        'nodes_total',
+        'cpu_used',
+        'cpu_total',
+        'mem_used',
+        'mem_total',
+        'disk_used',
+        'disk_total',
+        'vms_running',
+        'vms_stopped',
+        'lxc_running',
+        'lxc_stopped',
+        'nodes',
+        'top_cpu',
+        'top_mem'
+    ],
+    title: 'MonitoringOverview',
+    description: '全域監控匯總。'
+} as const;
+
 export const NATRulePublicSchema = {
     properties: {
         id: {
@@ -6172,6 +6899,61 @@ export const NodeInfoSchema = {
         'disk_used_pct'
     ],
     title: 'NodeInfo'
+} as const;
+
+export const NodeMetricsSchema = {
+    properties: {
+        node: {
+            type: 'string',
+            title: 'Node'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        },
+        cpu: {
+            type: 'number',
+            title: 'Cpu'
+        },
+        maxcpu: {
+            type: 'integer',
+            title: 'Maxcpu'
+        },
+        mem: {
+            type: 'integer',
+            title: 'Mem'
+        },
+        maxmem: {
+            type: 'integer',
+            title: 'Maxmem'
+        },
+        disk: {
+            type: 'integer',
+            title: 'Disk'
+        },
+        maxdisk: {
+            type: 'integer',
+            title: 'Maxdisk'
+        },
+        uptime: {
+            type: 'integer',
+            title: 'Uptime'
+        }
+    },
+    type: 'object',
+    required: [
+        'node',
+        'status',
+        'cpu',
+        'maxcpu',
+        'mem',
+        'maxmem',
+        'disk',
+        'maxdisk',
+        'uptime'
+    ],
+    title: 'NodeMetrics',
+    description: '單一節點即時用量（來源：PVE /nodes）。'
 } as const;
 
 export const NodeSchemaSchema = {
@@ -14394,6 +15176,56 @@ export const VMTemplatesPublicSchema = {
         'count'
     ],
     title: 'VMTemplatesPublic'
+} as const;
+
+export const VMTopEntrySchema = {
+    properties: {
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        name: {
+            type: 'string',
+            title: 'Name'
+        },
+        node: {
+            type: 'string',
+            title: 'Node'
+        },
+        type: {
+            type: 'string',
+            title: 'Type'
+        },
+        cpu: {
+            type: 'number',
+            title: 'Cpu'
+        },
+        mem: {
+            type: 'integer',
+            title: 'Mem'
+        },
+        maxmem: {
+            type: 'integer',
+            title: 'Maxmem'
+        },
+        status: {
+            type: 'string',
+            title: 'Status'
+        }
+    },
+    type: 'object',
+    required: [
+        'vmid',
+        'name',
+        'node',
+        'type',
+        'cpu',
+        'mem',
+        'maxmem',
+        'status'
+    ],
+    title: 'VMTopEntry',
+    description: '高耗用 VM/LXC 條目（來源：PVE cluster/resources）。'
 } as const;
 
 export const VNCInfoSchemaSchema = {

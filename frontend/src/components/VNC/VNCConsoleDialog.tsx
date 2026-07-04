@@ -13,6 +13,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { VncScreen } from "react-vnc"
 
+import { useClassroomTakeover } from "@/components/Classroom/ClassroomStudentLayer"
+import { TakeoverOverlay } from "@/components/Classroom/TakeoverOverlay"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { queryKeys } from "@/lib/queryKeys"
@@ -38,6 +40,7 @@ export function VNCConsoleDialog({
   const [isConnected, setIsConnected] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const { t } = useTranslation("resources")
+  const underTakeover = useClassroomTakeover(vmid)
 
   const consoleQuery = useQuery({
     queryKey: queryKeys.resources.console(vmid ?? 0),
@@ -296,6 +299,8 @@ export function VNCConsoleDialog({
                 }}
               />
             )}
+
+            {underTakeover && <TakeoverOverlay />}
           </div>
 
           <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-800/50 border-t border-zinc-700/50 shrink-0">

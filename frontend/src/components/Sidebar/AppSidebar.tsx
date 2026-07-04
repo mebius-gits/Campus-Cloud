@@ -11,6 +11,7 @@ import {
   Globe,
   Home,
   Monitor,
+  MonitorPlay,
   Network,
   ScrollText,
   ServerCog,
@@ -75,6 +76,7 @@ export function AppSidebar() {
     { icon: FileText, title: t("sidebar.applications"), path: "/applications" },
     ...aiItems,
     { icon: UsersRound, title: "Groups", path: "/groups" },
+    { icon: MonitorPlay, title: "教室", path: "/classroom" },
     jobsItem,
   ]
 
@@ -87,6 +89,7 @@ export function AppSidebar() {
     ...aiItems,
     { icon: Bot, title: "AI 管理中心", path: "/admin/ai-management" },
     { icon: UsersRound, title: "Groups", path: "/groups" },
+    { icon: MonitorPlay, title: "教室", path: "/classroom" },
     { icon: Users, title: t("sidebar.admin"), path: "/admin" },
     { icon: Settings2, title: "System Settings", path: "/admin/configuration" },
     { icon: Cloud, title: "網域管理", path: "/admin/domains" },

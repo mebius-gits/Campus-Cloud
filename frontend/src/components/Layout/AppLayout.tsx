@@ -3,6 +3,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { AlertTriangle } from "lucide-react"
 
 import { GlobalAiNavigator } from "@/components/AiNavigator/GlobalAiNavigator"
+import { ClassroomStudentLayer } from "@/components/Classroom/ClassroomStudentLayer"
 import { Footer } from "@/components/Common/Footer"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { JobsBanner } from "@/components/Jobs/JobsBanner"
@@ -38,38 +39,40 @@ export function AppLayout() {
       <SidebarProvider defaultOpen={false}>
         <AppSidebar />
         <SidebarInset className="min-w-0 overflow-x-hidden">
-          <JobsBanner />
-          <SubnetBanner isAdmin={isAdmin} />
-          {isFullscreen ? (
-            <main className="flex-1 min-w-0 overflow-hidden">
-              <ErrorBoundary>
-                <Outlet />
-              </ErrorBoundary>
-            </main>
-          ) : (
-            <>
-              <main
-                className={cn(
-                  "flex-1 min-w-0 overflow-x-hidden py-7.5 px-20",
-                  hasFixedFooter && "pb-28 md:pb-32",
-                )}
-              >
-                <div className="w-full min-w-0 max-w-full">
-                  <ErrorBoundary>
-                    <Outlet />
-                  </ErrorBoundary>
-                </div>
+          <ClassroomStudentLayer>
+            <JobsBanner />
+            <SubnetBanner isAdmin={isAdmin} />
+            {isFullscreen ? (
+              <main className="flex-1 min-w-0 overflow-hidden">
+                <ErrorBoundary>
+                  <Outlet />
+                </ErrorBoundary>
               </main>
-              <Footer
-                data-app-footer={hasFixedFooter ? "fixed" : undefined}
-                className={
-                  hasFixedFooter
-                    ? "sticky bottom-0 z-20 mt-auto bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80"
-                    : undefined
-                }
-              />
-            </>
-          )}
+            ) : (
+              <>
+                <main
+                  className={cn(
+                    "flex-1 min-w-0 overflow-x-hidden py-7.5 px-20",
+                    hasFixedFooter && "pb-28 md:pb-32",
+                  )}
+                >
+                  <div className="w-full min-w-0 max-w-full">
+                    <ErrorBoundary>
+                      <Outlet />
+                    </ErrorBoundary>
+                  </div>
+                </main>
+                <Footer
+                  data-app-footer={hasFixedFooter ? "fixed" : undefined}
+                  className={
+                    hasFixedFooter
+                      ? "sticky bottom-0 z-20 mt-auto bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80"
+                      : undefined
+                  }
+                />
+              </>
+            )}
+          </ClassroomStudentLayer>
         </SidebarInset>
         <GlobalAiNavigator />
       </SidebarProvider>

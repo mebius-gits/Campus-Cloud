@@ -526,6 +526,62 @@ export type AiUsersUsageResponse = {
 };
 
 /**
+ * AlertEventPublic
+ *
+ * 告警事件（open = resolved_at 為 None）。
+ */
+export type AlertEventPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    scope: AlertScope;
+    /**
+     * Target
+     */
+    target: string;
+    metric: AlertMetric;
+    /**
+     * Value
+     */
+    value: number;
+    /**
+     * Threshold
+     */
+    threshold: number;
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Resolved At
+     */
+    resolved_at?: string | null;
+    /**
+     * Acknowledged By
+     */
+    acknowledged_by?: string | null;
+    /**
+     * Acknowledged At
+     */
+    acknowledged_at?: string | null;
+};
+
+/**
+ * AlertMetric
+ */
+export type AlertMetric = 'cpu' | 'memory' | 'disk';
+
+/**
+ * AlertScope
+ */
+export type AlertScope = 'cluster' | 'node' | 'vm';
+
+/**
  * AuditAction
  *
  * 審計操作類型
@@ -1263,6 +1319,135 @@ export type ChatMessageOutput = {
      * 消息内容
      */
     content: string;
+};
+
+/**
+ * ClassroomControlRequest
+ *
+ * 接管 / 釋放學生 VM 控制權（僅 monitor session 發起者）
+ */
+export type ClassroomControlRequest = {
+    /**
+     * Action
+     */
+    action: 'take' | 'release';
+};
+
+/**
+ * ClassroomLivePublic
+ *
+ * 學生查詢自己群組進行中的直播（無直播時 session 為 null）
+ */
+export type ClassroomLivePublic = {
+    session?: ClassroomSessionPublic | null;
+};
+
+/**
+ * ClassroomSessionCreate
+ *
+ * 建立教室 session（monitor=觀看學生 VM；broadcast=直播自己的 VM 給群組）
+ */
+export type ClassroomSessionCreate = {
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * Mode
+     */
+    mode: 'monitor' | 'broadcast';
+    /**
+     * Group Id
+     */
+    group_id?: string | null;
+};
+
+/**
+ * ClassroomSessionPublic
+ *
+ * 教室 session 公開資料
+ */
+export type ClassroomSessionPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * Mode
+     */
+    mode: string;
+    /**
+     * Group Id
+     */
+    group_id?: string | null;
+    /**
+     * Started By
+     */
+    started_by: string;
+    /**
+     * Controller User Id
+     */
+    controller_user_id?: string | null;
+    /**
+     * Subscriber Count
+     */
+    subscriber_count?: number;
+};
+
+/**
+ * ClassroomStudent
+ *
+ * 教室學生卡片資料
+ */
+export type ClassroomStudent = {
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Full Name
+     */
+    full_name?: string | null;
+    /**
+     * Vms
+     */
+    vms?: Array<ClassroomVm>;
+    /**
+     * Online
+     */
+    online?: boolean;
+};
+
+/**
+ * ClassroomVm
+ *
+ * 學生的 VM 摘要
+ */
+export type ClassroomVm = {
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Status
+     */
+    status?: string | null;
+    /**
+     * Vm Type
+     */
+    vm_type?: string | null;
 };
 
 /**
@@ -2653,6 +2838,152 @@ export type GoogleLoginRequest = {
 };
 
 /**
+ * GovernanceConfigPublic
+ */
+export type GovernanceConfigPublic = {
+    /**
+     * Alerts Enabled
+     */
+    alerts_enabled: boolean;
+    /**
+     * Alert Cpu Threshold
+     */
+    alert_cpu_threshold: number;
+    /**
+     * Alert Memory Threshold
+     */
+    alert_memory_threshold: number;
+    /**
+     * Alert Disk Threshold
+     */
+    alert_disk_threshold: number;
+    /**
+     * Alert Cooldown Minutes
+     */
+    alert_cooldown_minutes: number;
+    /**
+     * Alert Check Interval Seconds
+     */
+    alert_check_interval_seconds: number;
+    /**
+     * Alert Email Enabled
+     */
+    alert_email_enabled: boolean;
+    /**
+     * Ttl Enabled
+     */
+    ttl_enabled: boolean;
+    /**
+     * Expiry Warn Days
+     */
+    expiry_warn_days: number;
+    /**
+     * Expiry Grace Delete Days
+     */
+    expiry_grace_delete_days: number;
+    /**
+     * Idle Detection Enabled
+     */
+    idle_detection_enabled: boolean;
+    /**
+     * Idle Cpu Threshold Percent
+     */
+    idle_cpu_threshold_percent: number;
+    /**
+     * Idle Window Hours
+     */
+    idle_window_hours: number;
+    /**
+     * Idle Grace Hours
+     */
+    idle_grace_hours: number;
+    /**
+     * Idle Scan Batch Size
+     */
+    idle_scan_batch_size: number;
+    /**
+     * Workload Advisor Enabled
+     */
+    workload_advisor_enabled: boolean;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * GovernanceConfigUpdate
+ *
+ * 治理設定更新（partial；範圍約束與 model 一致）。
+ */
+export type GovernanceConfigUpdate = {
+    /**
+     * Alerts Enabled
+     */
+    alerts_enabled?: boolean | null;
+    /**
+     * Alert Cpu Threshold
+     */
+    alert_cpu_threshold?: number | null;
+    /**
+     * Alert Memory Threshold
+     */
+    alert_memory_threshold?: number | null;
+    /**
+     * Alert Disk Threshold
+     */
+    alert_disk_threshold?: number | null;
+    /**
+     * Alert Cooldown Minutes
+     */
+    alert_cooldown_minutes?: number | null;
+    /**
+     * Alert Check Interval Seconds
+     */
+    alert_check_interval_seconds?: number | null;
+    /**
+     * Alert Email Enabled
+     */
+    alert_email_enabled?: boolean | null;
+    /**
+     * Ttl Enabled
+     */
+    ttl_enabled?: boolean | null;
+    /**
+     * Expiry Warn Days
+     */
+    expiry_warn_days?: number | null;
+    /**
+     * Expiry Grace Delete Days
+     */
+    expiry_grace_delete_days?: number | null;
+    /**
+     * Idle Detection Enabled
+     */
+    idle_detection_enabled?: boolean | null;
+    /**
+     * Idle Cpu Threshold Percent
+     */
+    idle_cpu_threshold_percent?: number | null;
+    /**
+     * Idle Window Hours
+     */
+    idle_window_hours?: number | null;
+    /**
+     * Idle Grace Hours
+     */
+    idle_grace_hours?: number | null;
+    /**
+     * Idle Scan Batch Size
+     */
+    idle_scan_batch_size?: number | null;
+    /**
+     * Workload Advisor Enabled
+     */
+    workload_advisor_enabled?: boolean | null;
+};
+
+/**
  * GroupCreate
  *
  * 建立群組
@@ -3280,6 +3611,74 @@ export type ModelsResponse = {
 };
 
 /**
+ * MonitoringOverview
+ *
+ * 全域監控匯總。
+ */
+export type MonitoringOverview = {
+    /**
+     * Nodes Online
+     */
+    nodes_online: number;
+    /**
+     * Nodes Total
+     */
+    nodes_total: number;
+    /**
+     * Cpu Used
+     */
+    cpu_used: number;
+    /**
+     * Cpu Total
+     */
+    cpu_total: number;
+    /**
+     * Mem Used
+     */
+    mem_used: number;
+    /**
+     * Mem Total
+     */
+    mem_total: number;
+    /**
+     * Disk Used
+     */
+    disk_used: number;
+    /**
+     * Disk Total
+     */
+    disk_total: number;
+    /**
+     * Vms Running
+     */
+    vms_running: number;
+    /**
+     * Vms Stopped
+     */
+    vms_stopped: number;
+    /**
+     * Lxc Running
+     */
+    lxc_running: number;
+    /**
+     * Lxc Stopped
+     */
+    lxc_stopped: number;
+    /**
+     * Nodes
+     */
+    nodes: Array<NodeMetrics>;
+    /**
+     * Top Cpu
+     */
+    top_cpu: Array<VmTopEntry>;
+    /**
+     * Top Mem
+     */
+    top_mem: Array<VmTopEntry>;
+};
+
+/**
  * NATRulePublic
  *
  * NAT 端口轉發規則（回應）
@@ -3464,6 +3863,50 @@ export type NodeInfo = {
      * Uptime Seconds
      */
     uptime_seconds?: number | null;
+};
+
+/**
+ * NodeMetrics
+ *
+ * 單一節點即時用量（來源：PVE /nodes）。
+ */
+export type NodeMetrics = {
+    /**
+     * Node
+     */
+    node: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Cpu
+     */
+    cpu: number;
+    /**
+     * Maxcpu
+     */
+    maxcpu: number;
+    /**
+     * Mem
+     */
+    mem: number;
+    /**
+     * Maxmem
+     */
+    maxmem: number;
+    /**
+     * Disk
+     */
+    disk: number;
+    /**
+     * Maxdisk
+     */
+    maxdisk: number;
+    /**
+     * Uptime
+     */
+    uptime: number;
 };
 
 /**
@@ -8206,6 +8649,46 @@ export type VmTemplatesPublic = {
 };
 
 /**
+ * VMTopEntry
+ *
+ * 高耗用 VM/LXC 條目（來源：PVE cluster/resources）。
+ */
+export type VmTopEntry = {
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Node
+     */
+    node: string;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Cpu
+     */
+    cpu: number;
+    /**
+     * Mem
+     */
+    mem: number;
+    /**
+     * Maxmem
+     */
+    maxmem: number;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * VNCInfoSchema
  *
  * VNC 連線資訊
@@ -10347,6 +10830,207 @@ export type MigrationJobsCancelMigrationJobResponses = {
 
 export type MigrationJobsCancelMigrationJobResponse = MigrationJobsCancelMigrationJobResponses[keyof MigrationJobsCancelMigrationJobResponses];
 
+export type MonitoringGetOverviewData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/monitoring/overview';
+};
+
+export type MonitoringGetOverviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: MonitoringOverview;
+};
+
+export type MonitoringGetOverviewResponse = MonitoringGetOverviewResponses[keyof MonitoringGetOverviewResponses];
+
+export type MonitoringGetNodeRrdData = {
+    body?: never;
+    path: {
+        /**
+         * Node
+         */
+        node: string;
+    };
+    query?: {
+        /**
+         * Timeframe
+         */
+        timeframe?: string;
+    };
+    url: '/api/v1/monitoring/nodes/{node}/rrd';
+};
+
+export type MonitoringGetNodeRrdErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MonitoringGetNodeRrdError = MonitoringGetNodeRrdErrors[keyof MonitoringGetNodeRrdErrors];
+
+export type MonitoringGetNodeRrdResponses = {
+    /**
+     * Response Monitoring-Get Node Rrd
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type MonitoringGetNodeRrdResponse = MonitoringGetNodeRrdResponses[keyof MonitoringGetNodeRrdResponses];
+
+export type MonitoringGetVmRrdData = {
+    body?: never;
+    path: {
+        /**
+         * Vmid
+         */
+        vmid: number;
+    };
+    query?: {
+        /**
+         * Timeframe
+         */
+        timeframe?: string;
+    };
+    url: '/api/v1/monitoring/vms/{vmid}/rrd';
+};
+
+export type MonitoringGetVmRrdErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MonitoringGetVmRrdError = MonitoringGetVmRrdErrors[keyof MonitoringGetVmRrdErrors];
+
+export type MonitoringGetVmRrdResponses = {
+    /**
+     * Response Monitoring-Get Vm Rrd
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type MonitoringGetVmRrdResponse = MonitoringGetVmRrdResponses[keyof MonitoringGetVmRrdResponses];
+
+export type MonitoringListAlertsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Active
+         */
+        active?: boolean;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/monitoring/alerts';
+};
+
+export type MonitoringListAlertsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MonitoringListAlertsError = MonitoringListAlertsErrors[keyof MonitoringListAlertsErrors];
+
+export type MonitoringListAlertsResponses = {
+    /**
+     * Response Monitoring-List Alerts
+     *
+     * Successful Response
+     */
+    200: Array<AlertEventPublic>;
+};
+
+export type MonitoringListAlertsResponse = MonitoringListAlertsResponses[keyof MonitoringListAlertsResponses];
+
+export type MonitoringAcknowledgeAlertData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/monitoring/alerts/{alert_id}/ack';
+};
+
+export type MonitoringAcknowledgeAlertErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MonitoringAcknowledgeAlertError = MonitoringAcknowledgeAlertErrors[keyof MonitoringAcknowledgeAlertErrors];
+
+export type MonitoringAcknowledgeAlertResponses = {
+    /**
+     * Successful Response
+     */
+    200: AlertEventPublic;
+};
+
+export type MonitoringAcknowledgeAlertResponse = MonitoringAcknowledgeAlertResponses[keyof MonitoringAcknowledgeAlertResponses];
+
+export type GovernanceGetConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/governance/config';
+};
+
+export type GovernanceGetConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: GovernanceConfigPublic;
+};
+
+export type GovernanceGetConfigResponse = GovernanceGetConfigResponses[keyof GovernanceGetConfigResponses];
+
+export type GovernanceUpdateConfigData = {
+    body: GovernanceConfigUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/governance/config';
+};
+
+export type GovernanceUpdateConfigErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GovernanceUpdateConfigError = GovernanceUpdateConfigErrors[keyof GovernanceUpdateConfigErrors];
+
+export type GovernanceUpdateConfigResponses = {
+    /**
+     * Successful Response
+     */
+    200: GovernanceConfigPublic;
+};
+
+export type GovernanceUpdateConfigResponse = GovernanceUpdateConfigResponses[keyof GovernanceUpdateConfigResponses];
+
 export type AiApiListAllAiApiRequestsData = {
     body?: never;
     path?: never;
@@ -12023,6 +12707,157 @@ export type GroupsImportMembersFromCsvResponses = {
 };
 
 export type GroupsImportMembersFromCsvResponse = GroupsImportMembersFromCsvResponses[keyof GroupsImportMembersFromCsvResponses];
+
+export type ClassroomListClassroomStudentsData = {
+    body?: never;
+    path: {
+        /**
+         * Group Id
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/api/v1/classroom/groups/{group_id}/students';
+};
+
+export type ClassroomListClassroomStudentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassroomListClassroomStudentsError = ClassroomListClassroomStudentsErrors[keyof ClassroomListClassroomStudentsErrors];
+
+export type ClassroomListClassroomStudentsResponses = {
+    /**
+     * Response Classroom-List Classroom Students
+     *
+     * Successful Response
+     */
+    200: Array<ClassroomStudent>;
+};
+
+export type ClassroomListClassroomStudentsResponse = ClassroomListClassroomStudentsResponses[keyof ClassroomListClassroomStudentsResponses];
+
+export type ClassroomListClassroomSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/classroom/sessions';
+};
+
+export type ClassroomListClassroomSessionsResponses = {
+    /**
+     * Response Classroom-List Classroom Sessions
+     *
+     * Successful Response
+     */
+    200: Array<ClassroomSessionPublic>;
+};
+
+export type ClassroomListClassroomSessionsResponse = ClassroomListClassroomSessionsResponses[keyof ClassroomListClassroomSessionsResponses];
+
+export type ClassroomCreateClassroomSessionData = {
+    body: ClassroomSessionCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/classroom/sessions';
+};
+
+export type ClassroomCreateClassroomSessionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassroomCreateClassroomSessionError = ClassroomCreateClassroomSessionErrors[keyof ClassroomCreateClassroomSessionErrors];
+
+export type ClassroomCreateClassroomSessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassroomSessionPublic;
+};
+
+export type ClassroomCreateClassroomSessionResponse = ClassroomCreateClassroomSessionResponses[keyof ClassroomCreateClassroomSessionResponses];
+
+export type ClassroomStopClassroomSessionData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/classroom/sessions/{session_id}';
+};
+
+export type ClassroomStopClassroomSessionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassroomStopClassroomSessionError = ClassroomStopClassroomSessionErrors[keyof ClassroomStopClassroomSessionErrors];
+
+export type ClassroomStopClassroomSessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: Message;
+};
+
+export type ClassroomStopClassroomSessionResponse = ClassroomStopClassroomSessionResponses[keyof ClassroomStopClassroomSessionResponses];
+
+export type ClassroomSetClassroomControlData = {
+    body: ClassroomControlRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/classroom/sessions/{session_id}/control';
+};
+
+export type ClassroomSetClassroomControlErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassroomSetClassroomControlError = ClassroomSetClassroomControlErrors[keyof ClassroomSetClassroomControlErrors];
+
+export type ClassroomSetClassroomControlResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassroomSessionPublic;
+};
+
+export type ClassroomSetClassroomControlResponse = ClassroomSetClassroomControlResponses[keyof ClassroomSetClassroomControlResponses];
+
+export type ClassroomGetLiveBroadcastData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/classroom/live';
+};
+
+export type ClassroomGetLiveBroadcastResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassroomLivePublic;
+};
+
+export type ClassroomGetLiveBroadcastResponse = ClassroomGetLiveBroadcastResponses[keyof ClassroomGetLiveBroadcastResponses];
 
 export type BatchProvisionStartBatchProvisionData = {
     body: BatchProvisionRequest;
