@@ -1,8 +1,10 @@
 import { useNavigate } from "@tanstack/react-router"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Users } from "lucide-react"
 import { Suspense, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import { ClassroomWatchDialog } from "@/components/Classroom/ClassroomWatchDialog"
+import PairInviteDialog from "@/components/Teaching/PairInviteDialog"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -25,6 +27,8 @@ export default function ResourceDetailPage({
   const { t } = useTranslation("resourceDetail")
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("overview")
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [pairSessionId, setPairSessionId] = useState<string | null>(null)
 
   const handleBack = () => {
     navigate({ to: backTo })
@@ -47,7 +51,27 @@ export default function ResourceDetailPage({
             {t("title")} <span className="text-primary">#{vmid}</span>
           </h1>
         </div>
+        <Button variant="outline" onClick={() => setInviteOpen(true)}>
+          <Users className="h-4 w-4 mr-1" />
+          邀請協作
+        </Button>
       </div>
+
+      <PairInviteDialog
+        vmid={vmid}
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        onCreated={(sessionId) => setPairSessionId(sessionId)}
+      />
+      <ClassroomWatchDialog
+        sessionId={pairSessionId}
+        title={`協作 VM ${vmid}`}
+        pair
+        open={pairSessionId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPairSessionId(null)
+        }}
+      />
 
       {/* Tabs */}
       <Tabs

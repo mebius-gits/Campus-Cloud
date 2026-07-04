@@ -6,11 +6,13 @@ import type {
   ConfigPushAccepted,
   ConfigPushStatusPublic,
   HeatmapEntry,
+  PairSessionPublic,
 } from "@/client"
 import { OpenAPI } from "@/client"
 import { request as __request } from "@/client/core/request"
 
 const BASE = "/api/v1/teaching"
+const PAIR_BASE = "/api/v1/pair-sessions"
 
 export const TeachingAPI = {
   getHeatmap(groupId: string): CancelablePromise<HeatmapEntry[]> {
@@ -61,6 +63,35 @@ export const TeachingAPI = {
       method: "GET",
       url: `${BASE}/batch-spec/{task_id}`,
       path: { task_id: taskId },
+    })
+  },
+}
+
+export const PairAPI = {
+  create(body: {
+    vmid: number
+    invitee_user_id: string
+  }): CancelablePromise<PairSessionPublic> {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: PAIR_BASE,
+      body,
+      mediaType: "application/json",
+    })
+  },
+
+  mine(): CancelablePromise<PairSessionPublic[]> {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `${PAIR_BASE}/mine`,
+    })
+  },
+
+  end(sessionId: string): CancelablePromise<{ message: string }> {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: `${PAIR_BASE}/{session_id}`,
+      path: { session_id: sessionId },
     })
   },
 }

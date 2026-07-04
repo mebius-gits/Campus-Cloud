@@ -6,10 +6,12 @@ import { Suspense, useCallback, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { OpenAPI, ResourcesService } from "@/client"
+import { ClassroomWatchDialog } from "@/components/Classroom/ClassroomWatchDialog"
 import { DataTable } from "@/components/Common/DataTable"
 import PendingItems from "@/components/Pending/PendingItems"
 import { BatchActionBar } from "@/components/Resources/BatchActionBar"
 import { createColumns } from "@/components/Resources/columns"
+import PairInvitesCard from "@/components/Teaching/PairInvitesCard"
 import { TerminalConsoleDialog } from "@/components/Terminal"
 import { Button } from "@/components/ui/button"
 import { VNCConsoleDialog } from "@/components/VNC"
@@ -231,6 +233,7 @@ function MyResources() {
     type: string
   } | null>(null)
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [pairSessionId, setPairSessionId] = useState<string | null>(null)
 
   const selectedVmids = useMemo(
     () =>
@@ -263,6 +266,16 @@ function MyResources() {
           <RefreshButton />
         </div>
       </div>
+      <PairInvitesCard onJoin={(sessionId) => setPairSessionId(sessionId)} />
+      <ClassroomWatchDialog
+        sessionId={pairSessionId}
+        title="協作觀看"
+        pair
+        open={pairSessionId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPairSessionId(null)
+        }}
+      />
       <BatchActionBar
         selectedVmids={selectedVmids}
         onClearSelection={() => setRowSelection({})}

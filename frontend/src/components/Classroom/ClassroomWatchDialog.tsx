@@ -16,6 +16,8 @@ interface ClassroomWatchDialogProps {
   canControl?: boolean
   /** 初始控制權狀態（接管中） */
   initialControlling?: boolean
+  /** Pair Mode：雙方皆可輸入，不走 controller 接管流程 */
+  pair?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -25,6 +27,7 @@ export function ClassroomWatchDialog({
   title,
   canControl = false,
   initialControlling = false,
+  pair = false,
   open,
   onOpenChange,
 }: ClassroomWatchDialogProps) {
@@ -65,8 +68,8 @@ export function ClassroomWatchDialog({
     sessionId && open
       ? `${proto}//${window.location.host}/ws/classroom/${sessionId}/watch?token=${encodeURIComponent(accessToken)}`
       : ""
-  // 老師接管中才允許輸入；其餘一律 viewOnly
-  const viewOnly = !(canControl && controlling)
+  // pair：雙方輸入都由後端放行；否則老師接管中才允許輸入
+  const viewOnly = pair ? false : !(canControl && controlling)
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
