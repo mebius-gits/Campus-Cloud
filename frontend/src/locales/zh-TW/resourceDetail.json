@@ -95,7 +95,18 @@
     "deleteError": "快照刪除失敗",
     "rollbackSuccess": "成功回滾到快照",
     "rollbackError": "快照回滾失敗",
-    "noSnapshots": "找不到快照。立即建立一個開始使用。"
+    "noSnapshots": "找不到快照。立即建立一個開始使用。",
+    "reset": "還原初始狀態",
+    "resetUnavailable": "此資源沒有初始快照，無法重置",
+    "resetStarted": "重置任務已開始，完成後 VM 將回到初始狀態",
+    "resetError": "重置失敗",
+    "resetConfirmTitle": "確定要還原初始狀態？",
+    "resetConfirmBody": "這會將 VM 回滾到 skylab-init 初始快照，快照之後的所有變更（含已安裝軟體與資料）都會遺失，且無法復原。",
+    "resetConfirmAction": "確定重置",
+    "createInit": "補建初始快照",
+    "initCreated": "初始快照已建立",
+    "initError": "初始快照建立失敗",
+    "protected": "受保護"
   },
   "auditLogs": {
     "title": "操作記錄",

@@ -142,10 +142,12 @@ def direct_update_spec(
     )
 
 
+# 路徑不能用 /{vmid}/reset：resources.py 已有同路徑的電源硬重啟端點，
+# 兩者同時註冊會讓 OpenAPI schema 互相覆蓋、其中一個 runtime 打不到。
 @router.post(
-    "/{vmid}/reset", response_model=ResetAcceptedResponse, status_code=202
+    "/{vmid}/reset-to-init", response_model=ResetAcceptedResponse, status_code=202
 )
-def reset_resource(
+def reset_to_init(
     vmid: int,
     resource_info: TeachingResourceInfoDep,
     session: SessionDep,

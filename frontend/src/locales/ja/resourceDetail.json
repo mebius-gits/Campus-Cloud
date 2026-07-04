@@ -95,7 +95,18 @@
     "deleteError": "スナップショットの削除に失敗しました",
     "rollbackSuccess": "スナップショットへのロールバックに成功しました",
     "rollbackError": "スナップショットのロールバックに失敗しました",
-    "noSnapshots": "スナップショットが見つかりません。作成して開始してください。"
+    "noSnapshots": "スナップショットが見つかりません。作成して開始してください。",
+    "reset": "初期状態に戻す",
+    "resetUnavailable": "このリソースには初期スナップショットがないため、リセットできません",
+    "resetStarted": "リセットタスクを開始しました。完了すると VM は初期状態に戻ります",
+    "resetError": "リセットに失敗しました",
+    "resetConfirmTitle": "初期状態に戻しますか？",
+    "resetConfirmBody": "VM を skylab-init 初期スナップショットへロールバックします。スナップショット以降のすべての変更（インストール済みソフトウェアやデータを含む）は失われ、元に戻せません。",
+    "resetConfirmAction": "リセットする",
+    "createInit": "初期スナップショットを作成",
+    "initCreated": "初期スナップショットを作成しました",
+    "initError": "初期スナップショットの作成に失敗しました",
+    "protected": "保護中"
   },
   "auditLogs": {
     "title": "操作記録",

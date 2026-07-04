@@ -3,12 +3,23 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query"
-import { RotateCcw, Trash2 } from "lucide-react"
+import { RefreshCcw, RotateCcw, ShieldCheck, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { SnapshotCreateRequest } from "@/client"
 import { ResourceDetailsService } from "@/client"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -38,8 +49,15 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 
+const INIT_SNAPSHOT_NAME = "skylab-init"
+
 interface SnapshotsTabProps {
   vmid: number
+}
+
+function errorDetail(error: unknown): string | undefined {
+  const maybe = error as { detail?: string; message?: string }
+  return maybe?.detail || maybe?.message
 }
 
 export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
@@ -47,12 +65,37 @@ export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
   const queryClient = useQueryClient()
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [snapname, setSnapname] = useState("")
   const [description, setDescription] = useState("")
 
   const { data: snapshots } = useSuspenseQuery({
     queryKey: ["snapshots", vmid],
     queryFn: () => ResourceDetailsService.listSnapshots({ vmid }),
+  })
+
+  const hasInitSnapshot = snapshots.some((s) => s.name === INIT_SNAPSHOT_NAME)
+
+  const resetMutation = useMutation({
+    mutationFn: () => ResourceDetailsService.resetToInit({ vmid }),
+    onSuccess: () => {
+      toast.success(t("snapshots.resetStarted"))
+      setResetDialogOpen(false)
+    },
+    onError: (err: unknown) => {
+      toast.error(errorDetail(err) || t("snapshots.resetError"))
+    },
+  })
+
+  const initSnapshotMutation = useMutation({
+    mutationFn: () => ResourceDetailsService.createInitSnapshot({ vmid }),
+    onSuccess: () => {
+      toast.success(t("snapshots.initCreated"))
+      queryClient.invalidateQueries({ queryKey: ["snapshots", vmid] })
+    },
+    onError: (err: unknown) => {
+      toast.error(errorDetail(err) || t("snapshots.initError"))
+    },
   })
 
   const createMutation = useMutation({
@@ -116,55 +159,80 @@ export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
               <CardTitle>{t("snapshots.title")}</CardTitle>
               <CardDescription>{t("snapshots.description")}</CardDescription>
             </div>
-            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>{t("snapshots.create")}</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t("snapshots.createTitle")}</DialogTitle>
-                  <DialogDescription>
-                    {t("snapshots.createDescription")}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="snapname">{t("snapshots.name")} *</Label>
-                    <Input
-                      id="snapname"
-                      value={snapname}
-                      onChange={(e) => setSnapname(e.target.value)}
-                      placeholder="snap-2024-02-25"
-                    />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setResetDialogOpen(true)}
+                disabled={!hasInitSnapshot || resetMutation.isPending}
+                title={
+                  hasInitSnapshot ? undefined : t("snapshots.resetUnavailable")
+                }
+              >
+                <RefreshCcw className="h-4 w-4 mr-1" />
+                {t("snapshots.reset")}
+              </Button>
+              {!hasInitSnapshot && (
+                <Button
+                  variant="ghost"
+                  onClick={() => initSnapshotMutation.mutate()}
+                  disabled={initSnapshotMutation.isPending}
+                >
+                  {t("snapshots.createInit")}
+                </Button>
+              )}
+              <Dialog
+                open={createDialogOpen}
+                onOpenChange={setCreateDialogOpen}
+              >
+                <DialogTrigger asChild>
+                  <Button>{t("snapshots.create")}</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t("snapshots.createTitle")}</DialogTitle>
+                    <DialogDescription>
+                      {t("snapshots.createDescription")}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="snapname">{t("snapshots.name")} *</Label>
+                      <Input
+                        id="snapname"
+                        value={snapname}
+                        onChange={(e) => setSnapname(e.target.value)}
+                        placeholder="snap-2024-02-25"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="desc">
+                        {t("snapshots.descriptionLabel")}
+                      </Label>
+                      <Textarea
+                        id="desc"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder={t("snapshots.descriptionPlaceholder")}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="desc">
-                      {t("snapshots.descriptionLabel")}
-                    </Label>
-                    <Textarea
-                      id="desc"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder={t("snapshots.descriptionPlaceholder")}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setCreateDialogOpen(false)}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    onClick={handleCreate}
-                    disabled={createMutation.isPending}
-                  >
-                    {t("common.create")}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setCreateDialogOpen(false)}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      onClick={handleCreate}
+                      disabled={createMutation.isPending}
+                    >
+                      {t("common.create")}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -187,7 +255,15 @@ export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
               <TableBody>
                 {snapshots.map((snap) => (
                   <TableRow key={snap.name}>
-                    <TableCell className="font-medium">{snap.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {snap.name}
+                      {snap.name === INIT_SNAPSHOT_NAME && (
+                        <Badge variant="secondary" className="ml-2">
+                          <ShieldCheck className="h-3 w-3 mr-1" />
+                          {t("snapshots.protected")}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{snap.description || "-"}</TableCell>
                     <TableCell>
                       {snap.snaptime
@@ -208,19 +284,21 @@ export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
                         <RotateCcw className="h-4 w-4 mr-1" />
                         {t("snapshots.rollback")}
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(t("snapshots.deleteConfirm"))) {
-                            deleteMutation.mutate(snap.name)
-                          }
-                        }}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        {t("common.delete")}
-                      </Button>
+                      {snap.name !== INIT_SNAPSHOT_NAME && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(t("snapshots.deleteConfirm"))) {
+                              deleteMutation.mutate(snap.name)
+                            }
+                          }}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          {t("common.delete")}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -229,6 +307,25 @@ export default function SnapshotsTab({ vmid }: SnapshotsTabProps) {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("snapshots.resetConfirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("snapshots.resetConfirmBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => resetMutation.mutate()}>
+              {t("snapshots.resetConfirmAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

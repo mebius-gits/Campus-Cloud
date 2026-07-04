@@ -95,7 +95,18 @@
     "deleteError": "Failed to delete snapshot",
     "rollbackSuccess": "Successfully rolled back to snapshot",
     "rollbackError": "Failed to rollback snapshot",
-    "noSnapshots": "No snapshots found. Create one to get started."
+    "noSnapshots": "No snapshots found. Create one to get started.",
+    "reset": "Reset to initial state",
+    "resetUnavailable": "This resource has no init snapshot, reset is unavailable",
+    "resetStarted": "Reset task started; the VM will return to its initial state when done",
+    "resetError": "Reset failed",
+    "resetConfirmTitle": "Reset to initial state?",
+    "resetConfirmBody": "This rolls the VM back to the skylab-init snapshot. All changes made after the snapshot (including installed software and data) will be lost and cannot be recovered.",
+    "resetConfirmAction": "Reset now",
+    "createInit": "Create init snapshot",
+    "initCreated": "Init snapshot created",
+    "initError": "Failed to create init snapshot",
+    "protected": "Protected"
   },
   "auditLogs": {
     "title": "Operation Records",

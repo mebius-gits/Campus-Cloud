@@ -225,6 +225,20 @@ export const ResourceDetailsService = {
       }),
     ),
 
+  resetToInit: (opts: { vmid: number }) =>
+    unwrap<T.ResetAcceptedResponse>(
+      Sdk.ResourceDetailsService.resourceDetailsResetToInit({
+        path: { vmid: opts.vmid },
+      }),
+    ),
+
+  createInitSnapshot: (opts: { vmid: number }) =>
+    unwrap<unknown>(
+      Sdk.ResourceDetailsService.resourceDetailsCreateInitSnapshot({
+        path: { vmid: opts.vmid },
+      }),
+    ),
+
   directUpdateSpec: (opts: { vmid: number; requestBody: T.DirectSpecUpdateRequest }) =>
     unwrap<unknown>(
       Sdk.ResourceDetailsService.resourceDetailsDirectUpdateSpec({

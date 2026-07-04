@@ -10592,7 +10592,7 @@ export type ResourcesShutdownResourceResponses = {
     200: unknown;
 };
 
-export type ResourceDetailsResetResourceData = {
+export type ResourcesResetResourceData = {
     body?: never;
     path: {
         /**
@@ -10604,23 +10604,21 @@ export type ResourceDetailsResetResourceData = {
     url: '/api/v1/resources/{vmid}/reset';
 };
 
-export type ResourceDetailsResetResourceErrors = {
+export type ResourcesResetResourceErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type ResourceDetailsResetResourceError = ResourceDetailsResetResourceErrors[keyof ResourceDetailsResetResourceErrors];
+export type ResourcesResetResourceError = ResourcesResetResourceErrors[keyof ResourcesResetResourceErrors];
 
-export type ResourceDetailsResetResourceResponses = {
+export type ResourcesResetResourceResponses = {
     /**
      * Successful Response
      */
-    202: ResetAcceptedResponse;
+    200: unknown;
 };
-
-export type ResourceDetailsResetResourceResponse = ResourceDetailsResetResourceResponses[keyof ResourceDetailsResetResourceResponses];
 
 export type ResourcesGetSessionStatusData = {
     body?: never;
@@ -10934,6 +10932,36 @@ export type ResourceDetailsDirectUpdateSpecResponses = {
      */
     200: unknown;
 };
+
+export type ResourceDetailsResetToInitData = {
+    body?: never;
+    path: {
+        /**
+         * Vmid
+         */
+        vmid: number;
+    };
+    query?: never;
+    url: '/api/v1/resources/{vmid}/reset-to-init';
+};
+
+export type ResourceDetailsResetToInitErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResourceDetailsResetToInitError = ResourceDetailsResetToInitErrors[keyof ResourceDetailsResetToInitErrors];
+
+export type ResourceDetailsResetToInitResponses = {
+    /**
+     * Successful Response
+     */
+    202: ResetAcceptedResponse;
+};
+
+export type ResourceDetailsResetToInitResponse = ResourceDetailsResetToInitResponses[keyof ResourceDetailsResetToInitResponses];
 
 export type ResourceDetailsCreateInitSnapshotData = {
     body?: never;
