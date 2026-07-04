@@ -65,6 +65,7 @@ class SubscriberSocket(DownstreamSocket, Protocol):
 class SessionMode(str, Enum):
     monitor = "monitor"
     broadcast = "broadcast"
+    pair = "pair"
 
 
 @dataclass(frozen=True)
@@ -285,10 +286,13 @@ class VncSessionManager:
                     # FBUR / SetPixelFormat / SetEncodings 一律吞掉：
                     # 上游的像素格式與更新節奏由 pump 統一控制
                     continue
-                if (
+                # pair session 的訂閱者已在 WS 層限定為 owner/受邀者/admin，
+                # 故放行全部成員輸入；其餘模式維持 controller 單一控制權。
+                allowed = state.mode is SessionMode.pair or (
                     state.controller_user_id is not None
                     and state.controller_user_id == subscriber.user_id
-                ):
+                )
+                if allowed:
                     await state.upstream.send(message)
 
     # ------------------------------------------------------------------
