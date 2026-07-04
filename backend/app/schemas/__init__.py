@@ -106,6 +106,10 @@ from .monitoring import (
     NodeMetrics,
     VMTopEntry,
 )
+from .pair_session import (
+    PairSessionCreate,
+    PairSessionPublic,
+)
 from .proxmox_config import (
     ProxmoxConfigPublic,
     ProxmoxConfigUpdate,
@@ -347,6 +351,9 @@ __all__ = [
     "ProxmoxConfigPublic",
     "ProxmoxConfigUpdate",
     "ProxmoxConnectionTestResult",
+    # Pair Mode (module E)
+    "PairSessionCreate",
+    "PairSessionPublic",
     # Quota (module E)
     "EffectiveQuotaPublic",
     "QuotaUsagePublic",

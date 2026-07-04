@@ -21,6 +21,7 @@ from app.api.routes import (
     migration_jobs,
     mining_incidents,
     monitoring,
+    pair_sessions,
     private,
     proxmox_config,
     quotas,
@@ -64,6 +65,7 @@ api_router.include_router(spec_change_requests.router)
 api_router.include_router(audit_logs.router)
 api_router.include_router(groups.router)
 api_router.include_router(classroom.router)
+api_router.include_router(pair_sessions.router)
 api_router.include_router(batch_provision.router)
 api_router.include_router(proxmox_config.router)
 api_router.include_router(cloudflare.router)

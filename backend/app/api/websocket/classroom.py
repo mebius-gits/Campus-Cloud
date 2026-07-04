@@ -8,7 +8,7 @@ from app.api.deps.auth import get_ws_current_user
 from app.api.websocket.utils import safe_close_websocket
 from app.core.permissions import is_admin
 from app.exceptions import AppError
-from app.services.classroom import classroom_service
+from app.services.classroom import classroom_service, pair_service
 from app.services.classroom.presence import classroom_presence_hub
 from app.services.classroom.vnc_session_manager import (
     SessionMode,
@@ -44,7 +44,17 @@ async def classroom_watch_proxy(
         if session is None:
             await safe_close_websocket(websocket, code=1008, reason="Session not found")
             return
-        if session.mode is SessionMode.monitor:
+        if session.mode is SessionMode.pair:
+            # pair：owner/受邀者/admin 才能掛進來（雙方輸入都會被轉發）
+            if not (
+                is_admin(user)
+                or pair_service.is_participant(session_id, user.id)
+            ):
+                await safe_close_websocket(
+                    websocket, code=1008, reason="Permission denied"
+                )
+                return
+        elif session.mode is SessionMode.monitor:
             # monitor：發起者已通過 require_can_watch；其他觀看者同樣檢查
             classroom_service.require_can_watch(db, user, session.vmid)
         else:
