@@ -1546,11 +1546,28 @@ def test_process_due_request_starts_provisions_new_active_request_on_rebalanced_
         lambda *args, **kwargs: None,
     )
 
+    # 模組 D 後，未 provision 的 request 走 provision_pool fan-out 背景執行；
+    # 測試中改為同步執行背景任務實際會跑的 process_single_request_start。
+    provision_results: list[bool] = []
+
+    def _sync_submit_provision(request_id: uuid.UUID, *, concurrency: int) -> str:
+        provision_results.append(
+            vm_request_schedule_service.process_single_request_start(request_id)
+        )
+        return f"provision-{request_id}"
+
+    monkeypatch.setattr(
+        "app.services.scheduling.coordinator.provision_pool.submit_provision",
+        _sync_submit_provision,
+    )
+
     started_count = vm_request_schedule_service.process_due_request_starts()
 
     db.expire_all()
     refreshed = db.exec(select(VMRequest).where(VMRequest.id == request.id)).first()
-    assert started_count == 1
+    # fan-out 的 provision 不計入 tick 同步計數；started 由背景任務回傳驗證。
+    assert started_count == 0
+    assert provision_results == [True]
     assert refreshed is not None
     assert refreshed.vmid == 990
     assert refreshed.assigned_node == "pve-b"
