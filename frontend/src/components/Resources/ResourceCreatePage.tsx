@@ -371,7 +371,8 @@ export function ResourceCreatePage({
         data.message || t("messages:success.resourceCreated"),
       ]
 
-      if (isQuickStartMode) {
+      // 202：clone 於背景執行，vmid 尚未產生 — 網路設定需待資源就緒後手動配置
+      if (isQuickStartMode && data.vmid != null) {
         try {
           const networkResult = await applyQuickStartNetworkSettings(
             data.vmid,
@@ -384,6 +385,10 @@ export function ResourceCreatePage({
         } catch (error) {
           showErrorToast(getErrorMessage(error))
         }
+      } else if (isQuickStartMode) {
+        successMessages.push(
+          "資源建立中，網路與防火牆設定請於資源就緒後在資源頁配置。",
+        )
       }
 
       showSuccessToast(successMessages.join(" "))

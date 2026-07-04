@@ -106,7 +106,11 @@ function VMsTableContent({
   )
 
   const columns = useMemo(
-    () => createColumns(t, onOpenConsole, { enableSelection: true }),
+    () =>
+      createColumns(t, onOpenConsole, {
+        enableSelection: true,
+        enableMiningExempt: true,
+      }),
     [t, onOpenConsole],
   )
 

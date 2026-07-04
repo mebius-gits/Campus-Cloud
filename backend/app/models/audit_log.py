@@ -68,6 +68,7 @@ class AuditAction(str, enum.Enum):
     mining_suspend = "mining_suspend"
     mining_ban = "mining_ban"
     mining_dismiss = "mining_dismiss"
+    mining_exempt_change = "mining_exempt_change"
 
     # 認證 / Login
     login_success = "login_success"

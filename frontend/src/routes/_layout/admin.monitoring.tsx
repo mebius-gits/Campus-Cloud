@@ -32,6 +32,7 @@ import {
   type NodeMetrics,
   type VmTopEntry,
 } from "@/client"
+import MiningIncidentsPanel from "@/components/Admin/MiningIncidentsPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -646,6 +647,9 @@ function MonitoringPage() {
 
       {/* Alerts */}
       <AlertsPanel />
+
+      {/* Mining incidents */}
+      <MiningIncidentsPanel />
 
       {/* Node table */}
       <Card>

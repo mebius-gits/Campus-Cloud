@@ -217,6 +217,7 @@ class ResourcePublic(BaseModel):
     auto_stop_at: datetime | None = None
     auto_stop_reason: Literal["window_grace", "practice_quota"] | None = None
     idle_since: datetime | None = None
+    mining_exempt: bool = False
 
 
 class SessionStatusResponse(BaseModel):

@@ -1,14 +1,22 @@
-"""反挖礦事件 API（admin）：清單、停權、誤判解除。"""
+"""反挖礦事件 API（admin）：清單、停權、誤判解除、資源豁免。"""
 
 import uuid
 
 from fastapi import APIRouter, Query
 
 from app.api.deps import AdminUser, SessionDep
+from app.exceptions import NotFoundError
 from app.models import MiningIncidentStatus
 from app.repositories import mining as mining_repo
-from app.schemas.mining import MiningDismissRequest, MiningIncidentPublic
+from app.repositories import resource as resource_repo
+from app.schemas.mining import (
+    MiningDismissRequest,
+    MiningExemptRequest,
+    MiningExemptResponse,
+    MiningIncidentPublic,
+)
 from app.services.security import mining_service
+from app.services.user import audit_service
 
 router = APIRouter(prefix="/mining-incidents", tags=["mining"])
 
@@ -59,3 +67,31 @@ def dismiss_incident(
         note=body.note,
     )
     return MiningIncidentPublic.model_validate(incident, from_attributes=True)
+
+
+@router.put("/exemptions/{vmid}", response_model=MiningExemptResponse)
+def set_exemption(
+    vmid: int,
+    body: MiningExemptRequest,
+    session: SessionDep,
+    current_user: AdminUser,
+) -> MiningExemptResponse:
+    """設定/解除資源的挖礦偵測豁免（合法長時間高負載的 VM）。"""
+    resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
+    if resource is None:
+        raise NotFoundError(f"Resource {vmid} not found")
+    resource.mining_exempt = body.exempt
+    session.add(resource)
+    audit_service.log_action(
+        session=session,
+        user_id=current_user.id,
+        vmid=vmid,
+        action="mining_exempt_change",
+        details=(
+            f"Mining exemption {'granted' if body.exempt else 'revoked'} "
+            f"for vmid={vmid}"
+        ),
+        commit=False,
+    )
+    session.commit()
+    return MiningExemptResponse(vmid=vmid, exempt=resource.mining_exempt)

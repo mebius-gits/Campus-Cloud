@@ -146,6 +146,7 @@ def _build_resource_public(
         maxmem=resource.get("maxmem"),
         uptime=resource.get("uptime"),
         idle_since=db_resource.idle_since if db_resource else None,
+        mining_exempt=bool(db_resource.mining_exempt) if db_resource else False,
     )
 
 

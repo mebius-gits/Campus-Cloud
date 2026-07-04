@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import type { TFunction } from "i18next"
 import {
@@ -10,10 +11,11 @@ import {
   XCircle,
 } from "lucide-react"
 
-import type { VMRequestStatus } from "@/client"
+import { MiningIncidentsService, type VMRequestStatus } from "@/client"
 import { VMActions } from "@/components/Resources/VMActions"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import {
   Tooltip,
   TooltipContent,
@@ -203,6 +205,40 @@ function DeletingActions({ meta }: { meta: DeletingMeta }) {
   )
 }
 
+function MiningExemptToggle({ row }: { row: ResourceRow }) {
+  const queryClient = useQueryClient()
+  const { showSuccessToast, showErrorToast } = useCustomToast()
+  const mutation = useMutation({
+    mutationFn: (exempt: boolean) =>
+      MiningIncidentsService.setExemption({
+        vmid: row.vmid as number,
+        exempt,
+      }),
+    onSuccess: (result) => {
+      showSuccessToast(
+        result.exempt
+          ? `VMID ${result.vmid} 已加入挖礦偵測豁免`
+          : `VMID ${result.vmid} 已恢復挖礦偵測`,
+      )
+      queryClient.invalidateQueries({ queryKey: ["resources"] })
+    },
+    onError: (err: Error) => showErrorToast(err.message || "豁免設定失敗"),
+  })
+
+  if (row.vmid == null || row._creating || row._deleting) {
+    return <span className="text-xs text-muted-foreground">—</span>
+  }
+  return (
+    <Switch
+      checked={Boolean(row.mining_exempt)}
+      disabled={mutation.isPending}
+      onCheckedChange={(v) => mutation.mutate(v)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label="挖礦偵測豁免"
+    />
+  )
+}
+
 function TypeIcon({ type }: { type: string }) {
   if (type === "lxc") {
     return <Container className="h-4 w-4 text-blue-500" />
@@ -228,7 +264,7 @@ function TypeLabel({
 export const createColumns = (
   t: TFunction<string, string>,
   onOpenConsole: (vmid: number, name: string, type: string) => void,
-  options?: { enableSelection?: boolean },
+  options?: { enableSelection?: boolean; enableMiningExempt?: boolean },
 ): ColumnDef<ResourceRow>[] => {
   const cols: ColumnDef<ResourceRow>[] = []
 
@@ -460,29 +496,39 @@ export const createColumns = (
         </span>
       ),
     },
-    {
-      id: "actions",
-      header: t("table.actions"),
-      cell: ({ row }) => {
-        const c = row.original._creating
-        if (c) return <CreatingActions meta={c} />
-        const d = row.original._deleting
-        if (d) return <DeletingActions meta={d} />
-        if (row.original.vmid == null) {
-          return <span className="text-muted-foreground">-</span>
-        }
-        return (
-          <VMActions
-            vmid={row.original.vmid}
-            name={row.original.name}
-            type={row.original.type}
-            status={row.original.status}
-            onOpenConsole={onOpenConsole}
-          />
-        )
-      },
-    },
   )
+
+  if (options?.enableMiningExempt) {
+    cols.push({
+      id: "mining_exempt",
+      header: "挖礦豁免",
+      cell: ({ row }) => <MiningExemptToggle row={row.original} />,
+      enableSorting: false,
+    })
+  }
+
+  cols.push({
+    id: "actions",
+    header: t("table.actions"),
+    cell: ({ row }) => {
+      const c = row.original._creating
+      if (c) return <CreatingActions meta={c} />
+      const d = row.original._deleting
+      if (d) return <DeletingActions meta={d} />
+      if (row.original.vmid == null) {
+        return <span className="text-muted-foreground">-</span>
+      }
+      return (
+        <VMActions
+          vmid={row.original.vmid}
+          name={row.original.name}
+          type={row.original.type}
+          status={row.original.status}
+          onOpenConsole={onOpenConsole}
+        />
+      )
+    },
+  })
 
   return cols
 }

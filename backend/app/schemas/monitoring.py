@@ -88,6 +88,12 @@ class GovernanceConfigPublic(BaseModel):
     idle_grace_hours: int
     idle_scan_batch_size: int
     workload_advisor_enabled: bool
+    mining_detection_enabled: bool
+    mining_cpu_threshold_percent: float
+    mining_window_hours: int
+    mining_scan_batch_size: int
+    mining_auto_suspend: bool
+    provision_max_concurrency: int
     updated_at: datetime
 
 
@@ -110,3 +116,9 @@ class GovernanceConfigUpdate(BaseModel):
     idle_grace_hours: int | None = Field(default=None, ge=1, le=720)
     idle_scan_batch_size: int | None = Field(default=None, ge=1, le=200)
     workload_advisor_enabled: bool | None = None
+    mining_detection_enabled: bool | None = None
+    mining_cpu_threshold_percent: float | None = Field(default=None, ge=50, le=100)
+    mining_window_hours: int | None = Field(default=None, ge=1, le=72)
+    mining_scan_batch_size: int | None = Field(default=None, ge=1, le=200)
+    mining_auto_suspend: bool | None = None
+    provision_max_concurrency: int | None = Field(default=None, ge=1, le=16)

@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bell, Clock, Loader2, MoonStar, Save, Wand2 } from "lucide-react"
+import {
+  Bell,
+  Clock,
+  Layers,
+  Loader2,
+  MoonStar,
+  Pickaxe,
+  Save,
+  Wand2,
+} from "lucide-react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 
@@ -41,6 +50,12 @@ interface GovernanceFormValues {
   idle_grace_hours: number
   idle_scan_batch_size: number
   workload_advisor_enabled: boolean
+  mining_detection_enabled: boolean
+  mining_cpu_threshold_percent: number
+  mining_window_hours: number
+  mining_scan_batch_size: number
+  mining_auto_suspend: boolean
+  provision_max_concurrency: number
 }
 
 function getApiErrorMessage(error: unknown): string {
@@ -79,6 +94,12 @@ export default function GovernanceConfigTab() {
           idle_grace_hours: config.idle_grace_hours,
           idle_scan_batch_size: config.idle_scan_batch_size,
           workload_advisor_enabled: config.workload_advisor_enabled,
+          mining_detection_enabled: config.mining_detection_enabled,
+          mining_cpu_threshold_percent: config.mining_cpu_threshold_percent,
+          mining_window_hours: config.mining_window_hours,
+          mining_scan_batch_size: config.mining_scan_batch_size,
+          mining_auto_suspend: config.mining_auto_suspend,
+          provision_max_concurrency: config.provision_max_concurrency,
         }
       : undefined,
   })
@@ -313,6 +334,70 @@ export default function GovernanceConfigTab() {
               "啟用自動判斷",
               "停用後申請表單僅能手動選擇資源類型",
             )}
+          </CardContent>
+        </Card>
+
+        {/* 反挖礦 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Pickaxe className="h-4 w-4" />
+              反挖礦偵測
+            </CardTitle>
+            <CardDescription>
+              CPU 長期滿載的資源自動存證快照、暫停並通知；帳號停權由管理員在
+              「資源監控 → 挖礦事件」人工確認。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {switchField(
+              "mining_detection_enabled",
+              "啟用挖礦偵測",
+              "定期掃描運行中資源的 CPU 特徵",
+            )}
+            <div className="grid gap-4 md:grid-cols-3">
+              {numberField("mining_cpu_threshold_percent", "CPU 閾值（%）", {
+                min: 50,
+                max: 100,
+                step: 0.5,
+              })}
+              {numberField("mining_window_hours", "觀察視窗（小時）", {
+                min: 1,
+                max: 72,
+                description: "平均 CPU 持續高於閾值達此時數才判定",
+              })}
+              {numberField("mining_scan_batch_size", "每輪掃描台數", {
+                min: 1,
+                max: 200,
+              })}
+            </div>
+            {switchField(
+              "mining_auto_suspend",
+              "自動存證並暫停",
+              "關閉後僅建立事件與通知，暫停由管理員手動執行",
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 克隆併發 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4" />
+              克隆併發
+            </CardTitle>
+            <CardDescription>
+              同時執行的 VM/LXC 克隆數上限（克隆為 PVE 磁碟 I/O
+              重活，過高會拖垮儲存）。變更於下一個排程週期生效。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="md:w-1/3">
+              {numberField("provision_max_concurrency", "併發上限", {
+                min: 1,
+                max: 16,
+              })}
+            </div>
           </CardContent>
         </Card>
 

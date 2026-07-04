@@ -32,3 +32,14 @@ class MiningDismissRequest(BaseModel):
 
     exempt: bool = False
     note: str | None = Field(default=None, max_length=1024)
+
+
+class MiningExemptRequest(BaseModel):
+    """設定/解除資源的挖礦偵測豁免。"""
+
+    exempt: bool
+
+
+class MiningExemptResponse(BaseModel):
+    vmid: int
+    exempt: bool

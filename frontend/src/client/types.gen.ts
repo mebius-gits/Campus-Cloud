@@ -586,7 +586,7 @@ export type AlertScope = 'cluster' | 'node' | 'vm';
  *
  * 審計操作類型
  */
-export type AuditAction = 'spec_change_request' | 'spec_change_apply' | 'snapshot_create' | 'snapshot_delete' | 'snapshot_rollback' | 'config_update' | 'vm_create' | 'lxc_create' | 'resource_start' | 'resource_stop' | 'resource_reboot' | 'resource_shutdown' | 'resource_reset' | 'resource_delete' | 'resource_extend_session' | 'vm_request_submit' | 'vm_request_submit_auto_approved' | 'vm_request_review' | 'ai_api_request_submit' | 'ai_api_request_review' | 'user_create' | 'user_update' | 'user_delete' | 'group_create' | 'group_delete' | 'group_member_add' | 'group_member_remove' | 'batch_provision_vm' | 'batch_provision_lxc' | 'script_deploy' | 'login_success' | 'login_failed' | 'login_google_success' | 'login_google_failed' | 'login_ldap_success' | 'login_ldap_failed' | 'password_change' | 'password_recovery_request' | 'password_reset' | 'firewall_layout_update' | 'firewall_connection_create' | 'firewall_connection_delete' | 'firewall_rule_create' | 'firewall_rule_update' | 'firewall_rule_delete' | 'nat_rule_delete' | 'nat_rule_sync' | 'reverse_proxy_rule_delete' | 'reverse_proxy_rule_sync' | 'gateway_config_update' | 'gateway_keypair_generate' | 'gateway_config_write' | 'gateway_service_control' | 'cloudflare_config_update' | 'cloudflare_zone_create' | 'cloudflare_dns_record_create' | 'cloudflare_dns_record_update' | 'cloudflare_dns_record_delete' | 'proxmox_config_update' | 'proxmox_node_update' | 'proxmox_storage_update' | 'proxmox_sync_nodes' | 'proxmox_sync_now' | 'migration_job_retry' | 'migration_job_cancel' | 'spec_direct_update' | 'ai_api_credential_rotate' | 'ai_api_credential_delete' | 'ai_api_credential_update';
+export type AuditAction = 'spec_change_request' | 'spec_change_apply' | 'snapshot_create' | 'snapshot_delete' | 'snapshot_rollback' | 'config_update' | 'vm_create' | 'lxc_create' | 'resource_start' | 'resource_stop' | 'resource_reboot' | 'resource_shutdown' | 'resource_reset' | 'resource_delete' | 'resource_extend_session' | 'vm_request_submit' | 'vm_request_submit_auto_approved' | 'vm_request_review' | 'ai_api_request_submit' | 'ai_api_request_review' | 'user_create' | 'user_update' | 'user_delete' | 'group_create' | 'group_delete' | 'group_member_add' | 'group_member_remove' | 'batch_provision_vm' | 'batch_provision_lxc' | 'script_deploy' | 'mining_detected' | 'mining_suspend' | 'mining_ban' | 'mining_dismiss' | 'mining_exempt_change' | 'login_success' | 'login_failed' | 'login_google_success' | 'login_google_failed' | 'login_ldap_success' | 'login_ldap_failed' | 'password_change' | 'password_recovery_request' | 'password_reset' | 'firewall_layout_update' | 'firewall_connection_create' | 'firewall_connection_delete' | 'firewall_rule_create' | 'firewall_rule_update' | 'firewall_rule_delete' | 'nat_rule_delete' | 'nat_rule_sync' | 'reverse_proxy_rule_delete' | 'reverse_proxy_rule_sync' | 'gateway_config_update' | 'gateway_keypair_generate' | 'gateway_config_write' | 'gateway_service_control' | 'cloudflare_config_update' | 'cloudflare_zone_create' | 'cloudflare_dns_record_create' | 'cloudflare_dns_record_update' | 'cloudflare_dns_record_delete' | 'proxmox_config_update' | 'proxmox_node_update' | 'proxmox_storage_update' | 'proxmox_sync_nodes' | 'proxmox_sync_now' | 'migration_job_retry' | 'migration_job_cancel' | 'spec_direct_update' | 'ai_api_credential_rotate' | 'ai_api_credential_delete' | 'ai_api_credential_update';
 
 /**
  * AuditActionMeta
@@ -2906,6 +2906,30 @@ export type GovernanceConfigPublic = {
      */
     workload_advisor_enabled: boolean;
     /**
+     * Mining Detection Enabled
+     */
+    mining_detection_enabled: boolean;
+    /**
+     * Mining Cpu Threshold Percent
+     */
+    mining_cpu_threshold_percent: number;
+    /**
+     * Mining Window Hours
+     */
+    mining_window_hours: number;
+    /**
+     * Mining Scan Batch Size
+     */
+    mining_scan_batch_size: number;
+    /**
+     * Mining Auto Suspend
+     */
+    mining_auto_suspend: boolean;
+    /**
+     * Provision Max Concurrency
+     */
+    provision_max_concurrency: number;
+    /**
      * Updated At
      */
     updated_at: string;
@@ -2981,6 +3005,30 @@ export type GovernanceConfigUpdate = {
      * Workload Advisor Enabled
      */
     workload_advisor_enabled?: boolean | null;
+    /**
+     * Mining Detection Enabled
+     */
+    mining_detection_enabled?: boolean | null;
+    /**
+     * Mining Cpu Threshold Percent
+     */
+    mining_cpu_threshold_percent?: number | null;
+    /**
+     * Mining Window Hours
+     */
+    mining_window_hours?: number | null;
+    /**
+     * Mining Scan Batch Size
+     */
+    mining_scan_batch_size?: number | null;
+    /**
+     * Mining Auto Suspend
+     */
+    mining_auto_suspend?: boolean | null;
+    /**
+     * Provision Max Concurrency
+     */
+    provision_max_concurrency?: number | null;
 };
 
 /**
@@ -3388,17 +3436,21 @@ export type LxcCreateRequest = {
 /**
  * LXCCreateResponse
  *
- * 建立 LXC 回應
+ * 建立 LXC 回應（202：clone 於背景執行，vmid/upid 為 null）
  */
 export type LxcCreateResponse = {
     /**
      * Vmid
      */
-    vmid: number;
+    vmid?: number | null;
     /**
      * Upid
      */
-    upid: string;
+    upid?: string | null;
+    /**
+     * Task Id
+     */
+    task_id?: string | null;
     /**
      * Message
      */
@@ -3739,6 +3791,114 @@ export type MigrationStatsPublic = {
      */
     success_rate?: number;
 };
+
+/**
+ * MiningDismissRequest
+ *
+ * 誤判解除：可一併將資源加入豁免。
+ */
+export type MiningDismissRequest = {
+    /**
+     * Exempt
+     */
+    exempt?: boolean;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * MiningExemptRequest
+ *
+ * 設定/解除資源的挖礦偵測豁免。
+ */
+export type MiningExemptRequest = {
+    /**
+     * Exempt
+     */
+    exempt: boolean;
+};
+
+/**
+ * MiningExemptResponse
+ */
+export type MiningExemptResponse = {
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * Exempt
+     */
+    exempt: boolean;
+};
+
+/**
+ * MiningIncidentPublic
+ *
+ * 疑似挖礦事件（管理員視圖）。
+ */
+export type MiningIncidentPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Vmid
+     */
+    vmid: number;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Node
+     */
+    node: string;
+    /**
+     * Resource Type
+     */
+    resource_type: string;
+    /**
+     * Avg Cpu
+     */
+    avg_cpu: number;
+    /**
+     * Window Hours
+     */
+    window_hours: number;
+    /**
+     * Snapshot Name
+     */
+    snapshot_name?: string | null;
+    status: MiningIncidentStatus;
+    /**
+     * Detected At
+     */
+    detected_at: string;
+    /**
+     * Suspended At
+     */
+    suspended_at?: string | null;
+    /**
+     * Reviewed By
+     */
+    reviewed_by?: string | null;
+    /**
+     * Reviewed At
+     */
+    reviewed_at?: string | null;
+    /**
+     * Review Note
+     */
+    review_note?: string | null;
+};
+
+/**
+ * MiningIncidentStatus
+ */
+export type MiningIncidentStatus = 'detected' | 'suspended' | 'banned' | 'dismissed';
 
 /**
  * ModelInfo
@@ -5120,6 +5280,10 @@ export type ResourcePublic = {
      * Idle Since
      */
     idle_since?: string | null;
+    /**
+     * Mining Exempt
+     */
+    mining_exempt?: boolean;
 };
 
 /**
@@ -7617,17 +7781,21 @@ export type VmCreateRequest = {
 /**
  * VMCreateResponse
  *
- * 建立 VM 回應
+ * 建立 VM 回應（202：clone 於背景執行，vmid/upid 為 null）
  */
 export type VmCreateResponse = {
     /**
      * Vmid
      */
-    vmid: number;
+    vmid?: number | null;
     /**
      * Upid
      */
-    upid: string;
+    upid?: string | null;
+    /**
+     * Task Id
+     */
+    task_id?: string | null;
     /**
      * Message
      */
@@ -10403,7 +10571,7 @@ export type VmCreateVmResponses = {
     /**
      * Successful Response
      */
-    200: VmCreateResponse;
+    202: VmCreateResponse;
 };
 
 export type VmCreateVmResponse = VmCreateVmResponses[keyof VmCreateVmResponses];
@@ -10494,7 +10662,7 @@ export type LxcCreateLxcResponses = {
     /**
      * Successful Response
      */
-    200: LxcCreateResponse;
+    202: LxcCreateResponse;
 };
 
 export type LxcCreateLxcResponse = LxcCreateLxcResponses[keyof LxcCreateLxcResponses];
@@ -11405,6 +11573,132 @@ export type LdapConfigTestConnectionResponses = {
 };
 
 export type LdapConfigTestConnectionResponse = LdapConfigTestConnectionResponses[keyof LdapConfigTestConnectionResponses];
+
+export type MiningListIncidentsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Status
+         */
+        status?: MiningIncidentStatus | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/mining-incidents';
+};
+
+export type MiningListIncidentsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MiningListIncidentsError = MiningListIncidentsErrors[keyof MiningListIncidentsErrors];
+
+export type MiningListIncidentsResponses = {
+    /**
+     * Response Mining-List Incidents
+     *
+     * Successful Response
+     */
+    200: Array<MiningIncidentPublic>;
+};
+
+export type MiningListIncidentsResponse = MiningListIncidentsResponses[keyof MiningListIncidentsResponses];
+
+export type MiningBanIncidentData = {
+    body?: never;
+    path: {
+        /**
+         * Incident Id
+         */
+        incident_id: string;
+    };
+    query?: never;
+    url: '/api/v1/mining-incidents/{incident_id}/ban';
+};
+
+export type MiningBanIncidentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MiningBanIncidentError = MiningBanIncidentErrors[keyof MiningBanIncidentErrors];
+
+export type MiningBanIncidentResponses = {
+    /**
+     * Successful Response
+     */
+    200: MiningIncidentPublic;
+};
+
+export type MiningBanIncidentResponse = MiningBanIncidentResponses[keyof MiningBanIncidentResponses];
+
+export type MiningDismissIncidentData = {
+    body: MiningDismissRequest;
+    path: {
+        /**
+         * Incident Id
+         */
+        incident_id: string;
+    };
+    query?: never;
+    url: '/api/v1/mining-incidents/{incident_id}/dismiss';
+};
+
+export type MiningDismissIncidentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MiningDismissIncidentError = MiningDismissIncidentErrors[keyof MiningDismissIncidentErrors];
+
+export type MiningDismissIncidentResponses = {
+    /**
+     * Successful Response
+     */
+    200: MiningIncidentPublic;
+};
+
+export type MiningDismissIncidentResponse = MiningDismissIncidentResponses[keyof MiningDismissIncidentResponses];
+
+export type MiningSetExemptionData = {
+    body: MiningExemptRequest;
+    path: {
+        /**
+         * Vmid
+         */
+        vmid: number;
+    };
+    query?: never;
+    url: '/api/v1/mining-incidents/exemptions/{vmid}';
+};
+
+export type MiningSetExemptionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MiningSetExemptionError = MiningSetExemptionErrors[keyof MiningSetExemptionErrors];
+
+export type MiningSetExemptionResponses = {
+    /**
+     * Successful Response
+     */
+    200: MiningExemptResponse;
+};
+
+export type MiningSetExemptionResponse = MiningSetExemptionResponses[keyof MiningSetExemptionResponses];
 
 export type AiApiListAllAiApiRequestsData = {
     body?: never;

@@ -1042,6 +1042,11 @@ export const AuditActionSchema = {
         'batch_provision_vm',
         'batch_provision_lxc',
         'script_deploy',
+        'mining_detected',
+        'mining_suspend',
+        'mining_ban',
+        'mining_dismiss',
+        'mining_exempt_change',
         'login_success',
         'login_failed',
         'login_google_success',
@@ -5181,6 +5186,30 @@ export const GovernanceConfigPublicSchema = {
             type: 'boolean',
             title: 'Workload Advisor Enabled'
         },
+        mining_detection_enabled: {
+            type: 'boolean',
+            title: 'Mining Detection Enabled'
+        },
+        mining_cpu_threshold_percent: {
+            type: 'number',
+            title: 'Mining Cpu Threshold Percent'
+        },
+        mining_window_hours: {
+            type: 'integer',
+            title: 'Mining Window Hours'
+        },
+        mining_scan_batch_size: {
+            type: 'integer',
+            title: 'Mining Scan Batch Size'
+        },
+        mining_auto_suspend: {
+            type: 'boolean',
+            title: 'Mining Auto Suspend'
+        },
+        provision_max_concurrency: {
+            type: 'integer',
+            title: 'Provision Max Concurrency'
+        },
         updated_at: {
             type: 'string',
             format: 'date-time',
@@ -5205,6 +5234,12 @@ export const GovernanceConfigPublicSchema = {
         'idle_grace_hours',
         'idle_scan_batch_size',
         'workload_advisor_enabled',
+        'mining_detection_enabled',
+        'mining_cpu_threshold_percent',
+        'mining_window_hours',
+        'mining_scan_batch_size',
+        'mining_auto_suspend',
+        'provision_max_concurrency',
         'updated_at'
     ],
     title: 'GovernanceConfigPublic'
@@ -5409,6 +5444,80 @@ export const GovernanceConfigUpdateSchema = {
                 }
             ],
             title: 'Workload Advisor Enabled'
+        },
+        mining_detection_enabled: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mining Detection Enabled'
+        },
+        mining_cpu_threshold_percent: {
+            anyOf: [
+                {
+                    type: 'number',
+                    maximum: 100,
+                    minimum: 50
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mining Cpu Threshold Percent'
+        },
+        mining_window_hours: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 72,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mining Window Hours'
+        },
+        mining_scan_batch_size: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 200,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mining Scan Batch Size'
+        },
+        mining_auto_suspend: {
+            anyOf: [
+                {
+                    type: 'boolean'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Mining Auto Suspend'
+        },
+        provision_max_concurrency: {
+            anyOf: [
+                {
+                    type: 'integer',
+                    maximum: 16,
+                    minimum: 1
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Provision Max Concurrency'
         }
     },
     type: 'object',
@@ -6149,12 +6258,37 @@ export const LXCCreateRequestSchema = {
 export const LXCCreateResponseSchema = {
     properties: {
         vmid: {
-            type: 'integer',
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Vmid'
         },
         upid: {
-            type: 'string',
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Upid'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
         },
         message: {
             type: 'string',
@@ -6163,12 +6297,10 @@ export const LXCCreateResponseSchema = {
     },
     type: 'object',
     required: [
-        'vmid',
-        'upid',
         'message'
     ],
     title: 'LXCCreateResponse',
-    description: '建立 LXC 回應'
+    description: '建立 LXC 回應（202：clone 於背景執行，vmid/upid 為 null）'
 } as const;
 
 export const LayoutNodeUpdateSchema = {
@@ -6774,6 +6906,191 @@ export const MigrationStatsPublicSchema = {
     },
     type: 'object',
     title: 'MigrationStatsPublic'
+} as const;
+
+export const MiningDismissRequestSchema = {
+    properties: {
+        exempt: {
+            type: 'boolean',
+            title: 'Exempt',
+            default: false
+        },
+        note: {
+            anyOf: [
+                {
+                    type: 'string',
+                    maxLength: 1024
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Note'
+        }
+    },
+    type: 'object',
+    title: 'MiningDismissRequest',
+    description: '誤判解除：可一併將資源加入豁免。'
+} as const;
+
+export const MiningExemptRequestSchema = {
+    properties: {
+        exempt: {
+            type: 'boolean',
+            title: 'Exempt'
+        }
+    },
+    type: 'object',
+    required: [
+        'exempt'
+    ],
+    title: 'MiningExemptRequest',
+    description: '設定/解除資源的挖礦偵測豁免。'
+} as const;
+
+export const MiningExemptResponseSchema = {
+    properties: {
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        exempt: {
+            type: 'boolean',
+            title: 'Exempt'
+        }
+    },
+    type: 'object',
+    required: [
+        'vmid',
+        'exempt'
+    ],
+    title: 'MiningExemptResponse'
+} as const;
+
+export const MiningIncidentPublicSchema = {
+    properties: {
+        id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'Id'
+        },
+        vmid: {
+            type: 'integer',
+            title: 'Vmid'
+        },
+        user_id: {
+            type: 'string',
+            format: 'uuid',
+            title: 'User Id'
+        },
+        node: {
+            type: 'string',
+            title: 'Node'
+        },
+        resource_type: {
+            type: 'string',
+            title: 'Resource Type'
+        },
+        avg_cpu: {
+            type: 'number',
+            title: 'Avg Cpu'
+        },
+        window_hours: {
+            type: 'integer',
+            title: 'Window Hours'
+        },
+        snapshot_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Snapshot Name'
+        },
+        status: {
+            $ref: '#/components/schemas/MiningIncidentStatus'
+        },
+        detected_at: {
+            type: 'string',
+            format: 'date-time',
+            title: 'Detected At'
+        },
+        suspended_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Suspended At'
+        },
+        reviewed_by: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'uuid'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewed By'
+        },
+        reviewed_at: {
+            anyOf: [
+                {
+                    type: 'string',
+                    format: 'date-time'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Reviewed At'
+        },
+        review_note: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Review Note'
+        }
+    },
+    type: 'object',
+    required: [
+        'id',
+        'vmid',
+        'user_id',
+        'node',
+        'resource_type',
+        'avg_cpu',
+        'window_hours',
+        'status',
+        'detected_at'
+    ],
+    title: 'MiningIncidentPublic',
+    description: '疑似挖礦事件（管理員視圖）。'
+} as const;
+
+export const MiningIncidentStatusSchema = {
+    type: 'string',
+    enum: [
+        'detected',
+        'suspended',
+        'banned',
+        'dismissed'
+    ],
+    title: 'MiningIncidentStatus'
 } as const;
 
 export const ModelInfoSchema = {
@@ -9039,6 +9356,11 @@ export const ResourcePublicSchema = {
                 }
             ],
             title: 'Idle Since'
+        },
+        mining_exempt: {
+            type: 'boolean',
+            title: 'Mining Exempt',
+            default: false
         }
     },
     type: 'object',
@@ -13186,12 +13508,37 @@ export const VMCreateRequestSchema = {
 export const VMCreateResponseSchema = {
     properties: {
         vmid: {
-            type: 'integer',
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Vmid'
         },
         upid: {
-            type: 'string',
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
             title: 'Upid'
+        },
+        task_id: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            title: 'Task Id'
         },
         message: {
             type: 'string',
@@ -13200,12 +13547,10 @@ export const VMCreateResponseSchema = {
     },
     type: 'object',
     required: [
-        'vmid',
-        'upid',
         'message'
     ],
     title: 'VMCreateResponse',
-    description: '建立 VM 回應'
+    description: '建立 VM 回應（202：clone 於背景執行，vmid/upid 為 null）'
 } as const;
 
 export const VMMigrationJobStatusSchema = {

@@ -395,6 +395,45 @@ export const MonitoringService = {
 }
 
 // ---------------------------------------------------------------------------
+// Mining incidents (module D)
+// ---------------------------------------------------------------------------
+
+export const MiningIncidentsService = {
+  listIncidents: (
+    opts: { status?: T.MiningIncidentStatus | null; limit?: number } = {},
+  ) =>
+    unwrap<Array<T.MiningIncidentPublic>>(
+      Sdk.MiningService.miningListIncidents({ query: opts }),
+    ),
+
+  banIncident: (opts: { incidentId: string }) =>
+    unwrap<T.MiningIncidentPublic>(
+      Sdk.MiningService.miningBanIncident({
+        path: { incident_id: opts.incidentId },
+      }),
+    ),
+
+  dismissIncident: (opts: {
+    incidentId: string
+    requestBody: T.MiningDismissRequest
+  }) =>
+    unwrap<T.MiningIncidentPublic>(
+      Sdk.MiningService.miningDismissIncident({
+        path: { incident_id: opts.incidentId },
+        body: opts.requestBody,
+      }),
+    ),
+
+  setExemption: (opts: { vmid: number; exempt: boolean }) =>
+    unwrap<T.MiningExemptResponse>(
+      Sdk.MiningService.miningSetExemption({
+        path: { vmid: opts.vmid },
+        body: { exempt: opts.exempt },
+      }),
+    ),
+}
+
+// ---------------------------------------------------------------------------
 // Governance config (module C)
 // ---------------------------------------------------------------------------
 
