@@ -1196,6 +1196,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                 name="process_idle_detection",
                 handler=process_idle_detection_task,
             ),
+            ScheduledTask(
+                name="process_mining_detection",
+                handler=process_mining_detection_task,
+            ),
         ],
     )
     logger.info("VM request scheduler stopped")
@@ -1226,6 +1230,15 @@ def process_idle_detection_task() -> int:
     )
 
     return lifecycle_service.process_idle_detection()
+
+
+def process_mining_detection_task() -> int:
+    """Scheduler tick：挖礦偵測（CPU 長期滿載 → 存證 → 暫停 → 通知）。"""
+    from app.services.security import (
+        mining_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    return mining_service.process_mining_detection()
 
 
 def process_pending_deletions_task() -> int:

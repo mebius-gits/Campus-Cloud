@@ -19,6 +19,7 @@ from app.api.routes import (
     login,
     lxc,
     migration_jobs,
+    mining_incidents,
     monitoring,
     private,
     proxmox_config,
@@ -53,6 +54,7 @@ api_router.include_router(migration_jobs.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(governance.router)
 api_router.include_router(ldap_config.router)
+api_router.include_router(mining_incidents.router)
 api_router.include_router(ai.router)
 api_router.include_router(spec_change_requests.router)
 api_router.include_router(audit_logs.router)

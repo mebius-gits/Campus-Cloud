@@ -208,3 +208,30 @@ def list_idle_scan_candidates(
         .limit(limit)
     )
     return list(session.exec(stmt).all())
+
+
+def list_mining_scan_candidates(
+    *,
+    session: Session,
+    vmids: list[int],
+    checked_before: datetime,
+    limit: int,
+) -> list[Resource]:
+    """挖礦掃描候選：running 集合中最久未檢查的前 N 台（同閒置掃描模式）。"""
+    if not vmids:
+        return []
+    stmt = (
+        select(Resource)
+        .where(
+            Resource.vmid.in_(vmids),  # type: ignore[attr-defined]
+            (
+                Resource.mining_checked_at.is_(None)  # type: ignore[union-attr]
+                | (Resource.mining_checked_at < checked_before)  # type: ignore[operator]
+            ),
+        )
+        .order_by(
+            Resource.mining_checked_at.asc().nulls_first()  # type: ignore[union-attr]
+        )
+        .limit(limit)
+    )
+    return list(session.exec(stmt).all())

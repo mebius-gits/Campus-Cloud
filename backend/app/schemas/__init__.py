@@ -94,6 +94,10 @@ from .ldap import (
     LdapTestResult,
     LoginMethodsPublic,
 )
+from .mining import (
+    MiningDismissRequest,
+    MiningIncidentPublic,
+)
 from .monitoring import (
     AlertEventPublic,
     GovernanceConfigPublic,
@@ -317,6 +321,9 @@ __all__ = [
     "MonitoringOverview",
     "NodeMetrics",
     "VMTopEntry",
+    # Mining (module D)
+    "MiningDismissRequest",
+    "MiningIncidentPublic",
     # Proxmox Config
     "ProxmoxConfigPublic",
     "ProxmoxConfigUpdate",

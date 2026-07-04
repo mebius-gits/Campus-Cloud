@@ -257,10 +257,14 @@ def list_snapshots(node: str, vmid: int, resource_type: ResourceType) -> list:
 
 
 def create_snapshot(
-    node: str, vmid: int, resource_type: ResourceType, **params
+    node: str,
+    vmid: int,
+    resource_type: ResourceType,
+    wait_timeout_seconds: float | None = None,
+    **params,
 ) -> str:
     task = _resource_api(node, vmid, resource_type).snapshot.post(**params)
-    basic_blocking_task_status(node, task)
+    basic_blocking_task_status(node, task, timeout_seconds=wait_timeout_seconds)
     return task
 
 
