@@ -23,6 +23,7 @@ from app.api.routes import (
     monitoring,
     private,
     proxmox_config,
+    quotas,
     resource_details,
     resources,
     reverse_proxy,
@@ -53,6 +54,7 @@ api_router.include_router(deletion_requests.router)
 api_router.include_router(migration_jobs.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(governance.router)
+api_router.include_router(quotas.router)
 api_router.include_router(ldap_config.router)
 api_router.include_router(mining_incidents.router)
 api_router.include_router(ai.router)
