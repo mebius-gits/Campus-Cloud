@@ -4,11 +4,13 @@ from app.api.routes import (
     ai,
     audit_logs,
     batch_provision,
+    classroom,
     cloudflare,
     deletion_requests,
     desktop_client,
     firewall,
     gateway,
+    governance,
     gpu,
     groups,
     ip_management,
@@ -48,10 +50,12 @@ api_router.include_router(vm_requests.router)
 api_router.include_router(deletion_requests.router)
 api_router.include_router(migration_jobs.router)
 api_router.include_router(monitoring.router)
+api_router.include_router(governance.router)
 api_router.include_router(ai.router)
 api_router.include_router(spec_change_requests.router)
 api_router.include_router(audit_logs.router)
 api_router.include_router(groups.router)
+api_router.include_router(classroom.router)
 api_router.include_router(batch_provision.router)
 api_router.include_router(proxmox_config.router)
 api_router.include_router(cloudflare.router)

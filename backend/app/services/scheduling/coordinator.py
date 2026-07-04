@@ -1184,9 +1184,22 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                 name="process_auto_stops",
                 handler=recurrence_scheduler.process_auto_stops,
             ),
+            ScheduledTask(
+                name="process_resource_alerts",
+                handler=process_resource_alerts_task,
+            ),
         ],
     )
     logger.info("VM request scheduler stopped")
+
+
+def process_resource_alerts_task() -> int:
+    """Scheduler tick：資源閾值告警評估（間隔由 GovernanceConfig 控制）。"""
+    from app.services.monitoring import (
+        alert_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    return alert_service.process_resource_alerts()
 
 
 def process_pending_deletions_task() -> int:

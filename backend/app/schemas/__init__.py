@@ -88,6 +88,9 @@ from .group import (
     GroupsPublic,
 )
 from .monitoring import (
+    AlertEventPublic,
+    GovernanceConfigPublic,
+    GovernanceConfigUpdate,
     MonitoringOverview,
     NodeMetrics,
     VMTopEntry,
@@ -290,7 +293,10 @@ __all__ = [
     "TopologyEdge",
     "TopologyResponse",
     "NATRulePublic",
-    # Monitoring
+    # Monitoring / Governance
+    "AlertEventPublic",
+    "GovernanceConfigPublic",
+    "GovernanceConfigUpdate",
     "MonitoringOverview",
     "NodeMetrics",
     "VMTopEntry",

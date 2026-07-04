@@ -1,11 +1,13 @@
-"""資源監控 API：全域 overview、節點/VM RRD 趨勢。"""
+"""資源監控 API：全域 overview、節點/VM RRD 趨勢、告警事件。"""
 
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Query
 
 from app.api.deps import AdminUser, CurrentUser, SessionDep
-from app.schemas.monitoring import MonitoringOverview
+from app.repositories import governance as governance_repo
+from app.schemas.monitoring import AlertEventPublic, MonitoringOverview
 from app.services.monitoring import monitoring_service
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
@@ -38,3 +40,32 @@ def get_vm_rrd(
     return monitoring_service.get_vm_rrd(
         session=session, vmid=vmid, timeframe=timeframe, user=current_user
     )
+
+
+@router.get("/alerts", response_model=list[AlertEventPublic])
+def list_alerts(
+    session: SessionDep,
+    _: AdminUser,
+    active: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> list[AlertEventPublic]:
+    """告警事件列表（active=true 只列未解除的）。"""
+    alerts = governance_repo.list_alerts(
+        session=session, active_only=active, limit=limit
+    )
+    return [
+        AlertEventPublic.model_validate(a, from_attributes=True) for a in alerts
+    ]
+
+
+@router.post("/alerts/{alert_id}/ack", response_model=AlertEventPublic)
+def acknowledge_alert(
+    alert_id: uuid.UUID,
+    session: SessionDep,
+    current_user: AdminUser,
+) -> AlertEventPublic:
+    """確認（ack）一筆告警。"""
+    alert = governance_repo.acknowledge_alert(
+        session=session, alert_id=alert_id, user_id=current_user.id
+    )
+    return AlertEventPublic.model_validate(alert, from_attributes=True)

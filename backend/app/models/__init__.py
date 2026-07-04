@@ -12,6 +12,7 @@ from .ai_api_rate_limit import AIAPIRateLimit
 from .ai_api_request import AIAPIRequest, AIAPIRequestStatus
 from .ai_api_usage import AIAPIUsage
 from .ai_template_call_log import AITemplateCallLog
+from .alert_event import AlertEvent, AlertMetric, AlertScope
 from .audit_log import AuditAction, AuditLog
 from .base import get_datetime_utc
 from .batch_provision import (
@@ -24,6 +25,7 @@ from .cloudflare_config import CloudflareConfig
 from .deletion_request import DeletionRequest, DeletionRequestStatus
 from .firewall_layout import FirewallLayout
 from .gateway_config import GatewayConfig
+from .governance_config import GovernanceConfig
 from .group import Group
 from .group_member import GroupMember
 from .ip_allocation import IpAllocation
@@ -112,6 +114,11 @@ __all__ = [
     # Audit Log
     "AuditAction",
     "AuditLog",
+    # Governance / Alerts
+    "AlertEvent",
+    "AlertMetric",
+    "AlertScope",
+    "GovernanceConfig",
     # Spec Change Request
     "SpecChangeRequest",
     "SpecChangeRequestStatus",
