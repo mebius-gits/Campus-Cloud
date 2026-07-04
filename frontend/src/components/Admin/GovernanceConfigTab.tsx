@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Bell,
+  Camera,
   Clock,
   Layers,
   Loader2,
@@ -56,6 +57,9 @@ interface GovernanceFormValues {
   mining_scan_batch_size: number
   mining_auto_suspend: boolean
   provision_max_concurrency: number
+  snapshot_cleanup_enabled: boolean
+  snapshot_retention_days: number
+  student_snapshot_max_count: number
 }
 
 function getApiErrorMessage(error: unknown): string {
@@ -100,6 +104,9 @@ export default function GovernanceConfigTab() {
           mining_scan_batch_size: config.mining_scan_batch_size,
           mining_auto_suspend: config.mining_auto_suspend,
           provision_max_concurrency: config.provision_max_concurrency,
+          snapshot_cleanup_enabled: config.snapshot_cleanup_enabled,
+          snapshot_retention_days: config.snapshot_retention_days,
+          student_snapshot_max_count: config.student_snapshot_max_count,
         }
       : undefined,
   })
@@ -376,6 +383,38 @@ export default function GovernanceConfigTab() {
               "自動存證並暫停",
               "關閉後僅建立事件與通知，暫停由管理員手動執行",
             )}
+          </CardContent>
+        </Card>
+
+        {/* 快照治理 */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Camera className="h-4 w-4" />
+              快照治理
+            </CardTitle>
+            <CardDescription>
+              定期清理過期的學生快照（skylab-init 初始快照永不清理），並限制
+              每台 VM 的學生快照數量。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {switchField(
+              "snapshot_cleanup_enabled",
+              "啟用快照自動清理",
+              "超過保留天數的非保護快照將被排程刪除",
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              {numberField("snapshot_retention_days", "保留天數", {
+                min: 1,
+                max: 90,
+              })}
+              {numberField("student_snapshot_max_count", "學生快照上限", {
+                min: 1,
+                max: 10,
+                description: "不含 skylab-init；達上限需先刪舊快照",
+              })}
+            </div>
           </CardContent>
         </Card>
 

@@ -39,6 +39,7 @@ import { Route as LayoutResourcesVmidRouteImport } from './routes/_layout/resour
 import { Route as LayoutMyResourcesVmidRouteImport } from './routes/_layout/my-resources_.$vmid'
 import { Route as LayoutGroupsGroupIdRouteImport } from './routes/_layout/groups_.$groupId'
 import { Route as LayoutApprovalsRequestIdRouteImport } from './routes/_layout/approvals_.$requestId'
+import { Route as LayoutAdminQuotasRouteImport } from './routes/_layout/admin.quotas'
 import { Route as LayoutAdminMonitoringRouteImport } from './routes/_layout/admin.monitoring'
 import { Route as LayoutAdminMigrationJobsRouteImport } from './routes/_layout/admin.migration-jobs'
 import { Route as LayoutAdminIpManagementRouteImport } from './routes/_layout/admin.ip-management'
@@ -202,6 +203,11 @@ const LayoutApprovalsRequestIdRoute =
     path: '/approvals/$requestId',
     getParentRoute: () => LayoutRoute,
   } as any)
+const LayoutAdminQuotasRoute = LayoutAdminQuotasRouteImport.update({
+  id: '/quotas',
+  path: '/quotas',
+  getParentRoute: () => LayoutAdminRoute,
+} as any)
 const LayoutAdminMonitoringRoute = LayoutAdminMonitoringRouteImport.update({
   id: '/monitoring',
   path: '/monitoring',
@@ -297,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/admin/ip-management': typeof LayoutAdminIpManagementRoute
   '/admin/migration-jobs': typeof LayoutAdminMigrationJobsRoute
   '/admin/monitoring': typeof LayoutAdminMonitoringRoute
+  '/admin/quotas': typeof LayoutAdminQuotasRoute
   '/approvals/$requestId': typeof LayoutApprovalsRequestIdRoute
   '/groups/$groupId': typeof LayoutGroupsGroupIdRoute
   '/my-resources/$vmid': typeof LayoutMyResourcesVmidRoute
@@ -338,6 +345,7 @@ export interface FileRoutesByTo {
   '/admin/ip-management': typeof LayoutAdminIpManagementRoute
   '/admin/migration-jobs': typeof LayoutAdminMigrationJobsRoute
   '/admin/monitoring': typeof LayoutAdminMonitoringRoute
+  '/admin/quotas': typeof LayoutAdminQuotasRoute
   '/approvals/$requestId': typeof LayoutApprovalsRequestIdRoute
   '/groups/$groupId': typeof LayoutGroupsGroupIdRoute
   '/my-resources/$vmid': typeof LayoutMyResourcesVmidRoute
@@ -382,6 +390,7 @@ export interface FileRoutesById {
   '/_layout/admin/ip-management': typeof LayoutAdminIpManagementRoute
   '/_layout/admin/migration-jobs': typeof LayoutAdminMigrationJobsRoute
   '/_layout/admin/monitoring': typeof LayoutAdminMonitoringRoute
+  '/_layout/admin/quotas': typeof LayoutAdminQuotasRoute
   '/_layout/approvals_/$requestId': typeof LayoutApprovalsRequestIdRoute
   '/_layout/groups_/$groupId': typeof LayoutGroupsGroupIdRoute
   '/_layout/my-resources_/$vmid': typeof LayoutMyResourcesVmidRoute
@@ -426,6 +435,7 @@ export interface FileRouteTypes {
     | '/admin/ip-management'
     | '/admin/migration-jobs'
     | '/admin/monitoring'
+    | '/admin/quotas'
     | '/approvals/$requestId'
     | '/groups/$groupId'
     | '/my-resources/$vmid'
@@ -467,6 +477,7 @@ export interface FileRouteTypes {
     | '/admin/ip-management'
     | '/admin/migration-jobs'
     | '/admin/monitoring'
+    | '/admin/quotas'
     | '/approvals/$requestId'
     | '/groups/$groupId'
     | '/my-resources/$vmid'
@@ -510,6 +521,7 @@ export interface FileRouteTypes {
     | '/_layout/admin/ip-management'
     | '/_layout/admin/migration-jobs'
     | '/_layout/admin/monitoring'
+    | '/_layout/admin/quotas'
     | '/_layout/approvals_/$requestId'
     | '/_layout/groups_/$groupId'
     | '/_layout/my-resources_/$vmid'
@@ -737,6 +749,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutApprovalsRequestIdRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/admin/quotas': {
+      id: '/_layout/admin/quotas'
+      path: '/quotas'
+      fullPath: '/admin/quotas'
+      preLoaderRoute: typeof LayoutAdminQuotasRouteImport
+      parentRoute: typeof LayoutAdminRoute
+    }
     '/_layout/admin/monitoring': {
       id: '/_layout/admin/monitoring'
       path: '/monitoring'
@@ -829,6 +848,7 @@ interface LayoutAdminRouteChildren {
   LayoutAdminIpManagementRoute: typeof LayoutAdminIpManagementRoute
   LayoutAdminMigrationJobsRoute: typeof LayoutAdminMigrationJobsRoute
   LayoutAdminMonitoringRoute: typeof LayoutAdminMonitoringRoute
+  LayoutAdminQuotasRoute: typeof LayoutAdminQuotasRoute
   LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
 }
 
@@ -844,6 +864,7 @@ const LayoutAdminRouteChildren: LayoutAdminRouteChildren = {
   LayoutAdminIpManagementRoute: LayoutAdminIpManagementRoute,
   LayoutAdminMigrationJobsRoute: LayoutAdminMigrationJobsRoute,
   LayoutAdminMonitoringRoute: LayoutAdminMonitoringRoute,
+  LayoutAdminQuotasRoute: LayoutAdminQuotasRoute,
   LayoutAdminIndexRoute: LayoutAdminIndexRoute,
 }
 

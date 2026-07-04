@@ -12,6 +12,7 @@ import PendingItems from "@/components/Pending/PendingItems"
 import { BatchActionBar } from "@/components/Resources/BatchActionBar"
 import { createColumns } from "@/components/Resources/columns"
 import PairInvitesCard from "@/components/Teaching/PairInvitesCard"
+import QuotaUsageBar from "@/components/Teaching/QuotaUsageBar"
 import { TerminalConsoleDialog } from "@/components/Terminal"
 import { Button } from "@/components/ui/button"
 import { VNCConsoleDialog } from "@/components/VNC"
@@ -266,6 +267,7 @@ function MyResources() {
           <RefreshButton />
         </div>
       </div>
+      <QuotaUsageBar />
       <PairInvitesCard onJoin={(sessionId) => setPairSessionId(sessionId)} />
       <ClassroomWatchDialog
         sessionId={pairSessionId}
