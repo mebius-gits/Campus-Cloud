@@ -156,6 +156,16 @@ from .spec_change_request import (
     SpecChangeRequestReview,
     SpecChangeRequestsPublic,
 )
+from .teaching import (
+    BatchSpecAccepted,
+    BatchSpecItemPublic,
+    BatchSpecRequest,
+    BatchSpecStatusPublic,
+    ConfigPushAccepted,
+    ConfigPushItemPublic,
+    ConfigPushStatusPublic,
+    HeatmapEntry,
+)
 from .user import (
     UpdatePassword,
     UserCreate,
@@ -347,4 +357,13 @@ __all__ = [
     "ScriptDeployRequest",
     "ScriptDeployResponse",
     "ScriptDeployStatus",
+    # Teaching (module E)
+    "ConfigPushAccepted",
+    "ConfigPushItemPublic",
+    "ConfigPushStatusPublic",
+    "HeatmapEntry",
+    "BatchSpecRequest",
+    "BatchSpecAccepted",
+    "BatchSpecItemPublic",
+    "BatchSpecStatusPublic",
 ]

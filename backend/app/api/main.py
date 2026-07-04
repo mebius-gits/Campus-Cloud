@@ -32,6 +32,7 @@ from app.api.routes import (
     spec_change_requests,
     teacher_judge_files,
     teacher_judge_scripts,
+    teaching,
     templates,
     tunnel,
     users,
@@ -55,6 +56,7 @@ api_router.include_router(migration_jobs.router)
 api_router.include_router(monitoring.router)
 api_router.include_router(governance.router)
 api_router.include_router(quotas.router)
+api_router.include_router(teaching.router)
 api_router.include_router(ldap_config.router)
 api_router.include_router(mining_incidents.router)
 api_router.include_router(ai.router)
