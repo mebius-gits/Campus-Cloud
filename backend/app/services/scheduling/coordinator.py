@@ -1188,6 +1188,14 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                 name="process_resource_alerts",
                 handler=process_resource_alerts_task,
             ),
+            ScheduledTask(
+                name="process_ttl_lifecycle",
+                handler=process_ttl_lifecycle_task,
+            ),
+            ScheduledTask(
+                name="process_idle_detection",
+                handler=process_idle_detection_task,
+            ),
         ],
     )
     logger.info("VM request scheduler stopped")
@@ -1200,6 +1208,24 @@ def process_resource_alerts_task() -> int:
     )
 
     return alert_service.process_resource_alerts()
+
+
+def process_ttl_lifecycle_task() -> int:
+    """Scheduler tick：TTL 漸進回收（通知 → 關機 → 寬限期 → 刪除佇列）。"""
+    from app.services.governance import (
+        lifecycle_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    return lifecycle_service.process_ttl_lifecycle()
+
+
+def process_idle_detection_task() -> int:
+    """Scheduler tick：閒置偵測（CPU 長期低於閾值 → 通知 → 自動關機）。"""
+    from app.services.governance import (
+        lifecycle_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    return lifecycle_service.process_idle_detection()
 
 
 def process_pending_deletions_task() -> int:
