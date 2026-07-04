@@ -166,8 +166,8 @@
 - Test: 各 1 條 mock 測試
 
 **Steps:**
-- [ ] 讀三個後端路由檔核對欄位（GovernanceConfig 含 TTL 回收、閒置偵測、告警閾值、快照治理、`provision_max_concurrency`、反挖礦參數）→ 實作 → 測試綠。
-- [ ] Commit：`前端遷移: governance/ldap/mining services`
+- [x] 讀三個後端路由檔核對欄位（GovernanceConfig 含 TTL 回收、閒置偵測、告警閾值、快照治理、`provision_max_concurrency`、反挖礦參數）→ 實作 → 測試綠。（4 條測試；mining list/dismiss 均含 body 斷言）
+- [x] Commit：`前端遷移: governance/ldap/mining services`
 
 ### Task 8: SettingsPage 新增「治理」「LDAP」tab 與反挖礦面板
 
