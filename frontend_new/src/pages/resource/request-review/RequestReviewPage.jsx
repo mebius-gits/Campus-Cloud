@@ -3,6 +3,7 @@ import styles from "./RequestReviewPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { useToast } from "../../../hooks/useToast";
 import useAutoRefresh from "../../../hooks/useAutoRefresh";
+import { AiApiService } from "../../../services/aiApi";
 import { DeletionRequestsService } from "../../../services/deletionRequests";
 import { SpecChangeRequestsService } from "../../../services/specChangeRequests";
 import { VmRequestsService } from "../../../services/vmRequests";
@@ -87,14 +88,24 @@ function specChangeLabel(request) {
 function sourceLabel(source) {
   if (source === "vm") return "建立申請";
   if (source === "spec") return "規格調整";
+  if (source === "ai") return "AI API 金鑰";
   return "刪除請求";
 }
 
 function sourceIcon(item) {
   if (item.source === "spec") return "tune";
   if (item.source === "deletion") return "delete_outline";
+  if (item.source === "ai") return "vpn_key";
   return item.raw?.resource_type === "vm" ? "computer" : "terminal";
 }
+
+const AI_DURATION_LABELS = {
+  "1h": "1 小時",
+  "1d": "1 天",
+  "7d": "1 週",
+  "30d": "1 個月",
+  never: "永不過期",
+};
 
 function normalizeVmRequest(request) {
   const deletedApproved = isDeletedApprovedVm(request);
@@ -148,6 +159,32 @@ function normalizeSpecRequest(request) {
     paramText: request.change_type || "-",
     gpuText: "-",
     nodeText: `VMID ${request.vmid}`,
+    createdAt: request.created_at,
+    reviewedAt: request.reviewed_at,
+  };
+}
+
+function normalizeAiRequest(request) {
+  const durationText = AI_DURATION_LABELS[request.duration] ?? request.duration ?? "-";
+  return {
+    id: `ai:${request.id}`,
+    rawId: request.id,
+    source: "ai",
+    raw: request,
+    reviewStatus: ["pending", "approved", "rejected"].includes(request.status)
+      ? request.status
+      : "other",
+    status: request.status,
+    title: `金鑰「${request.api_key_name}」`,
+    user: request.user_full_name || request.user_email || "未知使用者",
+    userSubtext: request.user_email || request.user_id || "-",
+    timeText: formatDateTime(request.created_at),
+    specText: `期限 ${durationText}`,
+    reason: request.purpose,
+    paramLabel: "金鑰期限",
+    paramText: durationText,
+    gpuText: "-",
+    nodeText: "-",
     createdAt: request.created_at,
     reviewedAt: request.reviewed_at,
   };
@@ -238,15 +275,18 @@ export default function RequestReviewPage() {
       setError("");
     }
     try {
-      const [vmRes, specRes, deletionRes] = await Promise.all([
+      const [vmRes, specRes, deletionRes, aiRes] = await Promise.all([
         VmRequestsService.listAll(undefined),
         SpecChangeRequestsService.listAll(),
         DeletionRequestsService.listAll(),
+        // AI API 服務未啟用時仍要能審核其他類型的申請
+        AiApiService.listAllRequests().catch(() => ({ data: [] })),
       ]);
       const items = [
         ...(vmRes.data ?? []).map(normalizeVmRequest),
         ...(specRes.data ?? []).map(normalizeSpecRequest),
         ...(deletionRes.data ?? []).map(normalizeDeletionRequest),
+        ...(aiRes.data ?? []).map(normalizeAiRequest),
       ].sort(
         (a, b) =>
           new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
@@ -321,6 +361,8 @@ export default function RequestReviewPage() {
         await VmRequestsService.review(selected.rawId, body);
       } else if (selected.source === "spec") {
         await SpecChangeRequestsService.review(selected.rawId, body);
+      } else if (selected.source === "ai") {
+        await AiApiService.reviewRequest(selected.rawId, body);
       } else {
         return;
       }
@@ -369,7 +411,7 @@ export default function RequestReviewPage() {
         <div className={styles.pageHeading}>
           <h1 className={styles.pageTitle}>申請審核</h1>
           <p className={styles.pageSubtitle}>
-            集中查看建立、規格調整與刪除請求；刪除資源不會扣除原本已通過的審核數量
+            集中查看建立、規格調整、AI API 金鑰與刪除請求；刪除資源不會扣除原本已通過的審核數量
           </p>
         </div>
       </div>

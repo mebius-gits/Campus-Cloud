@@ -26,7 +26,6 @@ const navGroups = [
       { key: "my-resources",  label: "我的資源",    icon: "inventory_2" },
       { key: "resource-mgmt", label: "資源管理",    icon: "storage" },
       { key: "gpu-mgmt",      label: "GPU 管理",    icon: "memory" },
-      { key: "ai-api-keys",   label: "AI API 金鑰", icon: "vpn_key" },
     ],
   },
   {
@@ -34,9 +33,8 @@ const navGroups = [
     label: "審核",
     icon: "fact_check",
     items: [
-      { key: "request-review", label: "申請審核",    icon: "fact_check" },
-      { key: "batch-review",   label: "批量審核",    icon: "library_add_check" },
-      { key: "ai-api-review",  label: "AI API 審核", icon: "rate_review" },
+      { key: "request-review", label: "申請審核", icon: "fact_check" },
+      { key: "batch-review",   label: "批量審核", icon: "library_add_check" },
     ],
   },
   {

@@ -18,8 +18,6 @@ import BatchReviewPage   from "./pages/resource/batch-review/BatchReviewPage";
 
 // AI
 import AiApiPage       from "./pages/ai/ai-api/AiApiPage";
-import AiApiReviewPage from "./pages/ai/ai-api-review/AiApiReviewPage";
-import AiApiKeysPage   from "./pages/ai/ai-api-keys/AiApiKeysPage";
 import AiMonitoringPage from "./pages/ai/ai-monitoring/AiMonitoringPage";
 import AiManagementPage from "./pages/ai/ai-management/AiManagementPage";
 
@@ -70,8 +68,9 @@ function App() {
 
           {/* AI */}
           <Route path="/ai-api"         element={<AiApiPage />} />
-          <Route path="/ai-api-review"  element={<AiApiReviewPage />} />
-          <Route path="/ai-api-keys"    element={<AiApiKeysPage />} />
+          {/* 舊路由：AI API 審核併入申請審核、金鑰管理併入 AI 管理 */}
+          <Route path="/ai-api-review"  element={<Navigate to="/request-review" replace />} />
+          <Route path="/ai-api-keys"    element={<Navigate to="/ai-management" replace />} />
           <Route path="/ai-monitoring"  element={<AiMonitoringPage />} />
           <Route path="/ai-management"  element={<AiManagementPage />} />
 
