@@ -26,6 +26,7 @@ from app.api.websocket.classroom import (
     classroom_presence_proxy,
     classroom_watch_proxy,
 )
+from app.api.websocket.course_progress import course_progress_proxy
 from app.api.websocket.jobs import jobs_ws_proxy
 from app.api.websocket.terminal import terminal_proxy
 from app.core.config import settings
@@ -243,3 +244,10 @@ async def websocket_classroom_watch(
     websocket: WebSocket, session_id: str, token: str = ""
 ):
     await classroom_watch_proxy(websocket, session_id, token=token)
+
+
+@app.websocket("/ws/courses/paths/{path_id}/progress")
+async def websocket_course_progress(
+    websocket: WebSocket, path_id: str, token: str = ""
+):
+    await course_progress_proxy(websocket, path_id, token=token)

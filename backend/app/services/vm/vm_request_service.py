@@ -168,7 +168,7 @@ def _approve_and_place(
         commit=False,
     )
 
-    if db_request.request_kind == "quick_template":
+    if db_request.request_kind in {"quick_template", "course"}:
         reserved_requests = [
             item
             for item in locked_requests
@@ -181,7 +181,7 @@ def _approve_and_place(
         )
         if not selection or not selection.node:
             raise BadRequestError(
-                "No node is available for the quick template time window."
+                "No node is available for the requested time window."
             )
         vm_request_repo.update_vm_request_provisioning(
             session=session,
@@ -433,6 +433,66 @@ def create(
 
     logger.info(f"User {user.email} submitted VM request {db_request.id}")
     return _to_public(db_request, user_override=user)
+
+
+def create_course_request(
+    *, session: Session, request_in: VMRequestCreate, user
+) -> VMRequest:
+    """Course Lab 內部專用：免審核建立課程實驗機申請。
+
+    僅供 ``services/course/deployment_service`` 呼叫 —— 不暴露於公開 API
+    （公開 schema 的 mode 不含 course，避免繞過房間限制直接開機）。
+    房間/單人單機/發布狀態檢查由 deployment_service 負責；本函式重用
+    配額檢查、審核核准 + 節點保留（quick_template 同款輕量路徑）與 audit。
+
+    呼叫端負責 commit 與 commit 後的背景 provision 觸發。
+    """
+    quota_service.check_quota(
+        session,
+        user.id,
+        delta_cores=int(request_in.cores or 0),
+        delta_memory_mb=int(request_in.memory or 0),
+        delta_disk_gb=int(request_in.disk_size or request_in.rootfs_size or 0),
+        delta_instances=1,
+    )
+
+    db_request = vm_request_repo.create_vm_request(
+        session=session,
+        vm_request_in=request_in,
+        user_id=user.id,
+        encrypted_password=encrypt_value(request_in.password),
+        request_kind="course",
+        commit=False,
+    )
+    _approve_and_place(
+        session=session,
+        db_request=db_request,
+        reviewer_id=user.id,
+    )
+    audit_service.log_action(
+        session=session,
+        user_id=user.id,
+        action="course_lab_deploy",
+        details=(
+            f"Course lab deploy: {request_in.resource_type} "
+            f"{request_in.hostname}, {request_in.cores} cores, "
+            f"{request_in.memory}MB RAM. Auto-approved."
+        ),
+        commit=False,
+    )
+    return db_request
+
+
+def submit_course_provision(request_id: uuid.UUID) -> None:
+    """課程實驗機 provision 背景觸發（commit 後呼叫）。"""
+    submit_sync(
+        vm_request_schedule_service.process_single_request_start,
+        request_id,
+        name=f"provision_vm_request:{request_id}",
+        task_id=f"vm_request:{request_id}",
+        max_retries=1,
+        retry_delay=15.0,
+    )
 
 
 def _public_for_personal_view(req: VMRequest) -> VMRequestPublic:

@@ -22,6 +22,17 @@ from .batch_provision import (
     BatchProvisionTaskStatus,
 )
 from .cloudflare_config import CloudflareConfig
+from .course import (
+    CourseDeployment,
+    CourseDifficulty,
+    CoursePath,
+    CoursePathStatus,
+    CourseQuestion,
+    CourseQuestionType,
+    CourseRoom,
+    CourseTask,
+    UserCourseProgress,
+)
 from .deletion_request import DeletionRequest, DeletionRequestStatus
 from .firewall_layout import FirewallLayout
 from .gateway_config import GatewayConfig
@@ -188,4 +199,14 @@ __all__ = [
     # Task Record (背景任務)
     "TaskRecord",
     "TaskRecordStatus",
+    # Course Lab (互動式實作教學)
+    "CoursePath",
+    "CoursePathStatus",
+    "CourseRoom",
+    "CourseDifficulty",
+    "CourseTask",
+    "CourseQuestion",
+    "CourseQuestionType",
+    "UserCourseProgress",
+    "CourseDeployment",
 ]
