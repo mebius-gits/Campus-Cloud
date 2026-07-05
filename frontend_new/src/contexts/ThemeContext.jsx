@@ -17,9 +17,10 @@ export const THEME_OPTIONS = [
 
 /** 介面風格選項：玻璃質感為預設 */
 export const STYLE_OPTIONS = [
-  { key: "glass", label: "玻璃質感", icon: "blur_on" },
-  { key: "white", label: "白底",     icon: "panorama_fish_eye" },
-  { key: "black", label: "黑底",     icon: "lens" },
+  { key: "glass",  label: "毛玻璃質感", icon: "blur_on" },
+  { key: "liquid", label: "液態玻璃",   icon: "opacity" },
+  { key: "white",  label: "白底",     icon: "panorama_fish_eye" },
+  { key: "black",  label: "黑底",     icon: "lens" },
 ];
 
 /**
@@ -47,6 +48,16 @@ export const BACKGROUND_OPTIONS = {
       id: "auto-gradient",
       label: "跟隨主色",
       preview: "linear-gradient(135deg, var(--color-bg-primary-soft), var(--color-bg-primary-tint))",
+    },
+    DUO_OPTION,
+    TRI_OPTION,
+  ],
+  liquid: [
+    {
+      id: "auto-gradient",
+      label: "跟隨主色",
+      preview:
+        "radial-gradient(ellipse 90% 90% at 20% 10%, var(--color-bg-primary-tint), transparent 70%), linear-gradient(135deg, var(--color-bg-primary-soft), var(--color-bg-primary-tint))",
     },
     DUO_OPTION,
     TRI_OPTION,
