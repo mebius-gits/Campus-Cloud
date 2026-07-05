@@ -5,11 +5,16 @@ import {
   THEME_OPTIONS,
   STYLE_OPTIONS,
   BACKGROUND_OPTIONS,
+  THEME_DEFAULTS,
 } from "../../../contexts/ThemeContext";
 import { normalizeHex } from "../../../utils/theme/derivePrimaryShades";
 import styles from "./AccountSettingsPage.module.scss";
 
 /* ── 外觀 ───────────────────────────────────────────── */
+
+/** 未自訂時玻璃質感「跟隨主色」實際呈現的是原始三色暈染，縮圖同步顯示 */
+const CLASSIC_PREVIEW =
+  "linear-gradient(135deg, var(--color-bg-gradient-blue), var(--color-bg-gradient-yellow) 55%, var(--color-bg-gradient-green))";
 
 /** 可直接輸入 HEX 色碼的欄位，失焦或 Enter 時套用（無效輸入還原） */
 function HexInput({ value, onChange, ariaLabel }) {
@@ -94,6 +99,15 @@ export default function AppearanceTab() {
       !(opt.key === "black" && theme === "light")
   );
 
+  // 主色與背景色都未自訂：玻璃質感的「跟隨主色」呈現原始三色暈染
+  const untouchedAuto =
+    !backgroundColor && primaryColor.toLowerCase() === THEME_DEFAULTS.primaryColor;
+
+  function thumbPreview(opt) {
+    if (style === "glass" && opt.id === "auto-gradient" && untouchedAuto) return CLASSIC_PREVIEW;
+    return opt.preview;
+  }
+
   return (
     <div className={styles.card}>
       <h2 className={styles.cardTitle}>外觀</h2>
@@ -124,26 +138,24 @@ export default function AppearanceTab() {
         <div className={styles.field}>
           <span>背景</span>
 
-          {/* 漸層背景的基準色可與主色分開設定，清空即回到跟隨主色。
-              玻璃質感三種花色都由基準色衍生，白底/黑底只有跟隨主色會用到 */}
-          {(style === "glass" || backgroundId === "auto-gradient") && (
-            <div className={styles.colorRow}>
-              <input
-                type="color"
-                value={backgroundColor || primaryColor}
-                onChange={(e) => setBackgroundColor(e.target.value)}
-                aria-label="選擇背景顏色"
-              />
-              <HexInput
-                value={backgroundColor || primaryColor}
-                onChange={setBackgroundColor}
-                ariaLabel="背景 HEX 色碼"
-              />
-              {!backgroundColor && (
-                <span className={styles.rowMeta}>跟隨主色中，可另選背景色</span>
-              )}
-            </div>
-          )}
+          {/* 漸層背景的基準色可與主色分開設定；
+              三種風格的所有花色都由基準色衍生，picker 永遠顯示 */}
+          <div className={styles.colorRow}>
+            <input
+              type="color"
+              value={backgroundColor || primaryColor}
+              onChange={(e) => setBackgroundColor(e.target.value)}
+              aria-label="選擇背景顏色"
+            />
+            <HexInput
+              value={backgroundColor || primaryColor}
+              onChange={setBackgroundColor}
+              ariaLabel="背景 HEX 色碼"
+            />
+            {!backgroundColor && (
+              <span className={styles.rowMeta}>跟隨主色中，可另選背景色</span>
+            )}
+          </div>
           
           <div className={styles.bgGallery}>
             {BACKGROUND_OPTIONS[style].map((opt) => (
@@ -151,7 +163,7 @@ export default function AppearanceTab() {
                 key={opt.id}
                 type="button"
                 className={backgroundId === opt.id ? styles.bgThumbActive : styles.bgThumb}
-                style={{ background: opt.preview }}
+                style={{ background: thumbPreview(opt) }}
                 onClick={() => setBackgroundId(opt.id)}
               >
                 <span className={styles.bgThumbLabel}>
@@ -167,7 +179,7 @@ export default function AppearanceTab() {
         <div className={styles.formActions}>
           <button type="button" className={styles.btnSecondary} onClick={resetToDefaults}>
             <MIcon name="refresh" size={16} />
-            重設為預設值
+            重設為系統預設值
           </button>
         </div>
       </div>

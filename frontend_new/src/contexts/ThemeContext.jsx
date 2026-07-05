@@ -24,9 +24,23 @@ export const STYLE_OPTIONS = [
 
 /**
  * 背景花色選項，依風格分組；每組第一個「跟隨主色」(auto-gradient) 為預設。
- * preview 為縮圖用的 CSS background（跟隨主色的縮圖直接吃 :root 上的
- * --color-bg-primary-* 變數，固定花色與 _backgrounds.scss 的定義同色）。
+ * 柔和雙色 / 對角三色三種風格共用（色碼由基準色衍生，明暗模式自動切換），
+ * 只有「跟隨主色」依風格有各自的款式。preview 為縮圖用的 CSS background，
+ * 直接吃 :root / body 上的衍生變數。
  */
+const DUO_OPTION = {
+  id: "preset-2",
+  label: "柔和雙色",
+  preview: "linear-gradient(135deg, var(--color-bg-duo-1), var(--color-bg-duo-2))",
+};
+
+const TRI_OPTION = {
+  id: "preset-3",
+  label: "對角三色",
+  preview:
+    "linear-gradient(135deg, var(--color-bg-tri-1), var(--color-bg-tri-2) 50%, var(--color-bg-tri-3))",
+};
+
 export const BACKGROUND_OPTIONS = {
   glass: [
     {
@@ -34,17 +48,8 @@ export const BACKGROUND_OPTIONS = {
       label: "跟隨主色",
       preview: "linear-gradient(135deg, var(--color-bg-primary-soft), var(--color-bg-primary-tint))",
     },
-    {
-      id: "preset-2",
-      label: "柔和雙色",
-      preview: "linear-gradient(135deg, var(--color-bg-duo-1), var(--color-bg-duo-2))",
-    },
-    {
-      id: "preset-3",
-      label: "對角三色",
-      preview:
-        "linear-gradient(135deg, var(--color-bg-tri-1), var(--color-bg-tri-2) 50%, var(--color-bg-tri-3))",
-    },
+    DUO_OPTION,
+    TRI_OPTION,
   ],
   white: [
     {
@@ -52,8 +57,8 @@ export const BACKGROUND_OPTIONS = {
       label: "跟隨主色",
       preview: "linear-gradient(135deg, #ffffff 35%, var(--color-bg-primary-soft))",
     },
-    { id: "preset-2", label: "純白", preview: "#ffffff" },
-    { id: "preset-3", label: "米白", preview: "linear-gradient(135deg, #ffffff, #f2ede1)" },
+    DUO_OPTION,
+    TRI_OPTION,
   ],
   black: [
     {
@@ -61,12 +66,8 @@ export const BACKGROUND_OPTIONS = {
       label: "跟隨主色",
       preview: "linear-gradient(135deg, #000000 35%, var(--color-bg-primary-deep))",
     },
-    { id: "preset-2", label: "純黑", preview: "#000000" },
-    {
-      id: "preset-3",
-      label: "深藍紫",
-      preview: "linear-gradient(135deg, #08070f, #191344 60%, #251a54)",
-    },
+    DUO_OPTION,
+    TRI_OPTION,
   ],
 };
 
@@ -194,15 +195,24 @@ export function ThemeProvider({ children }) {
   }, [style]);
 
   // 背景：目前風格下沒有對應花色時退回預設，否則以 data-bg 套用
-  // （實際花色集中定義在 _backgrounds.scss）
+  // （實際花色集中定義在 _backgrounds.scss）。
+  // 玻璃質感在完全未自訂時（跟隨主色 + 預設主色 + 未另選背景色）
+  // 不掛 data-bg，讓 global.scss 的原始三色暈染呈現 ——
+  // 系統預設外觀維持最初的樣子
   useEffect(() => {
     if (!BACKGROUND_OPTIONS[style]?.some((opt) => opt.id === backgroundId)) {
       setBackgroundId(THEME_DEFAULTS.backgroundId);
       return;
     }
     themePreferenceStore.save({ backgroundId });
-    document.body.setAttribute("data-bg", backgroundId);
-  }, [style, backgroundId]);
+    const untouched =
+      style === "glass" &&
+      backgroundId === "auto-gradient" &&
+      !backgroundColor &&
+      primaryColor.toLowerCase() === THEME_DEFAULTS.primaryColor;
+    if (untouched) document.body.removeAttribute("data-bg");
+    else document.body.setAttribute("data-bg", backgroundId);
+  }, [style, backgroundId, primaryColor, backgroundColor]);
 
   // 白底只能配淺色模式、黑底只能配深色模式；
   // 明暗模式切換（含系統模式跟隨 OS）時自動換成對應的底
