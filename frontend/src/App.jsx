@@ -28,6 +28,9 @@ import AiManagementPage from "./pages/ai/ai-management/AiManagementPage";
 // 教學
 import TeachingPage from "./pages/teaching/TeachingPage";
 import ClassroomPage from "./pages/classroom/ClassroomPage";
+import CoursePathsPage from "./pages/courses/paths/CoursePathsPage";
+import CourseRoomPage from "./pages/courses/room/CourseRoomPage";
+import CourseCmsPage from "./pages/teaching/course-cms/CourseCmsPage";
 
 // 系統管理
 import GroupsPage    from "./pages/system/groups/GroupsPage";
@@ -89,6 +92,9 @@ function App() {
           {/* 教學 */}
           <Route path="/teaching"  element={<TeachingPage />} />
           <Route path="/classroom" element={<ClassroomPage />} />
+          <Route path="/courses"               element={<CoursePathsPage />} />
+          <Route path="/courses/rooms/:roomId" element={<CourseRoomPage />} />
+          <Route path="/course-cms"            element={<CourseCmsPage />} />
 
           {/* 系統管理 */}
           <Route path="/groups"    element={<GroupsPage />} />
