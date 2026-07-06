@@ -68,7 +68,7 @@ function App() {
 
           {/* 個人 */}
           <Route path="/dashboard"            element={<DashboardPage />} />
-          <Route path="/quick-template/:slug" element={<QuickTemplateFormPage />} />
+          <Route path="/quick-template/:id"   element={<QuickTemplateFormPage />} />
           <Route path="/my-resources"         element={<ResourcesPage />} />
           <Route path="/my-resources/:vmid"   element={<ResourceDetailPage backTo="/my-resources" />} />
           <Route path="/my-requests"          element={<RequestsPage />} />

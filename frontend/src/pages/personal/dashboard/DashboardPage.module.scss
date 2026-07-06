@@ -239,54 +239,14 @@
   color: var(--color-text-muted);
 }
 
-/* ── Filter chips ── */
-.filterChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: $spacing-8;
-  margin-top: $spacing-8;
-}
-
-.filterChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: $radius-pill;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+/* ── Section empty / loading ── */
+.sectionEmpty {
+  margin-top: 12px;
+  padding: $spacing-16;
+  border: 1px dashed var(--color-border);
+  border-radius: $radius-8;
   font-size: $font-size-14;
-  font-weight: $font-weight-500;
   color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: background $transition-base, color $transition-base, border-color $transition-base;
-  white-space: nowrap;
-
-  &:hover:not(.filterChipActive) {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
-  }
-}
-
-.filterChipActive {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-}
-
-.filterCount {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: $radius-pill;
-  background: color-mix(in srgb, currentColor 18%, transparent);
-  font-size: 11px;
-  font-weight: $font-weight-700;
-  line-height: 1;
 }
 
 /* ── Template grid ── */

@@ -1,16 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useDragScroll } from "../../../hooks/useDragScroll";
+import { TemplatesService } from "../../../services/templates";
 import MIcon from "../../../components/MIcon";
 import styles from "./DashboardPage.module.scss";
-import {
-  COURSES,
-  TEMPLATE_CATEGORIES,
-  CATEGORY_ACCENT,
-  CATEGORY_BY_ID,
-  TEMPLATES,
-} from "./dashboard.data";
+import { COURSES } from "./dashboard.data";
+
+const TEMPLATE_ACCENT = "#5471bf";
 
 /* ── SectionHeader ── */
 function SectionHeader({ icon, title, desc, onSeeAll }) {
@@ -120,11 +117,20 @@ export default function DashboardPage() {
   const firstName = user?.full_name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "同學";
 
   const scrollRef = useRef(null);
-  const [activeCategory, setActiveCategory] = useState("all");
 
-  const filteredTemplates = activeCategory === "all"
-    ? TEMPLATES
-    : TEMPLATES.filter((t) => t.categoryId === activeCategory);
+  /* 快速入門：撈範本系統中可用（ready）的 LXC 範本 */
+  const [templates, setTemplates] = useState([]);
+  const [tplLoading, setTplLoading] = useState(true);
+  useEffect(() => {
+    TemplatesService.list()
+      .then((res) => setTemplates(
+        (res?.data ?? []).filter(
+          (t) => t.resource_type === "lxc" && t.status === "ready" && t.pve_exists !== false,
+        ),
+      ))
+      .catch(() => setTemplates([]))
+      .finally(() => setTplLoading(false));
+  }, []);
 
   useDragScroll(scrollRef, { draggingClass: styles.dragging });
 
@@ -159,45 +165,30 @@ export default function DashboardPage() {
         <SectionHeader
           icon="bolt"
           title="快速入門"
-          desc="選擇模板一鍵建立服務環境"
-          onSeeAll={() => setActiveCategory("all")}
+          desc="選擇範本一鍵克隆練習環境"
         />
 
-        {/* Category filter chips */}
-        <div className={styles.filterChips} role="tablist" aria-label="模板分類">
-          {[{ id: "all", title: "全部" }, ...TEMPLATE_CATEGORIES].map((cat) => {
-            const count = cat.id === "all"
-              ? TEMPLATES.length
-              : TEMPLATES.filter((t) => t.categoryId === cat.id).length;
-            const active = activeCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`${styles.filterChip} ${active ? styles.filterChipActive : ""}`}
-              >
-                {cat.title}
-                <span className={styles.filterCount}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Template card grid */}
-        <div className={styles.templateGrid}>
-          {filteredTemplates.map((t) => (
-            <TemplateCard
-              key={t.slug}
-              {...t}
-              accent={CATEGORY_ACCENT[t.categoryId]}
-              categoryTitle={CATEGORY_BY_ID[t.categoryId].title}
-              onSelect={() => navigate(`/quick-template/${t.slug}`)}
-            />
-          ))}
-        </div>
+        {tplLoading ? (
+          <p className={styles.sectionEmpty}>載入範本中…</p>
+        ) : templates.length === 0 ? (
+          <p className={styles.sectionEmpty}>
+            目前沒有可用的範本。範本由老師或管理員在「範本管理」建立後即會出現在這裡。
+          </p>
+        ) : (
+          <div className={styles.templateGrid}>
+            {templates.map((t) => (
+              <TemplateCard
+                key={t.id}
+                name={t.name}
+                desc={t.description || "由範本克隆建立，數秒內完成佈建。"}
+                icon="layers"
+                accent={TEMPLATE_ACCENT}
+                categoryTitle={`v${t.version}`}
+                onSelect={() => navigate(`/quick-template/${t.id}`)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
     </div>

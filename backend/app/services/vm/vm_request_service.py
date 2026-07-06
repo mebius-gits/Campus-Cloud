@@ -11,6 +11,7 @@ from app.core.authorizers import (
     require_vm_request_cancel,
     require_vm_request_review,
 )
+from app.core.permissions import is_admin
 from app.core.security import encrypt_value
 from app.exceptions import (
     BadRequestError,
@@ -18,9 +19,16 @@ from app.exceptions import (
     ProvisioningError,
 )
 from app.infrastructure.worker import submit_sync
-from app.models import VMMigrationStatus, VMRequest, VMRequestStatus
+from app.models import (
+    User,
+    VMMigrationStatus,
+    VMRequest,
+    VMRequestStatus,
+    VMTemplateStatus,
+)
 from app.repositories import governance as governance_repo
 from app.repositories import vm_request as vm_request_repo
+from app.repositories import vm_template as vm_template_repo
 from app.schemas import (
     VMRequestCreate,
     VMRequestPublic,
@@ -51,16 +59,6 @@ QUICK_TEMPLATE_MAX_CREATED_PER_24H = 3
 QUICK_TEMPLATE_MAX_CORES = 2
 QUICK_TEMPLATE_MAX_MEMORY_MB = 4096
 QUICK_TEMPLATE_MAX_DISK_GB = 32
-QUICK_TEMPLATE_ALLOWED_SLUGS = frozenset(
-    {
-        "postgresql",
-        "mongodb",
-        "grafana",
-        "homepage",
-        "n8n",
-        "wordpress",
-    }
-)
 
 
 def _utc_now() -> datetime:
@@ -252,11 +250,10 @@ def _prepare_quick_template_request(
     if request_in.resource_type != "lxc":
         raise BadRequestError("Quick templates currently support LXC only")
 
-    slug = str(request_in.service_template_slug or "").strip().lower()
-    if not slug:
-        raise BadRequestError("Quick template mode requires a service template")
-    if slug not in QUICK_TEMPLATE_ALLOWED_SLUGS:
-        raise BadRequestError("This service template is not enabled for quick use")
+    # 範本系統克隆路徑：template_id 已在 create() 由
+    # _validate_lxc_template_clone 驗證（存在 / ready / 可見範圍）。
+    if not request_in.template_id:
+        raise BadRequestError("Quick template mode requires a template")
 
     if request_in.gpu_mapping_id:
         raise BadRequestError("Quick template mode does not support GPU allocation")
@@ -285,13 +282,30 @@ def _prepare_quick_template_request(
     if recent_count >= QUICK_TEMPLATE_MAX_CREATED_PER_24H:
         raise BadRequestError("Quick template daily limit reached")
 
-    request_in.service_template_slug = slug
-    request_in.service_template_script_path = (
-        request_in.service_template_script_path or f"ct/{slug}.sh"
-    )
     request_in.start_at = now
     request_in.end_at = now + timedelta(hours=QUICK_TEMPLATE_DURATION_HOURS)
     request_in.gpu_mapping_id = None
+
+
+def _validate_lxc_template_clone(
+    *, session: Session, template_vmid: int, user: User
+) -> None:
+    """LXC 走範本系統克隆路徑時，建立當下先驗證範本狀態與可見範圍。
+
+    provision 時（provisioning_service）仍會再查一次範本節點；這裡提前擋掉
+    不存在 / 未 ready / 無權限的範本，避免審核通過後才失敗。
+    """
+    template = vm_template_repo.get_template_by_pve_vmid(
+        session=session, pve_vmid=template_vmid
+    )
+    if template is None or template.resource_type != "lxc":
+        raise BadRequestError("Selected LXC template is not registered")
+    if template.status != VMTemplateStatus.ready:
+        raise BadRequestError("Selected LXC template is not ready")
+    if not is_admin(user) and not vm_template_repo.is_template_visible_to_user(
+        session=session, template=template, user_id=user.id
+    ):
+        raise BadRequestError("Selected LXC template is not accessible")
 
 
 def create(
@@ -328,8 +342,15 @@ def create(
         auto_decision_reason = "；".join(advice.reasons)
         if advice.resource_type != request_in.resource_type:
             auto_decision_reason += "（提交值與伺服器建議不同）"
-    if request_in.resource_type == "lxc" and not request_in.ostemplate:
-        raise BadRequestError("LXC request requires ostemplate")
+    if request_in.resource_type == "lxc":
+        if request_in.template_id:
+            _validate_lxc_template_clone(
+                session=session,
+                template_vmid=request_in.template_id,
+                user=user,
+            )
+        elif not request_in.ostemplate:
+            raise BadRequestError("LXC request requires ostemplate or template_id")
     if request_in.resource_type == "vm" and (
         not request_in.template_id or not request_in.username
     ):

@@ -1,5 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import rawData from "virtual:templates";
+import { useContext, useEffect, useMemo, useState } from "react";
 import styles from "./RequestFormPage.module.scss";
 import { LayoutContext } from "../../../layout/DashboardLayout";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -7,9 +6,9 @@ import { useToast } from "../../../hooks/useToast";
 import { VmRequestsService } from "../../../services/vmRequests";
 import { VmRequestAvailabilityService } from "../../../services/vmRequestAvailability";
 import { GpuService } from "../../../services/gpu";
+import { TemplatesService } from "../../../services/templates";
 import { apiGet } from "../../../services/api";
 import AiSidePanel from "./AiSidePanel";
-import FastTemplatesPanel from "../../../components/FastTemplatesPanel/FastTemplatesPanel";
 import AvailabilityPanel from "../../../components/AvailabilityPanel/AvailabilityPanel";
 import MIcon from "../../../components/MIcon";
 
@@ -60,11 +59,8 @@ const DT_FMT = { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-d
 const formatDT = (iso) => new Date(iso).toLocaleString("zh-TW", DT_FMT);
 const formatOstemplate = (v) => v.split("/").pop()?.replace(".tar.zst", "") ?? v;
 const GPU_OPTIONS_DEBOUNCE_MS = 300;
-const QUICK_TEMPLATES = Object.entries(rawData)
-  .filter(([key]) => !["metadata.json", "versions.json", "github-versions.json"].includes(key))
-  .map(([, value]) => value)
-  .filter(Boolean);
-const getQuickTemplate = (slug) => QUICK_TEMPLATES.find((template) => template.slug === slug);
+const ADVISE_DEBOUNCE_MS = 500;
+const CONFIDENCE_LABEL = { high: "高信心", medium: "中信心", low: "低信心" };
 const gpuLabel = (gpu) => {
   const vram = gpu.total_vram_mb > 0
     ? ` (${gpu.total_vram_mb >= 1024 ? `${(gpu.total_vram_mb / 1024).toFixed(0)} GB` : `${gpu.total_vram_mb} MB`})`
@@ -100,23 +96,15 @@ export default function RequestFormPage({ onBack, className }) {
   const [aiOpen, setAiOpen]     = useState(false);
   const [rightTab, setRightTab] = useState("ai");
 
-  /* Service template (LXC only) */
-  const [serviceTemplateName, setServiceTemplateName] = useState("");
-  const [serviceTemplateSlug, setServiceTemplateSlug] = useState("");
-  const [showTemplatePanel, setShowTemplatePanel]     = useState(false);
-  const [panelLeaving, setPanelLeaving]               = useState(false);
-  const returnedFromTemplate = useRef(false);
+  /* 範本系統 2.0：LXC 可選範本，選了走克隆路徑（免映像檔） */
+  const [sysTemplates, setSysTemplates]   = useState([]);
+  const [sysTplLoading, setSysTplLoading] = useState(false);
+  const [selectedTplId, setSelectedTplId] = useState("");
 
-  function openTemplatePanel() {
-    returnedFromTemplate.current = false;
-    setPanelLeaving(false);
-    setShowTemplatePanel(true);
-  }
-  function closeTemplatePanel() {
-    returnedFromTemplate.current = true;
-    setPanelLeaving(true);
-    setTimeout(() => { setShowTemplatePanel(false); setPanelLeaving(false); }, 180);
-  }
+  /* 類型選擇模式：manual = 手動選 LXC/VM；auto = 規則引擎自動判斷 */
+  const [typeMode, setTypeMode]           = useState("manual");
+  const [advice, setAdvice]               = useState(null);
+  const [adviseLoading, setAdviseLoading] = useState(false);
 
   /* Form state */
   const [resourceType, setResourceType] = useState("lxc");
@@ -168,6 +156,22 @@ export default function RequestFormPage({ onBack, className }) {
       .catch(() => {})
       .finally(() => setVmLoading(false));
   }, [resourceType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setSysTplLoading(true);
+    TemplatesService.list()
+      .then((res) => setSysTemplates(res?.data ?? []))
+      .catch(() => {})
+      .finally(() => setSysTplLoading(false));
+  }, []);
+
+  const lxcSysTemplates = useMemo(
+    () => sysTemplates.filter(
+      (t) => t.resource_type === "lxc" && t.status === "ready" && t.pve_exists !== false,
+    ),
+    [sysTemplates],
+  );
+  const selectedTpl = lxcSysTemplates.find((t) => t.id === selectedTplId) || null;
 
   const canLoadGpu = resourceType === "vm";
   const gpuWindowReady = Boolean(mode === "scheduled" && form.start_at && form.end_at);
@@ -246,6 +250,53 @@ export default function RequestFormPage({ onBack, className }) {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: "" }));
   }
 
+  /* ── VM vs LXC 自動判斷（Auto 模式）── */
+  const adviseRequest = useMemo(() => ({
+    os_info: resourceType === "lxc"
+      ? (selectedTpl?.name || (form.ostemplate ? formatOstemplate(form.ostemplate) : null))
+      : (vmTemplates.find((t) => String(t.vmid) === String(form.template_id))?.name || null),
+    reason: form.reason.trim() || null,
+    cores: Number(form.cores) || null,
+    memory: Number(form.memory) || null,
+    gpu_mapping_id: form.gpu_mapping_id?.trim() || null,
+  }), [
+    resourceType,
+    selectedTpl,
+    vmTemplates,
+    form.ostemplate,
+    form.template_id,
+    form.reason,
+    form.cores,
+    form.memory,
+    form.gpu_mapping_id,
+  ]);
+
+  /* 500ms debounce，避免每個按鍵都打 advise API */
+  useEffect(() => {
+    if (typeMode !== "auto") return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setAdviseLoading(true);
+      VmRequestsService.advise(adviseRequest)
+        .then((res) => { if (!cancelled) setAdvice(res); })
+        .catch(() => {
+          /* advisor 被管理員停用（400）→ 退回手動模式 */
+          if (cancelled) return;
+          setTypeMode("manual");
+          setAdvice(null);
+          toast.error("自動判斷目前未啟用，已切換為手動選擇。");
+        })
+        .finally(() => { if (!cancelled) setAdviseLoading(false); });
+    }, ADVISE_DEBOUNCE_MS);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [typeMode, adviseRequest]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* 建議結果 → 同步 resource_type（範本欄位區隨之切換） */
+  useEffect(() => {
+    if (typeMode !== "auto" || !advice) return;
+    if (advice.resource_type !== resourceType) setResourceType(advice.resource_type);
+  }, [typeMode, advice, resourceType]);
+
   const recommendationContext = useMemo(() => ({
     resource_type: resourceType,
     mode,
@@ -260,15 +311,7 @@ export default function RequestFormPage({ onBack, className }) {
     const nextResourceType = prefill.resource_type === "vm" ? "vm" : "lxc";
     setResourceType(nextResourceType);
 
-    if (nextResourceType === "lxc") {
-      const slug = prefill.service_template_slug || prefill.lxc_template_slug || "";
-      const template = slug ? getQuickTemplate(slug) : null;
-      setServiceTemplateSlug(slug);
-      setServiceTemplateName(template?.name || slug || "");
-    } else {
-      setServiceTemplateSlug("");
-      setServiceTemplateName("");
-    }
+    if (nextResourceType !== "lxc") setSelectedTplId("");
 
     setForm((prev) => {
       const disk = Number(prefill.disk_gb || 0);
@@ -321,7 +364,8 @@ export default function RequestFormPage({ onBack, className }) {
     if (!form.reason.trim())            errs.reason = MSG.reasonRequired;
     else if (form.reason.trim().length < 10) errs.reason = MSG.reasonMinLen;
 
-    if (resourceType === "lxc" && !form.ostemplate) errs.ostemplate = MSG.templateRequired;
+    if (resourceType === "lxc" && !selectedTplId && !form.ostemplate)
+      errs.ostemplate = MSG.templateRequired;
     if (resourceType === "vm") {
       if (!form.template_id)            errs.template_id = MSG.osRequired;
       if (!form.username.trim())        errs.username    = MSG.usernameRequired;
@@ -399,15 +443,20 @@ export default function RequestFormPage({ onBack, className }) {
         memory:    form.memory,
         reason:    form.reason.trim(),
         storage:   "local-lvm",
+        requested_mode: typeMode,
         ...(resourceType === "lxc"
           ? {
-              ostemplate: form.ostemplate,
-              os_info: form.ostemplate ? formatOstemplate(form.ostemplate) : null,
               rootfs_size: form.rootfs_size,
-              ...(serviceTemplateSlug ? {
-                service_template_slug: serviceTemplateSlug,
-                service_template_script_path: `ct/${serviceTemplateSlug}.sh`,
-              } : {}),
+              ...(selectedTpl
+                ? {
+                    /* 範本系統克隆路徑：帶 PVE VMID，免映像檔 */
+                    template_id: selectedTpl.pve_vmid,
+                    os_info: selectedTpl.name,
+                  }
+                : {
+                    ostemplate: form.ostemplate,
+                    os_info: form.ostemplate ? formatOstemplate(form.ostemplate) : null,
+                  }),
             }
           : {
               template_id: Number(form.template_id),
@@ -433,18 +482,16 @@ export default function RequestFormPage({ onBack, className }) {
     }
   }
 
-  /* ── Service template selection ── */
-  function handleSelectTemplate(template) {
-    setServiceTemplateName(template.name || "");
-    setServiceTemplateSlug(template.slug || "");
-    closeTemplatePanel();
-    const res = template.install_methods?.[0]?.resources;
-    if (res) {
-      if (res.cpu) set("cores", res.cpu);
-      if (res.ram) set("memory", res.ram);
-      if (res.hdd) set("rootfs_size", Math.max(res.hdd, 8));
-    }
-    if (template.slug && !form.hostname.trim()) set("hostname", template.slug.slice(0, 63));
+  /* ── 範本選擇（範本系統 2.0）── */
+  function handleSelectSysTemplate(id) {
+    setSelectedTplId(id);
+    if (errors.ostemplate) setErrors((prev) => ({ ...prev, ostemplate: "" }));
+    const tpl = lxcSysTemplates.find((t) => t.id === id);
+    if (!tpl) return;
+    if (tpl.default_cores)  set("cores", Math.min(8, Math.max(1, tpl.default_cores)));
+    if (tpl.default_memory) set("memory", Math.min(32768, Math.max(512, tpl.default_memory)));
+    if (tpl.default_disk)   set("rootfs_size", Math.min(500, Math.max(8, tpl.default_disk)));
+    if (!form.hostname.trim()) set("hostname", normalizeHostname(tpl.name));
   }
 
   const animCls = closing ? styles.animSlideOutRight : (className ?? "");
@@ -466,15 +513,7 @@ export default function RequestFormPage({ onBack, className }) {
       {/* ── 主體：表單 + AI 側欄 ── */}
       <div className={styles.formPageBody}>
         <div className={styles.formScroll}>
-          {showTemplatePanel ? (
-            <FastTemplatesPanel
-              inline
-              onClose={closeTemplatePanel}
-              onSelect={handleSelectTemplate}
-              className={panelLeaving ? styles.animSlideOutRight : styles.animSlideInRight}
-            />
-          ) : (
-          <div className={`${styles.formInner} ${returnedFromTemplate.current ? styles.animSlideInLeft : ""}`}>
+          <div className={styles.formInner}>
           <form id="request-form" onSubmit={handleSubmit} className={styles.form}>
             {/* ── 申請模式（管理員／老師） ── */}
             {isPrivileged && (
@@ -504,20 +543,75 @@ export default function RequestFormPage({ onBack, className }) {
               <h2 className={styles.sectionTitle}>類型</h2>
               <div className={styles.typeToggle}>
                 {[
-                  { key: "lxc", label: "LXC 容器",   icon: "dashboard" },
-                  { key: "vm",  label: "QEMU 虛擬機", icon: "computer"  },
-                ].map((t) => (
+                  { key: "auto",   label: "自動判斷（推薦）", icon: "auto_fix_high" },
+                  { key: "manual", label: "手動選擇",        icon: "tune" },
+                ].map((m) => (
                   <button
-                    key={t.key}
+                    key={m.key}
                     type="button"
-                    className={`${styles.typeBtn} ${resourceType === t.key ? styles.typeBtnActive : ""}`}
-                    onClick={() => setResourceType(t.key)}
+                    className={`${styles.typeBtn} ${typeMode === m.key ? styles.typeBtnActive : ""}`}
+                    onClick={() => setTypeMode(m.key)}
                   >
-                    <MIcon name={t.icon} size={16} />
-                    {t.label}
+                    <MIcon name={m.icon} size={16} />
+                    {m.label}
                   </button>
                 ))}
               </div>
+
+              {typeMode === "auto" && (
+                <div className={styles.adviceCard}>
+                  {adviseLoading && !advice ? (
+                    <p className={styles.adviceEmpty}>
+                      <MIcon name="progress_activity" size={14} className={styles.adviceSpin} />
+                      分析工作負載中…
+                    </p>
+                  ) : advice ? (
+                    <>
+                      <div className={styles.adviceHeader}>
+                        <MIcon name={advice.resource_type === "vm" ? "computer" : "dashboard"} size={16} />
+                        <span className={styles.adviceTitle}>
+                          建議使用 {advice.resource_type === "vm" ? "QEMU 虛擬機" : "LXC 容器"}
+                        </span>
+                        <span className={styles.adviceBadge}>
+                          {CONFIDENCE_LABEL[advice.confidence] ?? advice.confidence}
+                        </span>
+                        {adviseLoading && (
+                          <MIcon name="progress_activity" size={13} className={styles.adviceSpin} />
+                        )}
+                      </div>
+                      <ul className={styles.adviceReasons}>
+                        {advice.reasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                      <p className={styles.adviceFootnote}>
+                        建議會依「用途說明、範本、規格、GPU」即時更新；如需固定類型請改用手動選擇。
+                      </p>
+                    </>
+                  ) : (
+                    <p className={styles.adviceEmpty}>填寫用途說明與規格後即會顯示建議。</p>
+                  )}
+                </div>
+              )}
+
+              {typeMode === "manual" && (
+                <div className={styles.typeToggle}>
+                  {[
+                    { key: "lxc", label: "LXC 容器",   icon: "dashboard" },
+                    { key: "vm",  label: "QEMU 虛擬機", icon: "computer"  },
+                  ].map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      className={`${styles.typeBtn} ${resourceType === t.key ? styles.typeBtnActive : ""}`}
+                      onClick={() => setResourceType(t.key)}
+                    >
+                      <MIcon name={t.icon} size={16} />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ── LXC 設定 ── */}
@@ -535,55 +629,73 @@ export default function RequestFormPage({ onBack, className }) {
                   />
                 </FieldGroup>
 
-                <FieldGroup label="服務模板（選填）">
-                  {serviceTemplateName ? (
+                <FieldGroup label="範本（選填）"
+                  hint={selectedTpl
+                    ? "將從範本克隆建立，免選映像檔；登入帳密沿用範本內建設定"
+                    : "從範本系統選擇可用範本，或留空改用作業系統映像檔建立"}>
+                  {selectedTpl ? (
                     <div className={styles.templateSelected}>
                       <MIcon name="layers" size={16} />
                       <div className={styles.templateSelectedMeta}>
-                        <span className={styles.templateSelectedName}>{serviceTemplateName}</span>
-                        {serviceTemplateSlug && (
-                          <span className={styles.templateSelectedSlug}>{serviceTemplateSlug}</span>
-                        )}
+                        <span className={styles.templateSelectedName}>{selectedTpl.name}</span>
+                        <span className={styles.templateSelectedSlug}>
+                          v{selectedTpl.version}
+                          {selectedTpl.description ? ` · ${selectedTpl.description}` : ""}
+                        </span>
                       </div>
                       <button
                         type="button"
                         className={styles.templateClearBtn}
-                        onClick={() => { setServiceTemplateName(""); setServiceTemplateSlug(""); }}
+                        onClick={() => setSelectedTplId("")}
                         title="清除"
                       >
                         <MIcon name="close" size={16} />
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      className={styles.templateSelectBtn}
-                      onClick={openTemplatePanel}
+                    <SelectField
+                      value={selectedTplId}
+                      onChange={handleSelectSysTemplate}
+                      disabled={sysTplLoading}
                     >
-                      <MIcon name="layers" size={16} />
-                      選擇模板
-                    </button>
+                      <option value="">
+                        {sysTplLoading ? "載入中…" : "不使用範本（從映像檔建立）"}
+                      </option>
+                      {lxcSysTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}（v{t.version}）
+                        </option>
+                      ))}
+                      {!sysTplLoading && lxcSysTemplates.length === 0 && (
+                        <option value="__empty__" disabled>目前沒有可用的 LXC 範本</option>
+                      )}
+                    </SelectField>
                   )}
                 </FieldGroup>
 
-                <FieldGroup label="作業系統映像檔" required error={errors.ostemplate}
-                  hint="請從已上傳到節點的映像檔中選擇">
-                  <SelectField
-                    value={form.ostemplate}
-                    onChange={(v) => set("ostemplate", v)}
-                    disabled={lxcLoading}
-                    placeholder={lxcLoading ? "載入中…" : "選擇映像檔"}
-                  >
-                    {lxcTemplates.map((t) => (
-                      <option key={t.volid} value={t.volid}>{formatOstemplate(t.volid)}</option>
-                    ))}
-                    {!lxcLoading && lxcTemplates.length === 0 && (
-                      <option value="" disabled>目前沒有可用映像檔</option>
-                    )}
-                  </SelectField>
-                </FieldGroup>
+                {!selectedTpl && (
+                  <FieldGroup label="作業系統映像檔" required error={errors.ostemplate}
+                    hint="請從已上傳到節點的映像檔中選擇">
+                    <SelectField
+                      value={form.ostemplate}
+                      onChange={(v) => set("ostemplate", v)}
+                      disabled={lxcLoading}
+                      placeholder={lxcLoading ? "載入中…" : "選擇映像檔"}
+                    >
+                      {lxcTemplates.map((t) => (
+                        <option key={t.volid} value={t.volid}>{formatOstemplate(t.volid)}</option>
+                      ))}
+                      {!lxcLoading && lxcTemplates.length === 0 && (
+                        <option value="" disabled>目前沒有可用映像檔</option>
+                      )}
+                    </SelectField>
+                  </FieldGroup>
+                )}
 
-                <FieldGroup label="Root 密碼" required error={errors.password}>
+                <FieldGroup label="Root 密碼" required error={errors.password}
+                  hint={selectedTpl
+                    ? "克隆建立的容器沿用範本內建帳密，此密碼僅作平台紀錄"
+                    : undefined}>
                   <input
                     className={styles.input}
                     type="password"
@@ -838,7 +950,6 @@ export default function RequestFormPage({ onBack, className }) {
             </button>
           </div>
           </div>
-          )}
         </div>
 
         {/* Mobile AI 側欄 */}
@@ -876,6 +987,12 @@ export default function RequestFormPage({ onBack, className }) {
                   <MIcon name={resourceType === "lxc" ? "dashboard" : "computer"} size={12} />
                   {resourceType === "lxc" ? "LXC 容器" : "QEMU 虛擬機"}
                 </span>
+                {typeMode === "auto" && (
+                  <span className={`${styles.summaryChip} ${styles.summaryChipAuto}`}>
+                    <MIcon name="auto_fix_high" size={12} />
+                    自動判斷
+                  </span>
+                )}
                 {isPrivileged && (
                   <span className={`${styles.summaryChip} ${mode === "scheduled" ? styles.summaryChipScheduled : styles.summaryChipImmediate}`}>
                     <MIcon name={mode === "scheduled" ? "calendar_month" : "bolt"} size={12} />
@@ -894,20 +1011,19 @@ export default function RequestFormPage({ onBack, className }) {
               </div>
 
               {resourceType === "lxc" && (
-                <>
-                  {serviceTemplateName && (
-                    <div className={styles.summaryRow}>
-                      <span className={styles.summaryLabel}>服務模板</span>
-                      <span className={styles.summaryValue}>{serviceTemplateName}</span>
-                    </div>
-                  )}
+                selectedTpl ? (
+                  <div className={styles.summaryRow}>
+                    <span className={styles.summaryLabel}>範本</span>
+                    <span className={styles.summaryValue}>{selectedTpl.name}</span>
+                  </div>
+                ) : (
                   <div className={styles.summaryRow}>
                     <span className={styles.summaryLabel}>映像檔</span>
                     <span className={`${styles.summaryValue} ${!form.ostemplate ? styles.summaryValueMuted : ""}`}>
                       {form.ostemplate ? formatOstemplate(form.ostemplate) : "未選擇"}
                     </span>
                   </div>
-                </>
+                )
               )}
 
               {resourceType === "vm" && (

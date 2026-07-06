@@ -1,37 +1,14 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import rawData from "virtual:templates";
 import styles from "./QuickTemplateFormPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import AiSidePanel from "../requests/AiSidePanel";
 import { useToast } from "../../../hooks/useToast";
 import { LayoutContext } from "../../../layout/DashboardLayout";
 import { VmRequestsService } from "../../../services/vmRequests";
-import { apiGet } from "../../../services/api";
+import { TemplatesService } from "../../../services/templates";
 
-/* Load quick templates from virtual:templates */
-const QUICK_TEMPLATES = Object.entries(rawData)
-  .filter(([key]) => !["metadata.json", "versions.json", "github-versions.json"].includes(key))
-  .map(([, value]) => value)
-  .filter(Boolean);
-const getQuickTemplate = (slug) => QUICK_TEMPLATES.find((t) => t.slug === slug);
 const QUICK_TEMPLATE_MAX = { cores: 2, memory: 4096, disk: 32 };
-
-function pickLxcTemplate(lxcTemplates, template) {
-  if (!Array.isArray(lxcTemplates) || lxcTemplates.length === 0) return "";
-
-  const resources = template?.install_methods?.[0]?.resources ?? {};
-  const os = String(resources.os || "").toLowerCase();
-  const version = String(resources.version || "").toLowerCase();
-  const hasText = (item, text) => String(item?.volid || "").toLowerCase().includes(text);
-
-  return (
-    lxcTemplates.find((item) => os && version && hasText(item, os) && hasText(item, version))?.volid ||
-    lxcTemplates.find((item) => os && hasText(item, os))?.volid ||
-    lxcTemplates[0]?.volid ||
-    ""
-  );
-}
 
 function normalizeHostname(value) {
   return String(value || "")
@@ -108,7 +85,7 @@ function ToggleGroup({ value, onChange }) {
 
 /* ── Page ── */
 export default function QuickTemplateFormPage() {
-  const { slug } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const { setCompactFooter } = useContext(LayoutContext);
@@ -117,19 +94,31 @@ export default function QuickTemplateFormPage() {
   const onBack       = () => navigate("/dashboard");
   const onSubmitted  = () => navigate("/my-resources");
 
-  const template = getQuickTemplate(slug);
+  /* 範本系統：載入單一範本（僅 ready 的 LXC 範本可秒開） */
+  const [template, setTemplate]     = useState(null);
+  const [tplLoading, setTplLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setTplLoading(true);
+    TemplatesService.get(id)
+      .then((tpl) => {
+        if (cancelled) return;
+        const usable = tpl && tpl.resource_type === "lxc" && tpl.status === "ready";
+        setTemplate(usable ? tpl : null);
+      })
+      .catch(() => { if (!cancelled) setTemplate(null); })
+      .finally(() => { if (!cancelled) setTplLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
 
-  const interfacePort = template?.interface_port ?? null;
-  const description   = template?.description_zh || template?.description || "";
-  const logo          = template?.logo || "";
-  const canPublic     = Boolean(interfacePort);
+  const description = template?.description || "";
+  const canPublic   = false; // 範本系統無預設服務 Port 資訊，公開選項停用
 
   /* Basic settings */
   const [hostname, setHostname] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors]     = useState({});
   const [submitting, setSubmitting] = useState(false);
-  const [lxcTemplates, setLxcTemplates] = useState([]);
   const submitLockRef = useRef(false);
 
   /* Advanced settings */
@@ -140,21 +129,14 @@ export default function QuickTemplateFormPage() {
   const [autoDomain, setAutoDomain]         = useState("on");
   const [externalPort, setExternalPort]     = useState("");
 
-  const [logoFailed, setLogoFailed] = useState(false);
-
   /* Prefill hostname when template loads */
   useEffect(() => {
     if (!template) return;
+    const base = normalizeHostname(template.name) || "lab";
     setHostname((prev) => prev || normalizeHostname(
-      `${template.slug}-${Date.now().toString().slice(-6)}`,
+      `${base}-${Date.now().toString().slice(-6)}`,
     ));
   }, [template]);
-
-  useEffect(() => {
-    apiGet("/api/v1/lxc/templates")
-      .then(setLxcTemplates)
-      .catch(() => setLxcTemplates([]));
-  }, []);
 
   function update(setter, key) {
     return (val) => {
@@ -185,35 +167,26 @@ export default function QuickTemplateFormPage() {
       return;
     }
 
-    const selectedOstemplate = pickLxcTemplate(lxcTemplates, template);
-    if (!selectedOstemplate) {
-      toast.error("無法載入 LXC 作業系統映像，請確認後端 /api/v1/lxc/templates 可用。");
-      return;
-    }
-
-    const resources = template.install_methods?.[0]?.resources ?? {};
-    const templateSlug = template.slug || slug;
+    /* 範本系統克隆：帶 PVE VMID，規格取範本預設並套秒開上限 */
     const requestBody = {
       resource_type: "lxc",
       mode: "quick_template",
       hostname: normalizeHostname(hostname),
       password,
-      cores: Math.min(Number(resources.cpu || 2), QUICK_TEMPLATE_MAX.cores),
-      memory: Math.min(Number(resources.ram || 2048), QUICK_TEMPLATE_MAX.memory),
-      rootfs_size: Math.min(Math.max(Number(resources.hdd || 8), 8), QUICK_TEMPLATE_MAX.disk),
-      ostemplate: selectedOstemplate,
-      os_info: resources.os ? `${resources.os}${resources.version ? ` ${resources.version}` : ""}` : undefined,
+      cores: Math.min(Number(template.default_cores || 2), QUICK_TEMPLATE_MAX.cores),
+      memory: Math.min(Number(template.default_memory || 2048), QUICK_TEMPLATE_MAX.memory),
+      rootfs_size: Math.min(Math.max(Number(template.default_disk || 8), 8), QUICK_TEMPLATE_MAX.disk),
+      template_id: template.pve_vmid,
+      os_info: template.name,
       storage: "local-lvm",
-      reason: `快速使用 ${template.name || slug} 模板`,
-      service_template_slug: templateSlug,
-      service_template_script_path: template.install_methods?.[0]?.script || `ct/${templateSlug}.sh`,
+      reason: `快速使用 ${template.name} 範本`,
     };
 
     submitLockRef.current = true;
     setSubmitting(true);
     try {
       await VmRequestsService.create(requestBody);
-      toast.success(`已送出 ${template.name || slug} 快速建立，系統會自動核准並開始佈建。`);
+      toast.success(`已送出 ${template.name} 快速建立，系統會自動核准並開始佈建。`);
       onSubmitted?.();
     } catch (err) {
       toast.error(err?.message ?? "建立失敗，請稍後再試。");
@@ -224,13 +197,24 @@ export default function QuickTemplateFormPage() {
     return;
   }
 
+  if (tplLoading) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.notFound}>
+          <MIcon name="hourglass_empty" size={40} />
+          <h2>載入範本中…</h2>
+        </div>
+      </div>
+    );
+  }
+
   if (!template) {
     return (
       <div className={styles.page}>
         <div className={styles.notFound}>
           <MIcon name="error_outline" size={40} />
-          <h2>找不到模板</h2>
-          <p>無法載入「{slug}」的模板資料。</p>
+          <h2>找不到範本</h2>
+          <p>此範本不存在、尚未就緒，或你沒有存取權限。</p>
           <button type="button" className={styles.btnSecondary} onClick={onBack}>
             <MIcon name="arrow_back" size={16} />
             返回首頁
@@ -261,18 +245,7 @@ export default function QuickTemplateFormPage() {
           {/* ── Template header card ── */}
           <div className={styles.templateHeader}>
             <div className={styles.templateLogo}>
-              {logo && !logoFailed ? (
-                <img
-                  src={logo}
-                  alt={`${template.name} logo`}
-                  width={44}
-                  height={44}
-                  loading="lazy"
-                  onError={() => setLogoFailed(true)}
-                />
-              ) : (
-                <MIcon name="layers" size={28} />
-              )}
+              <MIcon name="layers" size={28} />
             </div>
             <div className={styles.templateMeta}>
               <div className={styles.templateTitleRow}>
@@ -290,17 +263,15 @@ export default function QuickTemplateFormPage() {
               {description && (
                 <p className={styles.templateDesc}>{description}</p>
               )}
-              {interfacePort && (
-                <div className={styles.templateChips}>
-                  <span className={styles.portChip}>
-                    <MIcon name="bolt" size={12} />
-                    Port {interfacePort}
-                  </span>
-                </div>
-              )}
+              <div className={styles.templateChips}>
+                <span className={styles.portChip}>
+                  <MIcon name="layers" size={12} />
+                  v{template.version}
+                </span>
+              </div>
               <p className={styles.templateStatus}>
-                <MIcon name="schedule" size={13} />
-                正在準備基礎映像，完成後即可建立。
+                <MIcon name="bolt" size={13} />
+                從範本克隆建立，送出後自動核准並開始佈建。
               </p>
             </div>
           </div>
@@ -369,7 +340,7 @@ export default function QuickTemplateFormPage() {
                       min={1}
                       max={65535}
                       className={styles.input}
-                      placeholder={interfacePort ? String(interfacePort) : "8080"}
+                      placeholder="8080"
                       value={externalPort}
                       onChange={(e) => setExternalPort(e.target.value)}
                     />
@@ -377,11 +348,7 @@ export default function QuickTemplateFormPage() {
                 )}
 
                 <div className={styles.infoHint}>
-                  {interfacePort ? (
-                    <p>模板預設服務 Port：{interfacePort}</p>
-                  ) : (
-                    <p>此模板沒有預設服務 Port，公開網站與公開 Port 會停用。</p>
-                  )}
+                  <p>範本沒有預設服務 Port 資訊，公開網站與公開 Port 停用。</p>
                   {firewallPreset === "internal" && (
                     <p>內部模式不會自動建立對外公開規則。</p>
                   )}
@@ -401,7 +368,7 @@ export default function QuickTemplateFormPage() {
               <input
                 id="quick-hostname"
                 className={styles.input}
-                placeholder={`${slug}-xxxxxx`}
+                placeholder="lab-xxxxxx"
                 value={hostname}
                 onChange={(e) => update(setHostname, "hostname")(e.target.value)}
                 onBlur={(e) => setHostname(normalizeHostname(e.target.value))}
@@ -422,6 +389,7 @@ export default function QuickTemplateFormPage() {
                 onChange={(e) => update(setPassword, "password")(e.target.value)}
               />
               {errors.password && <p className={styles.fieldError}>{errors.password}</p>}
+              <p className={styles.infoHint}>克隆建立的容器沿用範本內建帳密，此密碼僅作平台紀錄。</p>
             </div>
           </div>
 

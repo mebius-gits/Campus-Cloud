@@ -21,6 +21,11 @@ export const VmRequestsService = {
     return apiPost("/api/v1/vm-requests/", body);
   },
 
+  /** VM vs LXC 自動判斷（規則引擎；advisor 停用時後端回 400） */
+  advise(body) {
+    return apiPost("/api/v1/vm-requests/advise", body);
+  },
+
   review(requestId, body) {
     return apiPost(`/api/v1/vm-requests/${requestId}/review`, body);
   },
