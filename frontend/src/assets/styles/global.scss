@@ -1,0 +1,29 @@
+@use "themes";
+@use "backgrounds";
+@use "reset";
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  @include flex-column;
+}
+
+/* ===== 全頁背景層 =====
+   預設畫三色暈染，掛上 data-style / data-bg 後
+   由 _backgrounds.scss 的花色覆寫 background */
+body {
+  position: relative;
+
+  &::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 100% 60% at 100% 0%, var(--color-bg-gradient-blue) 0%, transparent 100%),
+      radial-gradient(ellipse 100% 80% at 0% 90%, var(--color-bg-gradient-yellow) 0%, transparent 100%),
+      radial-gradient(ellipse 150% 70% at 100% 100%, var(--color-bg-gradient-green) 0%, transparent 100%);
+    transition: opacity 0.3s ease;
+  }
+}

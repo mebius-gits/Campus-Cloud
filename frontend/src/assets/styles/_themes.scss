@@ -1,0 +1,141 @@
+/* ============================================
+   Theme Variables (CSS Custom Properties)
+   切換 body.dark 即可套用深色主題
+   ============================================ */
+
+:root {
+  /* ----- Backgrounds ----- */
+  --color-bg-base: #e8f0fd;
+  --color-bg-gradient-blue: #c1daff;
+  --color-bg-gradient-yellow: #feffed;
+  --color-bg-gradient-green: #edfff6;
+  --color-bg-gradient-opacity: 1;
+
+  /* ----- Surfaces ----- */
+  --color-surface: #ffffff;
+  --color-surface-glass: rgba(255, 255, 255, 0.62);
+  --color-surface-glass-border: rgba(255, 255, 255, 0.5);
+  --color-sidebar: #ffffff;
+  --color-sidebar-glass: rgba(255, 255, 255, 0.5);
+  --color-sidebar-glass-border: rgba(255, 255, 255, 0.35);
+
+  /* ----- Brand ----- */
+  --color-primary: #5471bf;
+  --color-primary-dark: #2b4d98;
+  --color-primary-light: #6a7fb3;
+
+  /* ----- Text ----- */
+  --color-text: #5471bf;
+  --color-text-primary: #3a549d;
+  --color-text-secondary: #617dc8;
+  --color-text-muted: #8291aa;
+  --color-text-on-primary: #ffffff;
+
+  /* ----- Borders & dividers ----- */
+  --color-border: #e5eaf3;
+  --color-divider: #eef2f9;
+
+  /* ----- Interactive ----- */
+  --color-hover: #e8efff;
+  --color-overlay: rgba(20, 30, 60, 0.25);
+
+  /* ----- Status ----- */
+  --color-success:        #28a745;
+  --color-warning:        #dc3545;
+  --color-danger:         #dc3545;
+  --color-info:           #5471bf;
+  --color-status-neutral: #6b7280;
+
+  /* ----- Shadows ----- */
+  --shadow-sm: 0 1px 3px rgba(67, 90, 149, 0.08);
+  --shadow-md: 0 4px 12px rgba(67, 90, 149, 0.08);
+  --shadow-lg: 0 8px 24px rgba(67, 90, 149, 0.12);
+  --shadow-glass:
+    0 4px 16px rgba(67, 90, 149, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.70);
+
+  /* ----- Flow canvas ----- */
+  --color-flow-bg: rgba(179, 213, 250, 0.315);
+  --color-flow-border: rgba(255, 255, 255, 0.6);
+  --color-flow-shadow: rgba(0, 0, 0, 0.06);
+}
+
+/* ============================================
+   Dark Theme
+   深色背景延續三色暈染概念，但壓低飽和、提高對比
+   ============================================ */
+
+body.dark {
+  /* ----- Backgrounds ----- */
+  --color-bg-base: #0d1117;
+  --color-bg-gradient-blue: #1a2a48;
+  --color-bg-gradient-yellow: #2a2618;
+  --color-bg-gradient-green: #0f2a22;
+
+  /* ----- Surfaces ----- */
+  --color-surface: #161b26;
+  --color-surface-glass: rgba(22, 27, 38, 0.58);
+  --color-surface-glass-border: rgba(255, 255, 255, 0.07);
+  --color-sidebar: #161b26;
+  --color-sidebar-glass: rgba(22, 27, 38, 0.65);
+  --color-sidebar-glass-border: rgba(255, 255, 255, 0.06);
+
+  /* ----- Brand ----- */
+  --color-primary: #4361a2;
+  --color-primary-dark: rgb(47, 78, 140);
+  --color-primary-light: #89a5e0;
+
+  /* ----- Text ----- */
+  --color-text: #d4deef;
+  --color-text-primary: #f0f4ff;
+  --color-text-secondary: #d9e8ff;
+  --color-text-muted: #5c6880;
+  --color-text-on-primary: #ffffff;
+
+  /* ----- Borders ----- */
+  --color-border: #2a3142;
+  --color-divider: #1f2636;
+
+  /* ----- Interactive ----- */
+  --color-hover: #1f2636;
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  /* ----- Status ----- */
+  --color-status-neutral: #9ca3af;
+
+  /* ----- Shadows ----- */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glass:
+    0 4px 16px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  /* ----- Flow canvas ----- */
+  --color-flow-bg: rgba(52, 63, 89, 0.471);
+  --color-flow-border: rgba(255, 255, 255, 0.06);
+  --color-flow-shadow: rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================
+   Style Variants（介面風格）
+   玻璃質感為預設（data-style="glass"，變數即 :root / body.dark 原值）。
+   白底 / 黑底只把卡片等表面改為實色（白底限淺色模式、
+   黑底限深色模式，由 ThemeContext 保證），頁面背景、
+   文字、hover、Modal 遮罩都跟著明暗模式走，不在此覆寫。
+   放在 body.dark 之後，同特異度下由原始碼順序勝出。
+   ============================================ */
+
+body[data-style="white"] {
+  --color-surface-glass: #ffffff;
+  --color-surface-glass-border: #e5eaf3;
+  --color-sidebar-glass: #ffffff;
+  --color-sidebar-glass-border: #e5eaf3;
+}
+
+body[data-style="black"] {
+  --color-surface-glass: #0d0d10;
+  --color-surface-glass-border: #26262b;
+  --color-sidebar-glass: #0d0d10;
+  --color-sidebar-glass-border: #26262b;
+}
