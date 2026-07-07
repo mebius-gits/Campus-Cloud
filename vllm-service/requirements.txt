@@ -2,7 +2,7 @@
 # vLLM 請依 GPU/CUDA/平台版本另行安裝，例如：
 # pip install vllm
 # 或依官方文件選擇對應 CUDA wheel。
-pydantic-settings>=2.0
+pydantic-settings>=2.14.2
 python-dotenv>=1.2.2
 openai>=1.0
 httpx>=0.25
