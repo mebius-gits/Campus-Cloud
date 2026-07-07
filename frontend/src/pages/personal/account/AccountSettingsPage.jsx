@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./AccountSettingsPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useToast } from "../../../hooks/useToast";
 import { AccountService } from "../../../services/account";
+import { downscaleImage } from "../../../utils/image/downscaleImage";
 import AppearanceTab from "./AppearanceTab";
 
 const TABS = [
@@ -32,9 +33,31 @@ function ProfileTab() {
     avatar_url: user?.avatar_url ?? "",
   });
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const avatarFileRef = useRef(null);
 
   function set(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleAvatarFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允許重選同一個檔案
+    if (!file) return;
+    setUploading(true);
+    try {
+      // 頭像顯示尺寸小，縮到 256px 再上傳
+      const { blob } = await downscaleImage(file, { maxSize: 256, quality: 0.85 });
+      const updated = await AccountService.uploadAvatar(blob);
+      updateUser(updated);
+      setAvatarFailed(false);
+      setForm((prev) => ({ ...prev, avatar_url: updated?.avatar_url ?? "" }));
+      toast.success("頭像已更新");
+    } catch (err) {
+      toast.error(err?.message ?? "頭像上傳失敗");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function startEdit() {
@@ -94,8 +117,24 @@ function ProfileTab() {
           </div>
           <div className={styles.avatarHint}>
             <p className={styles.rowName}>頭像</p>
-            <p className={styles.rowMeta}>貼上一個圖片網址作為你的頭像，留空則顯示姓名縮寫</p>
+            <p className={styles.rowMeta}>上傳圖片或貼上圖片網址，留空則顯示姓名縮寫</p>
           </div>
+          <input
+            ref={avatarFileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleAvatarFile}
+          />
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => avatarFileRef.current?.click()}
+            disabled={uploading}
+          >
+            <MIcon name="upload" size={16} />
+            {uploading ? "上傳中..." : "上傳圖片"}
+          </button>
         </div>
 
         <label className={styles.field}>

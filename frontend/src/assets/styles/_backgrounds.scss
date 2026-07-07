@@ -42,6 +42,12 @@ body[data-bg="preset-3"]::before {
     radial-gradient(ellipse 150% 70% at 100% 100%, var(--color-bg-tri-3) 0%, transparent 100%);
 }
 
+/* ---- 自訂圖片（上傳）：data URL 由 ThemeContext 寫入 --bg-custom-image ---- */
+
+body[data-bg="custom-image"]::before {
+  background: var(--bg-custom-image) center / cover no-repeat;
+}
+
 /* ---- 跟隨主色（只分明暗，不分風格） ---- */
 
 body[data-bg="auto-gradient"]::before {

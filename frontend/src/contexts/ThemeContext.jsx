@@ -116,6 +116,8 @@ export function ThemeProvider({ children }) {
   const [backgroundId, setBackgroundId] = useState(initial.backgroundId);
   // 背景漸層基準色：空字串 = 跟隨主色，有值時與主色脫鉤
   const [backgroundColor, setBackgroundColor] = useState(initial.backgroundColor);
+  // 上傳的自訂背景圖（data URL），有圖時背景多一個「自訂圖片」花色
+  const [backgroundImage, setBackgroundImage] = useState(initial.backgroundImage);
 
   // 解析出實際套用的 theme（light / dark）
   const [resolvedTheme, setResolvedTheme] = useState(() => {
@@ -174,6 +176,15 @@ export function ThemeProvider({ children }) {
     palettes.tri.dark.forEach((c, i) => root.setProperty(`--color-bg-tri-dark-${i + 1}`, c));
   }, [primaryColor, backgroundColor]);
 
+  // 自訂背景圖：以 CSS 變數掛在 :root，供 _backgrounds.scss 的
+  // custom-image 花色使用（data URL 存 localStorage，超過容量時該次不保存）
+  useEffect(() => {
+    themePreferenceStore.save({ backgroundImage });
+    const root = document.documentElement.style;
+    if (backgroundImage) root.setProperty("--bg-custom-image", `url("${backgroundImage}")`);
+    else root.removeProperty("--bg-custom-image");
+  }, [backgroundImage]);
+
   // 風格：以 data-style 套用（glass 也明確標上，供背景花色選擇器組合）
   useEffect(() => {
     themePreferenceStore.save({ style });
@@ -186,7 +197,10 @@ export function ThemeProvider({ children }) {
   // 不掛 data-bg，讓 global.scss 的原始三色暈染呈現 ——
   // 系統預設外觀維持最初的樣子
   useEffect(() => {
-    if (!BACKGROUND_OPTIONS.some((opt) => opt.id === backgroundId)) {
+    const valid =
+      BACKGROUND_OPTIONS.some((opt) => opt.id === backgroundId) ||
+      (backgroundId === "custom-image" && !!backgroundImage);
+    if (!valid) {
       setBackgroundId(THEME_DEFAULTS.backgroundId);
       return;
     }
@@ -197,7 +211,7 @@ export function ThemeProvider({ children }) {
       primaryColor.toLowerCase() === THEME_DEFAULTS.primaryColor;
     if (untouched) document.body.removeAttribute("data-bg");
     else document.body.setAttribute("data-bg", backgroundId);
-  }, [backgroundId, primaryColor, backgroundColor]);
+  }, [backgroundId, primaryColor, backgroundColor, backgroundImage]);
 
   // 白底只能配淺色模式、黑底只能配深色模式；
   // 明暗模式切換（含系統模式跟隨 OS）時自動換成對應的底
@@ -212,6 +226,7 @@ export function ThemeProvider({ children }) {
     setStyle(THEME_DEFAULTS.style);
     setBackgroundId(THEME_DEFAULTS.backgroundId);
     setBackgroundColor(THEME_DEFAULTS.backgroundColor);
+    setBackgroundImage(THEME_DEFAULTS.backgroundImage);
   }
 
   return (
@@ -228,6 +243,8 @@ export function ThemeProvider({ children }) {
         setBackgroundId,
         backgroundColor,
         setBackgroundColor,
+        backgroundImage,
+        setBackgroundImage,
         resetToDefaults,
       }}
     >

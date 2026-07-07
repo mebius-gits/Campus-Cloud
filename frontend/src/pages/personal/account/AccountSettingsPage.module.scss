@@ -201,6 +201,12 @@
   padding: $spacing-16;
   border: 1px solid var(--color-border);
   border-radius: $radius-12;
+
+  /* 上傳按鈕靠右，避免擠壓頭像說明 */
+  > button {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
 }
 
 .avatarPreview {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MIcon from "../../../components/MIcon";
 import {
   useTheme,
@@ -7,8 +7,13 @@ import {
   BACKGROUND_OPTIONS,
   THEME_DEFAULTS,
 } from "../../../contexts/ThemeContext";
+import { useToast } from "../../../hooks/useToast";
+import { downscaleImage } from "../../../utils/image/downscaleImage";
 import { normalizeHex } from "../../../utils/theme/derivePrimaryShades";
 import styles from "./AccountSettingsPage.module.scss";
+
+/** 背景圖 data URL 上限：留在 localStorage 配額（約 5MB）內 */
+const BG_IMAGE_MAX_CHARS = 3 * 1024 * 1024;
 
 /* ── 外觀 ───────────────────────────────────────────── */
 
@@ -88,8 +93,48 @@ export default function AppearanceTab() {
     setBackgroundId,
     backgroundColor,
     setBackgroundColor,
+    backgroundImage,
+    setBackgroundImage,
     resetToDefaults,
   } = useTheme();
+  const toast = useToast();
+  const bgFileRef = useRef(null);
+
+  async function handleBackgroundFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允許重選同一個檔案
+    if (!file) return;
+    try {
+      const { dataUrl } = await downscaleImage(file, { maxSize: 1920, quality: 0.82 });
+      if (dataUrl.length > BG_IMAGE_MAX_CHARS) {
+        toast.error("圖片壓縮後仍太大，請換一張小一點的圖");
+        return;
+      }
+      setBackgroundImage(dataUrl);
+      setBackgroundId("custom-image");
+      toast.success("背景圖已套用");
+    } catch (err) {
+      toast.error(err?.message ?? "背景圖讀取失敗");
+    }
+  }
+
+  function removeBackgroundImage() {
+    setBackgroundImage("");
+    // 花色守衛會自動退回預設，這裡直接切掉避免一瞬間的空背景
+    if (backgroundId === "custom-image") setBackgroundId(THEME_DEFAULTS.backgroundId);
+  }
+
+  // 有上傳圖時，背景 gallery 多一個「自訂圖片」選項
+  const backgroundOptions = backgroundImage
+    ? [
+        ...BACKGROUND_OPTIONS,
+        {
+          id: "custom-image",
+          label: "自訂圖片",
+          preview: `url("${backgroundImage}") center / cover no-repeat`,
+        },
+      ]
+    : BACKGROUND_OPTIONS;
 
   // 白底僅限淺色模式、黑底僅限深色模式，不符目前明暗的直接不顯示
   // （theme 為實際套用的明暗，系統模式下是解析後的結果）
@@ -158,7 +203,7 @@ export default function AppearanceTab() {
           </div>
           
           <div className={styles.bgGallery}>
-            {BACKGROUND_OPTIONS.map((opt) => (
+            {backgroundOptions.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -171,6 +216,31 @@ export default function AppearanceTab() {
                 </span>
               </button>
             ))}
+          </div>
+
+          {/* 上傳自訂背景圖（存在瀏覽器本地，重設或移除即刪掉） */}
+          <input
+            ref={bgFileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleBackgroundFile}
+          />
+          <div className={styles.formActions}>
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              onClick={() => bgFileRef.current?.click()}
+            >
+              <MIcon name="upload" size={16} />
+              上傳背景圖
+            </button>
+            {backgroundImage && (
+              <button type="button" className={styles.btnSecondary} onClick={removeBackgroundImage}>
+                <MIcon name="delete" size={16} />
+                移除背景圖
+              </button>
+            )}
           </div>
         </div>
 
