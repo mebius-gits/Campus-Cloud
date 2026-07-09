@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth }  from "../../contexts/AuthContext";
 import styles from "./Sidebar.module.scss";
 import MIcon from "../MIcon";
+import Avatar from "../Avatar/Avatar";
 
 const topItems = [
   { key: "dashboard", label: "首頁", icon: "dashboard" },
@@ -222,9 +223,7 @@ function UserPopup({ user, onLogout, onSettings, onClose, triggerRef, closing })
   return (
     <div className={`${styles.userPopup} ${closing ? styles.popupClosing : styles.popupOpening}`} ref={ref}>
       <div className={styles.userPopupHeader}>
-        <div className={styles.userPopupAvatar}>
-          {user?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "U"}
-        </div>
+        <Avatar user={user} size={32} />
         <div className={styles.userPopupInfo}>
           <span className={styles.userName}>{user?.full_name ?? "—"}</span>
           <span className={styles.userEmail}>{user?.email ?? "—"}</span>
@@ -365,9 +364,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
             onClick={userPopup.toggle}
             title={collapsed ? (user?.full_name ?? user?.email) : undefined}
           >
-            <div className={styles.avatar}>
-              {user?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "U"}
-            </div>
+            <Avatar user={user} size={32} className={styles.avatar} />
             {!collapsed && (
               <>
                 <div className={styles.userInfo}>

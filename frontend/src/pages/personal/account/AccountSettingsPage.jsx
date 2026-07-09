@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./AccountSettingsPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Avatar from "../../../components/Avatar/Avatar";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useToast } from "../../../hooks/useToast";
 import { AccountService } from "../../../services/account";
@@ -15,11 +16,6 @@ const TABS = [
   { key: "danger",     label: "危險區域", icon: "warning" },
 ];
 
-function initials(user) {
-  const source = user?.full_name || user?.email || "U";
-  return source.slice(0, 1).toUpperCase();
-}
-
 /* ── 個人資料 ───────────────────────────────────────── */
 
 function ProfileTab() {
@@ -32,7 +28,6 @@ function ProfileTab() {
     email: user?.email ?? "",
     avatar_url: user?.avatar_url ?? "",
   });
-  const [avatarFailed, setAvatarFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const avatarFileRef = useRef(null);
 
@@ -50,7 +45,6 @@ function ProfileTab() {
       const { blob } = await downscaleImage(file, { maxSize: 256, quality: 0.85 });
       const updated = await AccountService.uploadAvatar(blob);
       updateUser(updated);
-      setAvatarFailed(false);
       setForm((prev) => ({ ...prev, avatar_url: updated?.avatar_url ?? "" }));
       toast.success("頭像已更新");
     } catch (err) {
@@ -66,7 +60,6 @@ function ProfileTab() {
       email: user?.email ?? "",
       avatar_url: user?.avatar_url ?? "",
     });
-    setAvatarFailed(false);
     setEditMode(true);
   }
 
@@ -100,7 +93,6 @@ function ProfileTab() {
   }
 
   const previewAvatarUrl = editMode ? form.avatar_url : user?.avatar_url;
-  const showImage = previewAvatarUrl && !avatarFailed;
 
   return (
     <div className={styles.card}>
@@ -108,13 +100,7 @@ function ProfileTab() {
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.avatarRow}>
-          <div className={styles.avatarPreview}>
-            {showImage ? (
-              <img src={previewAvatarUrl} alt="頭像預覽" onError={() => setAvatarFailed(true)} />
-            ) : (
-              initials(user)
-            )}
-          </div>
+          <Avatar user={user} src={previewAvatarUrl} size={56} />
           <div className={styles.avatarHint}>
             <p className={styles.rowName}>頭像</p>
             <p className={styles.rowMeta}>上傳圖片或貼上圖片網址，留空則顯示姓名縮寫</p>

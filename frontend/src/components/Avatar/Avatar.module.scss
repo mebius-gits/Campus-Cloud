@@ -1,0 +1,16 @@
+/* ===== Avatar（共用頭像基底，尺寸由元件 inline style 控制） ===== */
+.avatar {
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  font-weight: $font-weight-700;
+  @include flex-center;
+  flex-shrink: 0;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
