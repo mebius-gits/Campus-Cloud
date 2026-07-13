@@ -17,58 +17,35 @@ export const THEME_OPTIONS = [
 
 /** 介面風格選項：玻璃質感為預設 */
 export const STYLE_OPTIONS = [
-  { key: "glass", label: "玻璃質感", icon: "blur_on" },
-  { key: "white", label: "白底",     icon: "panorama_fish_eye" },
-  { key: "black", label: "黑底",     icon: "lens" },
+  { key: "glass",  label: "毛玻璃質感", icon: "blur_on" },
+  { key: "liquid", label: "液態玻璃",   icon: "opacity" },
+  { key: "white",  label: "白底",     icon: "panorama_fish_eye" },
+  { key: "black",  label: "黑底",     icon: "lens" },
 ];
 
 /**
- * 背景花色選項，依風格分組；每組第一個「跟隨主色」(auto-gradient) 為預設。
- * preview 為縮圖用的 CSS background（跟隨主色的縮圖直接吃 :root 上的
- * --color-bg-primary-* 變數，固定花色與 _backgrounds.scss 的定義同色）。
+ * 背景花色選項，與風格完全無關的一組；第一個「跟隨主色」(auto-gradient) 為預設。
+ * 色碼由基準色衍生、明暗模式自動切換（_backgrounds.scss 的別名處理），
+ * preview 為縮圖用的 CSS background，直接吃 :root / body 上的衍生變數。
  */
-export const BACKGROUND_OPTIONS = {
-  glass: [
-    {
-      id: "auto-gradient",
-      label: "跟隨主色",
-      preview: "linear-gradient(135deg, var(--color-bg-primary-soft), var(--color-bg-primary-tint))",
-    },
-    {
-      id: "preset-2",
-      label: "柔和雙色",
-      preview: "linear-gradient(135deg, var(--color-bg-duo-1), var(--color-bg-duo-2))",
-    },
-    {
-      id: "preset-3",
-      label: "對角三色",
-      preview:
-        "linear-gradient(135deg, var(--color-bg-tri-1), var(--color-bg-tri-2) 50%, var(--color-bg-tri-3))",
-    },
-  ],
-  white: [
-    {
-      id: "auto-gradient",
-      label: "跟隨主色",
-      preview: "linear-gradient(135deg, #ffffff 35%, var(--color-bg-primary-soft))",
-    },
-    { id: "preset-2", label: "純白", preview: "#ffffff" },
-    { id: "preset-3", label: "米白", preview: "linear-gradient(135deg, #ffffff, #f2ede1)" },
-  ],
-  black: [
-    {
-      id: "auto-gradient",
-      label: "跟隨主色",
-      preview: "linear-gradient(135deg, #000000 35%, var(--color-bg-primary-deep))",
-    },
-    { id: "preset-2", label: "純黑", preview: "#000000" },
-    {
-      id: "preset-3",
-      label: "深藍紫",
-      preview: "linear-gradient(135deg, #08070f, #191344 60%, #251a54)",
-    },
-  ],
-};
+export const BACKGROUND_OPTIONS = [
+  {
+    id: "auto-gradient",
+    label: "跟隨主色",
+    preview: "linear-gradient(135deg, var(--color-bg-primary-soft), var(--color-bg-primary-tint))",
+  },
+  {
+    id: "preset-2",
+    label: "柔和雙色",
+    preview: "linear-gradient(135deg, var(--color-bg-duo-1), var(--color-bg-duo-2))",
+  },
+  {
+    id: "preset-3",
+    label: "對角三色",
+    preview:
+      "linear-gradient(135deg, var(--color-bg-tri-1), var(--color-bg-tri-2) 50%, var(--color-bg-tri-3))",
+  },
+];
 
 export { THEME_DEFAULTS };
 
@@ -86,11 +63,21 @@ function paletteToCss(p) {
     `--color-text: ${p.text};`,
     `--color-text-primary: ${p.textPrimary};`,
     `--color-text-secondary: ${p.textSecondary};`,
+    `--color-text-muted: ${p.textMuted};`,
+    `--color-text-on-primary: ${p.textOnPrimary};`,
+    `--color-hover: ${p.hover};`,
+    `--color-border: ${p.border};`,
+    `--color-divider: ${p.divider};`,
+    `--color-bg-base: ${p.bgBase};`,
+    `--color-info: ${p.primary};`,
+    `--color-flow-bg: ${p.flowBg};`,
   ].join(" ");
 }
 
 /**
- * 非預設主色時注入 <style>，讓主色連同文字、按鈕用色一起換：
+ * 非預設主色時注入 <style>，讓整個介面帶主色色調的用色一起換：
+ * primary 色階、文字、hover、邊框、分隔線、頁面底色、info、
+ * 流程畫布底（狀態語意色 綠/黃/紅 與白黑基底不動）：
  * - body:      淺色模式配色
  * - body.dark: 深色模式配色（高亮度、帶主色色調的文字）
  * 預設主色則移除 <style>，讓 _themes.scss 的原始配色生效。
@@ -129,6 +116,8 @@ export function ThemeProvider({ children }) {
   const [backgroundId, setBackgroundId] = useState(initial.backgroundId);
   // 背景漸層基準色：空字串 = 跟隨主色，有值時與主色脫鉤
   const [backgroundColor, setBackgroundColor] = useState(initial.backgroundColor);
+  // 上傳的自訂背景圖（data URL），有圖時背景多一個「自訂圖片」花色
+  const [backgroundImage, setBackgroundImage] = useState(initial.backgroundImage);
 
   // 解析出實際套用的 theme（light / dark）
   const [resolvedTheme, setResolvedTheme] = useState(() => {
@@ -187,22 +176,42 @@ export function ThemeProvider({ children }) {
     palettes.tri.dark.forEach((c, i) => root.setProperty(`--color-bg-tri-dark-${i + 1}`, c));
   }, [primaryColor, backgroundColor]);
 
+  // 自訂背景圖：以 CSS 變數掛在 :root，供 _backgrounds.scss 的
+  // custom-image 花色使用（data URL 存 localStorage，超過容量時該次不保存）
+  useEffect(() => {
+    themePreferenceStore.save({ backgroundImage });
+    const root = document.documentElement.style;
+    if (backgroundImage) root.setProperty("--bg-custom-image", `url("${backgroundImage}")`);
+    else root.removeProperty("--bg-custom-image");
+  }, [backgroundImage]);
+
   // 風格：以 data-style 套用（glass 也明確標上，供背景花色選擇器組合）
   useEffect(() => {
     themePreferenceStore.save({ style });
     document.body.setAttribute("data-style", style);
   }, [style]);
 
-  // 背景：目前風格下沒有對應花色時退回預設，否則以 data-bg 套用
-  // （實際花色集中定義在 _backgrounds.scss）
+  // 背景：與風格無關，直接以 data-bg 套用
+  // （實際花色集中定義在 _backgrounds.scss）。
+  // 完全未自訂時（跟隨主色 + 預設主色 + 未另選背景色）
+  // 不掛 data-bg，讓 global.scss 的原始三色暈染呈現 ——
+  // 系統預設外觀維持最初的樣子
   useEffect(() => {
-    if (!BACKGROUND_OPTIONS[style]?.some((opt) => opt.id === backgroundId)) {
+    const valid =
+      BACKGROUND_OPTIONS.some((opt) => opt.id === backgroundId) ||
+      (backgroundId === "custom-image" && !!backgroundImage);
+    if (!valid) {
       setBackgroundId(THEME_DEFAULTS.backgroundId);
       return;
     }
     themePreferenceStore.save({ backgroundId });
-    document.body.setAttribute("data-bg", backgroundId);
-  }, [style, backgroundId]);
+    const untouched =
+      backgroundId === "auto-gradient" &&
+      !backgroundColor &&
+      primaryColor.toLowerCase() === THEME_DEFAULTS.primaryColor;
+    if (untouched) document.body.removeAttribute("data-bg");
+    else document.body.setAttribute("data-bg", backgroundId);
+  }, [backgroundId, primaryColor, backgroundColor, backgroundImage]);
 
   // 白底只能配淺色模式、黑底只能配深色模式；
   // 明暗模式切換（含系統模式跟隨 OS）時自動換成對應的底
@@ -217,6 +226,7 @@ export function ThemeProvider({ children }) {
     setStyle(THEME_DEFAULTS.style);
     setBackgroundId(THEME_DEFAULTS.backgroundId);
     setBackgroundColor(THEME_DEFAULTS.backgroundColor);
+    setBackgroundImage(THEME_DEFAULTS.backgroundImage);
   }
 
   return (
@@ -233,6 +243,8 @@ export function ThemeProvider({ children }) {
         setBackgroundId,
         backgroundColor,
         setBackgroundColor,
+        backgroundImage,
+        setBackgroundImage,
         resetToDefaults,
       }}
     >

@@ -41,6 +41,34 @@ function pageContextFor(pathname) {
   return PAGE_CONTEXTS.find((item) => item.match.test(pathname)) ?? DEFAULT_CONTEXT;
 }
 
+// The navigation service still returns a few legacy paths. Keep the mapping
+// here so the assistant always opens a route that exists in the current UI.
+const PATH_MAP = {
+  "/": "/dashboard",
+  "/resources": "/resource-mgmt",
+  "/resources-create": "/my-requests",
+  "/approvals": "/request-review",
+  "/gpu-management": "/gpu-mgmt",
+  "/ai-api-approvals": "/ai-api-review",
+  "/ai-api-credentials": "/ai-api-keys",
+  "/admin/audit-logs": "/audit",
+  "/admin/migration-jobs": "/migration",
+  "/admin/domains": "/domain",
+  "/admin/gateway": "/gateway",
+  "/admin/ip-management": "/ip-management",
+  "/admin/configuration": "/settings",
+  "/admin/batch-provision-review": "/batch-review",
+  "/admin/ai-management": "/ai-monitoring",
+  "/admin/ai-monitoring": "/ai-monitoring",
+};
+
+function mapPath(path) {
+  if (!path) return null;
+  const [clean, query] = path.split("?");
+  const target = PATH_MAP[clean] ?? clean;
+  return query ? `${target}?${query}` : target;
+}
+
 function displayName(user) {
   return user?.full_name?.trim() || user?.email?.split("@")[0] || "你好";
 }
@@ -114,8 +142,9 @@ export default function AiFloatingChat({ open = false, onOpenChange = () => {} }
   }
 
   function handleNavigate(path) {
-    if (!path) return;
-    navigate(path);
+    const target = mapPath(path);
+    if (!target) return;
+    navigate(target);
     if (window.matchMedia("(max-width: 1439px)").matches) close();
   }
 
