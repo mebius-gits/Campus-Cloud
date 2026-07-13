@@ -270,6 +270,13 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
   const langBtnRef = useRef(null);
   const userBtnRef = useRef(null);
   const { user, logout } = useAuth();
+  const isAdmin = Boolean(user?.is_superuser || user?.role === "admin");
+  const visibleNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || isAdmin),
+    }))
+    .filter((group) => group.items.length > 0);
 
   const cls = [
     styles.sidebar,
