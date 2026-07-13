@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./AccountSettingsPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Avatar from "../../../components/Avatar/Avatar";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useToast } from "../../../hooks/useToast";
 import { AccountService } from "../../../services/account";
+import { downscaleImage } from "../../../utils/image/downscaleImage";
 import AppearanceTab from "./AppearanceTab";
 
 const TABS = [
@@ -13,11 +15,6 @@ const TABS = [
   { key: "appearance", label: "外觀",     icon: "palette" },
   { key: "danger",     label: "危險區域", icon: "warning" },
 ];
-
-function initials(user) {
-  const source = user?.full_name || user?.email || "U";
-  return source.slice(0, 1).toUpperCase();
-}
 
 /* ── 個人資料 ───────────────────────────────────────── */
 
@@ -31,10 +28,30 @@ function ProfileTab() {
     email: user?.email ?? "",
     avatar_url: user?.avatar_url ?? "",
   });
-  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const avatarFileRef = useRef(null);
 
   function set(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleAvatarFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允許重選同一個檔案
+    if (!file) return;
+    setUploading(true);
+    try {
+      // 頭像顯示尺寸小，縮到 256px 再上傳
+      const { blob } = await downscaleImage(file, { maxSize: 256, quality: 0.85 });
+      const updated = await AccountService.uploadAvatar(blob);
+      updateUser(updated);
+      setForm((prev) => ({ ...prev, avatar_url: updated?.avatar_url ?? "" }));
+      toast.success("頭像已更新");
+    } catch (err) {
+      toast.error(err?.message ?? "頭像上傳失敗");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function startEdit() {
@@ -43,7 +60,6 @@ function ProfileTab() {
       email: user?.email ?? "",
       avatar_url: user?.avatar_url ?? "",
     });
-    setAvatarFailed(false);
     setEditMode(true);
   }
 
@@ -77,7 +93,6 @@ function ProfileTab() {
   }
 
   const previewAvatarUrl = editMode ? form.avatar_url : user?.avatar_url;
-  const showImage = previewAvatarUrl && !avatarFailed;
 
   return (
     <div className={styles.card}>
@@ -85,17 +100,27 @@ function ProfileTab() {
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.avatarRow}>
-          <div className={styles.avatarPreview}>
-            {showImage ? (
-              <img src={previewAvatarUrl} alt="頭像預覽" onError={() => setAvatarFailed(true)} />
-            ) : (
-              initials(user)
-            )}
-          </div>
+          <Avatar user={user} src={previewAvatarUrl} size={56} />
           <div className={styles.avatarHint}>
             <p className={styles.rowName}>頭像</p>
-            <p className={styles.rowMeta}>貼上一個圖片網址作為你的頭像，留空則顯示姓名縮寫</p>
+            <p className={styles.rowMeta}>上傳圖片或貼上圖片網址，留空則顯示姓名縮寫</p>
           </div>
+          <input
+            ref={avatarFileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleAvatarFile}
+          />
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => avatarFileRef.current?.click()}
+            disabled={uploading}
+          >
+            <MIcon name="upload" size={16} />
+            {uploading ? "上傳中..." : "上傳圖片"}
+          </button>
         </div>
 
         <label className={styles.field}>

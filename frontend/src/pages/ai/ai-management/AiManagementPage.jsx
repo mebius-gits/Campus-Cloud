@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import styles from "./AiManagementPage.module.scss";
 import MIcon from "../../../components/MIcon";
 import { AiApiService } from "../../../services/aiApi";
@@ -18,20 +19,12 @@ const CRED_STATUS_LABELS = {
   expired:  "已過期",
 };
 
-const REQ_STATUS_LABELS = {
-  pending:  "待審核",
-  approved: "已核准",
-  rejected: "已駁回",
-};
-
 const TABS = [
   { key: "credentials", label: "API 憑證",  icon: "vpn_key" },
-  { key: "requests",    label: "申請審核",  icon: "rate_review" },
   { key: "users",       label: "使用者統計", icon: "groups" },
 ];
 
 const CRED_COLS = ["名稱", "擁有者", "速率限制", "建立時間", "到期時間", "狀態", "動作"];
-const REQ_COLS  = ["申請人", "用途說明", "期限", "提交時間", "狀態", "動作"];
 const USR_COLS  = ["使用者", "啟用憑證", "總呼叫", "總 Tokens", "最近憑證"];
 
 function EmptyState({ icon, title, desc }) {
@@ -64,6 +57,7 @@ function formatTokens(n) {
 
 export default function AiManagementPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [tab, setTab] = useState("credentials");
   const [query, setQuery] = useState("");
   const [credentials, setCredentials] = useState([]);
@@ -92,17 +86,6 @@ export default function AiManagementPage() {
 
   useEffect(() => { load(); }, [load]);
   useAutoRefresh(() => load(true));
-
-  const reviewRequest = async (id, decisionStatus) => {
-    if (!window.confirm(decisionStatus === "approved" ? "確定核准此申請?" : "確定駁回此申請?")) return;
-    try {
-      await AiApiService.reviewRequest(id, { status: decisionStatus });
-      toast.success(decisionStatus === "approved" ? "已核准" : "已駁回");
-      load();
-    } catch (e) {
-      toast.error(e?.message ?? "操作失敗");
-    }
-  };
 
   const revokeCred = async (id) => {
     if (!window.confirm("確定撤銷此憑證?")) return;
@@ -138,17 +121,6 @@ export default function AiManagementPage() {
     );
   }, [credentials, query]);
 
-  const visibleReqs = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return requests;
-    return requests.filter(
-      (r) =>
-        (r.user_email ?? "").toLowerCase().includes(q) ||
-        (r.user_full_name ?? "").toLowerCase().includes(q) ||
-        (r.purpose ?? "").toLowerCase().includes(q),
-    );
-  }, [requests, query]);
-
   const visibleUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return users;
@@ -164,7 +136,7 @@ export default function AiManagementPage() {
       <div className={styles.pageHeader}>
         <div className={styles.pageHeading}>
           <h1 className={styles.pageTitle}>AI 管理</h1>
-          <p className={styles.pageSubtitle}>管理 AI API 憑證、處理使用申請與檢視使用者統計</p>
+          <p className={styles.pageSubtitle}>管理 AI API 憑證與檢視使用者統計；金鑰申請請至「申請審核」處理</p>
         </div>
       </div>
 
@@ -178,12 +150,20 @@ export default function AiManagementPage() {
             <span className={styles.statValue}>{stats.activeCreds}</span>
           </div>
         </div>
-        <div className={styles.statCard}>
+        <div
+          className={styles.statCard}
+          role="link"
+          tabIndex={0}
+          style={{ cursor: "pointer" }}
+          title="前往申請審核"
+          onClick={() => navigate("/request-review")}
+          onKeyDown={(e) => { if (e.key === "Enter") navigate("/request-review"); }}
+        >
           <div className={`${styles.statIcon} ${styles.statIconWarn}`}>
             <MIcon name="pending_actions" size={20} />
           </div>
           <div className={styles.statInfo}>
-            <span className={styles.statLabel}>待審核申請</span>
+            <span className={styles.statLabel}>待審核申請（前往審核）</span>
             <span className={styles.statValue}>{stats.pendingReqs}</span>
           </div>
         </div>
@@ -218,13 +198,7 @@ export default function AiManagementPage() {
           <input
             type="text"
             className={styles.searchInput}
-            placeholder={
-              tab === "credentials"
-                ? "搜尋憑證名稱或擁有者"
-                : tab === "requests"
-                ? "搜尋申請人"
-                : "搜尋使用者"
-            }
+            placeholder={tab === "credentials" ? "搜尋憑證名稱或擁有者" : "搜尋使用者"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -288,69 +262,6 @@ export default function AiManagementPage() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-
-        {tab === "requests" &&
-          (visibleReqs.length === 0 ? (
-            <EmptyState
-              icon="rate_review"
-              title="沒有待處理的申請"
-              desc="使用者提交的 AI API 使用申請會顯示在這裡"
-            />
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    {REQ_COLS.map((c) => (
-                      <th key={c} className={styles.th}>{c}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleReqs.map((r) => {
-                    const canReview = r.status === "pending";
-                    return (
-                      <tr key={r.id} className={styles.tr}>
-                        <td className={styles.td}>{r.user_email ?? r.user_full_name ?? "—"}</td>
-                        <td className={styles.td} title={r.purpose}>
-                          {(r.purpose ?? "").length > 60
-                            ? `${r.purpose.slice(0, 60)}…`
-                            : r.purpose}
-                        </td>
-                        <td className={styles.td}>{r.duration}</td>
-                        <td className={styles.td}>{fmtDate(r.created_at)}</td>
-                        <td className={styles.td}>
-                          <Badge status={r.status} labels={REQ_STATUS_LABELS} />
-                        </td>
-                        <td className={styles.td}>
-                          <div className={styles.actions}>
-                            <button
-                              type="button"
-                              className={`${styles.actionBtn} ${styles.actionBtnOk}`}
-                              title="核准"
-                              disabled={!canReview}
-                              onClick={() => reviewRequest(r.id, "approved")}
-                            >
-                              <MIcon name="check" size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                              title="駁回"
-                              disabled={!canReview}
-                              onClick={() => reviewRequest(r.id, "rejected")}
-                            >
-                              <MIcon name="close" size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
                 </tbody>
               </table>
             </div>

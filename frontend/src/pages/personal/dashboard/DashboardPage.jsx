@@ -10,7 +10,7 @@ import { COURSES } from "./dashboard.data";
 const TEMPLATE_ACCENT = "#5471bf";
 
 /* ── SectionHeader ── */
-function SectionHeader({ icon, title, desc, onSeeAll }) {
+function SectionHeader({ icon, title, desc, onSeeAll, actions }) {
   return (
     <div className={styles.sectionHeader}>
       <div className={styles.sectionTitle}>
@@ -20,6 +20,7 @@ function SectionHeader({ icon, title, desc, onSeeAll }) {
         </span>
         <span className={styles.sectionDesc}>{desc}</span>
       </div>
+      {actions}
       {onSeeAll && (
         <button type="button" className={styles.sectionLink} onClick={onSeeAll}>
           查看全部
@@ -118,6 +119,29 @@ export default function DashboardPage() {
 
   const scrollRef = useRef(null);
 
+  /* 課程推薦捲動列：< > 按鈕與兩端停用狀態（拖曳與按鈕捲動共用） */
+  const [canScroll, setCanScroll] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      setCanScroll({ left: el.scrollLeft > 2, right: el.scrollLeft < max - 2 });
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  const scrollCourses = (dir) => {
+    const el = scrollRef.current;
+    el?.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+
   /* 快速入門：撈範本系統中可用（ready）的 LXC 範本 */
   const [templates, setTemplates] = useState([]);
   const [tplLoading, setTplLoading] = useState(true);
@@ -151,6 +175,28 @@ export default function DashboardPage() {
           icon="school"
           title="課程推薦"
           desc="根據你的學習歷程精選推薦"
+          actions={
+            <div className={styles.scrollNav}>
+              <button
+                type="button"
+                className={styles.scrollNavBtn}
+                onClick={() => scrollCourses(-1)}
+                disabled={!canScroll.left}
+                aria-label="往前捲動課程"
+              >
+                <MIcon name="chevron_left" size={20} />
+              </button>
+              <button
+                type="button"
+                className={styles.scrollNavBtn}
+                onClick={() => scrollCourses(1)}
+                disabled={!canScroll.right}
+                aria-label="往後捲動課程"
+              >
+                <MIcon name="chevron_right" size={20} />
+              </button>
+            </div>
+          }
         />
 
         <div className={styles.courseScroll} ref={scrollRef}>

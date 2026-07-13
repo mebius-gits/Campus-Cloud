@@ -1,7 +1,10 @@
+import time
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.api.deps import (
     CurrentUser,
@@ -21,6 +24,17 @@ from app.schemas import (
 from app.services.user import user_service
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+# 頭像檔案存放目錄（repo 根的 data/avatars，與 teacher-judge 慣例一致），
+# 檔名固定為 {user_id}.{ext}
+AVATAR_DIR = Path(__file__).resolve().parents[4] / "data" / "avatars"
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+AVATAR_CONTENT_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
 
 
 @router.get(
@@ -68,6 +82,42 @@ def update_password_me(
 @router.get("/me", response_model=UserPublic)
 def read_user_me(current_user: CurrentUser) -> Any:
     return current_user
+
+
+@router.post("/me/avatar", response_model=UserPublic)
+async def upload_avatar_me(
+    session: SessionDep, current_user: CurrentUser, file: UploadFile = File(...)
+) -> Any:
+    """上傳頭像圖片，存檔後把 avatar_url 指向本服務的頭像端點。"""
+    ext = AVATAR_CONTENT_TYPES.get((file.content_type or "").lower())
+    if not ext:
+        raise HTTPException(status_code=400, detail="僅支援 PNG / JPEG / WebP / GIF 圖片")
+    data = await file.read()
+    if len(data) > AVATAR_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="圖片大小不可超過 2MB")
+
+    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+    for old in AVATAR_DIR.glob(f"{current_user.id}.*"):
+        old.unlink(missing_ok=True)
+    (AVATAR_DIR / f"{current_user.id}{ext}").write_bytes(data)
+
+    # v= 時間戳讓 <img> 換圖時不吃瀏覽器快取
+    avatar_url = f"/api/v1/users/{current_user.id}/avatar?v={int(time.time())}"
+    return user_service.update_me(
+        session=session,
+        user_in=UserUpdateMe(avatar_url=avatar_url),
+        current_user=current_user,
+    )
+
+
+@router.get("/{user_id}/avatar")
+def get_user_avatar(user_id: uuid.UUID) -> FileResponse:
+    """頭像檔案。<img> 標籤無法帶 Authorization header，因此不做驗證；
+    user_id 由路由強制為 UUID，不會有路徑穿越問題。"""
+    matches = sorted(AVATAR_DIR.glob(f"{user_id}.*"))
+    if not matches:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return FileResponse(matches[0])
 
 
 @router.delete("/me", response_model=Message)

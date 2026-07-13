@@ -9,7 +9,7 @@ export const COURSES = [
     teacher: "王建明",
     classGroup: "資工系 113-A",
     icon: "storage",
-    accent: "#5471bf",
+    accent: "var(--color-primary)",
   },
   {
     id: "linux-ops",
@@ -20,7 +20,7 @@ export const COURSES = [
     teacher: "李怡萱",
     classGroup: "資工系 113-B",
     icon: "terminal",
-    accent: "rgb(43, 112, 152)",
+    accent: "var(--color-primary-dark)",
   },
   {
     id: "data-science",
@@ -31,7 +31,7 @@ export const COURSES = [
     teacher: "陳文彬",
     classGroup: "資科系 113-A",
     icon: "science",
-    accent: "#5471bf",
+    accent: "var(--color-primary)",
   },
   {
     id: "web-dev",
@@ -42,7 +42,7 @@ export const COURSES = [
     teacher: "林佳穎",
     classGroup: "資管系 113-A",
     icon: "public",
-    accent: "rgb(43, 112, 152)",
+    accent: "var(--color-primary-dark)",
   },
   {
     id: "db-design",
@@ -53,7 +53,7 @@ export const COURSES = [
     teacher: "王建明",
     classGroup: "資工系 113-A",
     icon: "storage",
-    accent: "#5471bf",
+    accent: "var(--color-primary)",
   },
   {
     id: "linux-ops",
@@ -64,7 +64,7 @@ export const COURSES = [
     teacher: "李怡萱",
     classGroup: "資工系 113-B",
     icon: "terminal",
-    accent: "rgb(43, 112, 152)",
+    accent: "var(--color-primary-dark)",
   },
 ];
 

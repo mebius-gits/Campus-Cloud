@@ -101,14 +101,45 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
   overscroll-behavior-x: contain;
-  padding: 12px 0 24px;
-  width: 100%;
+  /* 捲動容器會把超出 padding box 的陰影裁掉（玻璃陰影最大 0 8px 32px），
+     四周留足空間、再用負 margin 抵銷，讓卡片對齊與區塊間距維持不變 */
+  padding: 12px 24px 40px;
+  margin: 0 -24px -16px;
+  width: auto;
   min-width: 0;
   scrollbar-width: none;
   cursor: grab;
   user-select: none;
 
   &::-webkit-scrollbar { display: none; }
+}
+
+/* ── 課程推薦左右捲動鈕（SectionHeader 右側） ── */
+.scrollNav {
+  display: flex;
+  gap: $spacing-8;
+}
+
+.scrollNavBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  @include flex-center;
+  background: var(--color-surface-glass);
+  border: 1px solid var(--color-surface-glass-border);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background $transition-base, color $transition-base, opacity $transition-base;
+
+  &:hover:not(:disabled) {
+    background: var(--color-hover);
+    color: var(--color-text-primary);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
 }
 
 .dragging {
@@ -267,10 +298,7 @@
   gap: 10px;
   padding: $spacing-16;
   border-radius: $radius-12;
-  border: 1px solid var(--color-surface-glass-border);
-  background: var(--color-surface-glass);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  @include glass-surface($shadow: none);
   text-align: left;
   cursor: pointer;
   position: relative;
