@@ -143,7 +143,7 @@ export default function AiApiKeysPage() {
     <div className={styles.page}>
       <div className={styles.pageHeader}>
         <div className={styles.pageHeading}>
-          <h1 className={styles.pageTitle}>AI API 金鑰狀態</h1>
+          <h1 className={styles.pageTitle}>AI API 金鑰管理</h1>
           <p className={styles.pageSubtitle}>
             查看目前資料庫中所有 AI API 金鑰紀錄與狀態（僅顯示現存紀錄）。
           </p>

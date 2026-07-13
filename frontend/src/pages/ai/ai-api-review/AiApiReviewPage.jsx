@@ -207,7 +207,7 @@ export default function AiApiReviewPage() {
     <div className={styles.page}>
       <div className={styles.pageHeader}>
         <div className={styles.pageHeading}>
-          <h1 className={styles.pageTitle}>AI API 審核</h1>
+          <h1 className={styles.pageTitle}>AI API 申請審核</h1>
           <p className={styles.pageSubtitle}>審核申請並核發 API 存取參數。</p>
         </div>
       </div>

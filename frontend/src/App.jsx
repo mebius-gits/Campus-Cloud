@@ -24,7 +24,6 @@ const AiApiPage = lazy(() => import("./pages/ai/ai-api/AiApiPage"));
 const AiApiReviewPage = lazy(() => import("./pages/ai/ai-api-review/AiApiReviewPage"));
 const AiApiKeysPage = lazy(() => import("./pages/ai/ai-api-keys/AiApiKeysPage"));
 const AiMonitoringPage = lazy(() => import("./pages/ai/ai-monitoring/AiMonitoringPage"));
-const AiManagementPage = lazy(() => import("./pages/ai/ai-management/AiManagementPage"));
 
 // 教學
 const TeachingPage = lazy(() => import("./pages/teaching/TeachingPage"));
@@ -53,6 +52,7 @@ const IpManagementPage = lazy(() => import("./pages/network/ip-management/IpMana
 
 function App() {
   const { user, loading } = useAuth();
+  const isAdmin = Boolean(user?.is_superuser || user?.role === "admin");
 
   if (loading) return null;
 
@@ -85,10 +85,17 @@ function App() {
 
           {/* AI */}
           <Route path="/ai-api"         element={<AiApiPage />} />
-          <Route path="/ai-api-review"  element={<AiApiReviewPage />} />
-          <Route path="/ai-api-keys"    element={<AiApiKeysPage />} />
-          <Route path="/ai-monitoring"  element={<AiMonitoringPage />} />
-          <Route path="/ai-management"  element={<AiManagementPage />} />
+          {isAdmin && (
+            <>
+              <Route path="/ai-api-review" element={<AiApiReviewPage />} />
+              <Route path="/ai-api-keys" element={<AiApiKeysPage />} />
+              <Route path="/ai-monitoring" element={<AiMonitoringPage />} />
+            </>
+          )}
+          <Route
+            path="/ai-management"
+            element={<Navigate to={isAdmin ? "/ai-monitoring" : "/ai-api"} replace />}
+          />
 
           {/* 教學 */}
           <Route path="/teaching"  element={<TeachingPage />} />

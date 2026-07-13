@@ -44,11 +44,10 @@ const navGroups = [
     label: "AI 服務",
     icon: "smart_toy",
     items: [
-      { key: "ai-api",        label: "AI API 申請", icon: "psychology" },
-      { key: "ai-api-review", label: "AI API 審核", icon: "rate_review" },
-      { key: "ai-api-keys",   label: "AI API 金鑰", icon: "vpn_key" },
-      { key: "ai-monitoring", label: "AI 監控",     icon: "monitor_heart" },
-      { key: "ai-management", label: "AI 管理",     icon: "admin_panel_settings" },
+      { key: "ai-api",        label: "AI API",   icon: "psychology" },
+      { key: "ai-api-review", label: "申請審核", icon: "rate_review", adminOnly: true },
+      { key: "ai-api-keys",   label: "金鑰管理", icon: "vpn_key", adminOnly: true },
+      { key: "ai-monitoring", label: "使用監控", icon: "monitor_heart", adminOnly: true },
     ],
   },
   {
@@ -255,6 +254,11 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
   const langBtnRef = useRef(null);
   const userBtnRef = useRef(null);
   const { user, logout } = useAuth();
+  const isAdmin = Boolean(user?.is_superuser || user?.role === "admin");
+  const visibleNavGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.adminOnly || isAdmin),
+  }));
 
   const cls = [
     styles.sidebar,
@@ -287,7 +291,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
 
       {/* ===== Main nav ===== */}
       <nav className={styles.nav}>
-        {navGroups.map((group) => (
+        {visibleNavGroups.map((group) => (
           <NavGroup
             key={group.key}
             group={group}
