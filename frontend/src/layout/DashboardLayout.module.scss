@@ -1,3 +1,11 @@
+.routeLoading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
 .layout {
   --layout-py: 30px;
   --layout-px: 60px;

@@ -1,5 +1,6 @@
 ﻿import { createContext, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
+import { Suspense } from "react";
 import MIcon from "../components/MIcon";
 import Sidebar from "../components/Sidebar/Sidebar";
 import AiFloatingChat from "../components/AiFloatingChat/AiFloatingChat";
@@ -59,7 +60,9 @@ export default function DashboardLayout() {
             </button>
           </div>
           <ErrorBoundary>
-            <Outlet />
+            <Suspense fallback={<div className={styles.routeLoading}>載入頁面中…</div>}>
+              <Outlet />
+            </Suspense>
           </ErrorBoundary>
           <div className={`${styles.footer} ${compactFooter ? styles.footerCompact : ""}`}>SkyLab · 2026</div>
           <AiFloatingChat />
