@@ -330,7 +330,6 @@ export default function RequestFormPage({ onBack, className }) {
     service_template_slug: form.service_template_slug || null,
     lxc_os_image: resourceType === "lxc" ? form.ostemplate || null : null,
     vm_template_id: resourceType === "vm" && form.template_id ? Number(form.template_id) : null,
-    username: resourceType === "vm" ? form.username || null : null,
     cores: Number(form.cores) || null,
     memory_mb: Number(form.memory) || null,
     disk_gb: Number(resourceType === "vm" ? form.disk_size : form.rootfs_size) || null,
@@ -379,9 +378,6 @@ export default function RequestFormPage({ onBack, className }) {
         template_id: nextResourceType === "vm" && prefill.vm_template_id
           ? String(prefill.vm_template_id)
           : prev.template_id,
-        username: nextResourceType === "vm" && prefill.username
-          ? prefill.username
-          : prev.username,
         cores: prefill.cores ? Number(prefill.cores) : prev.cores,
         memory: prefill.memory_mb ? Number(prefill.memory_mb) : prev.memory,
         rootfs_size: nextResourceType === "lxc" && disk
@@ -406,7 +402,11 @@ export default function RequestFormPage({ onBack, className }) {
       };
     });
     setErrors({});
-    toast.success("已匯入 AI 推薦配置，請確認欄位後送出。");
+    toast.success(
+      nextResourceType === "vm"
+        ? "已匯入 AI 推薦配置；VM 帳號與密碼不會由 AI 填入，請自行輸入。"
+        : "已匯入 AI 推薦配置；LXC Root 密碼不會由 AI 填入，請自行輸入。",
+    );
   }
 
   function handleBack() {

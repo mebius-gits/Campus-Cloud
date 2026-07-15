@@ -86,6 +86,11 @@ function planSummary(data) {
   const plan = data?.final_plan;
   const prefill = plan?.form_prefill ?? {};
   const target = plan?.application_target ?? {};
+  const credentialReminder = prefill.resource_type === "vm"
+    ? "提醒：套用配置不會填入 VM 帳號與密碼，請至表單自行輸入。"
+    : prefill.resource_type === "lxc"
+      ? "提醒：套用配置不會填入 LXC Root 密碼，請至表單自行輸入。"
+      : "提醒：基於安全考量，套用配置不會填入帳號或密碼。";
   const lines = [
     data?.summary,
     target.environment_reason,
@@ -100,6 +105,7 @@ function planSummary(data) {
       ? `建議日期：${new Date(prefill.start_at).toLocaleDateString("zh-TW")} ～ ${new Date(prefill.end_at).toLocaleDateString("zh-TW")}`
       : prefill.mode === "immediate" ? "建議時段：立即使用" : "",
     prefill.reason ? `申請理由：${prefill.reason}` : "",
+    credentialReminder,
   ].filter(Boolean);
   return lines.join("\n");
 }
