@@ -43,7 +43,7 @@ function cacheAvailability(key, data) {
   }
 }
 
-export default function AvailabilityPanel({ draft, onChange, onHintChange }) {
+export default function AvailabilityPanel({ draft, onChange, onHintChange, onDataChange }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(false);
@@ -65,6 +65,13 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange }) {
   const onHintChangeRef = useRef(onHintChange);
   useEffect(() => { onHintChangeRef.current = onHintChange; }, [onHintChange]);
 
+  const onDataChangeRef = useRef(onDataChange);
+  useEffect(() => { onDataChangeRef.current = onDataChange; }, [onDataChange]);
+
+  useEffect(() => {
+    onDataChangeRef.current?.(data);
+  }, [data]);
+
   /* ── Fetch ── */
   const draftReady = isDraftReady(draft);
   const draftKey = draftReady
@@ -73,6 +80,7 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange }) {
 
   useEffect(() => {
     if (!draftKey) {
+      setData(null);
       setLoading(false);
       return;
     }
@@ -87,6 +95,7 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange }) {
     }
 
     const controller = new AbortController();
+    setData(null);
     setLoading(true);
     setError(false);
     const timeoutId = window.setTimeout(() => {

@@ -68,6 +68,39 @@ const gpuLabel = (gpu) => {
   return `${gpu.description || gpu.mapping_id}${vram} [${gpu.available_count}/${gpu.device_count} 可用]${gpu.available_count <= 0 ? " — 已滿" : ""}`;
 };
 
+function buildAiScheduleOptions(availability) {
+  const slots = (availability?.days || [])
+    .flatMap((day) => day.slots || [])
+    .filter((slot) => slot.status === "available" || slot.status === "limited")
+    .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+  const runs = [];
+  for (const slot of slots) {
+    const previousRun = runs[runs.length - 1];
+    const previousSlot = previousRun?.[previousRun.length - 1];
+    if (previousSlot && new Date(previousSlot.end_at).getTime() === new Date(slot.start_at).getTime()) {
+      previousRun.push(slot);
+    } else {
+      runs.push([slot]);
+    }
+  }
+
+  const options = [];
+  for (const run of runs) {
+    for (const hours of [1, 2, 3, 4, 6, 8]) {
+      if (run.length < hours) continue;
+      const selected = run.slice(0, hours);
+      options.push({
+        start_at: selected[0].start_at,
+        end_at: selected[selected.length - 1].end_at,
+        status: selected.some((slot) => slot.status === "limited") ? "limited" : "available",
+        summary: `${hours} 小時可用時段`,
+        recommended_nodes: selected[0].recommended_nodes || [],
+      });
+    }
+  }
+  return options.slice(0, 12);
+}
+
 /* ── Validation messages（對齊舊版 zh-TW locales）── */
 const MSG = {
   hostnameRequired: "名稱為必填項",
@@ -119,6 +152,7 @@ export default function RequestFormPage({ onBack, className }) {
     memory:           2048,
     rootfs_size:      8,
     disk_size:        20,
+    service_template_slug: "",
     gpu_mapping_id:   "",
     start_at:         "",
     end_at:           "",
@@ -128,6 +162,7 @@ export default function RequestFormPage({ onBack, className }) {
   const [errors, setErrors]           = useState({});
   const [submitting, setSubmitting]   = useState(false);
   const [availabilityHint, setAvailabilityHint] = useState(null);
+  const [availabilityData, setAvailabilityData] = useState(null);
 
   /* API data */
   const [lxcTemplates, setLxcTemplates] = useState([]);
@@ -140,22 +175,22 @@ export default function RequestFormPage({ onBack, className }) {
 
   /* ── API fetches ── */
   useEffect(() => {
-    if (resourceType !== "lxc" || lxcTemplates.length > 0) return;
+    if (lxcTemplates.length > 0) return;
     setLxcLoading(true);
     apiGet("/api/v1/lxc/templates")
       .then(setLxcTemplates)
       .catch(() => {})
       .finally(() => setLxcLoading(false));
-  }, [resourceType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (resourceType !== "vm" || vmTemplates.length > 0) return;
+    if (vmTemplates.length > 0) return;
     setVmLoading(true);
     apiGet("/api/v1/vm/templates")
       .then(setVmTemplates)
       .catch(() => {})
       .finally(() => setVmLoading(false));
-  }, [resourceType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setSysTplLoading(true);
@@ -300,16 +335,43 @@ export default function RequestFormPage({ onBack, className }) {
   const recommendationContext = useMemo(() => ({
     resource_type: resourceType,
     mode,
+    hostname: form.hostname || null,
+    reason: form.reason || null,
+    service_template_slug: form.service_template_slug || null,
+    lxc_os_image: resourceType === "lxc" ? form.ostemplate || null : null,
+    vm_template_id: resourceType === "vm" && form.template_id ? Number(form.template_id) : null,
+    username: resourceType === "vm" ? form.username || null : null,
+    cores: Number(form.cores) || null,
+    memory_mb: Number(form.memory) || null,
+    disk_gb: Number(resourceType === "vm" ? form.disk_size : form.rootfs_size) || null,
+    storage: "local-lvm",
     start_at: form.start_at || null,
     end_at: form.end_at || null,
+    immediate_no_end: Boolean(form.immediate_no_end),
     selected_gpu_mapping_id: form.gpu_mapping_id || null,
     gpu_options: gpuOptions,
-  }), [resourceType, mode, form.start_at, form.end_at, form.gpu_mapping_id, gpuOptions]);
+    schedule_options: buildAiScheduleOptions(availabilityData),
+    lxc_os_options: lxcTemplates.map((template) => ({
+      value: template.volid,
+      label: formatOstemplate(template.volid),
+    })),
+    vm_os_options: vmTemplates.map((template) => ({
+      template_id: Number(template.vmid),
+      label: template.name || String(template.vmid),
+      node: template.node || "",
+    })),
+    resource_options_from_client: true,
+  }), [resourceType, mode, form, gpuOptions, availabilityData, lxcTemplates, vmTemplates]);
 
   function applyAiPrefill(prefill) {
     if (!prefill) return;
     const nextResourceType = prefill.resource_type === "vm" ? "vm" : "lxc";
     setResourceType(nextResourceType);
+    if (isPrivileged && (prefill.mode === "scheduled" || prefill.mode === "immediate")) {
+      setMode(prefill.mode);
+    } else if (!isPrivileged) {
+      setMode("scheduled");
+    }
 
     if (nextResourceType !== "lxc") setSelectedTplId("");
 
@@ -318,6 +380,9 @@ export default function RequestFormPage({ onBack, className }) {
       return {
         ...prev,
         hostname: prefill.hostname ? normalizeHostname(prefill.hostname) : prev.hostname,
+        service_template_slug: nextResourceType === "lxc"
+          ? (prefill.service_template_slug || "")
+          : "",
         ostemplate: nextResourceType === "lxc"
           ? (prefill.lxc_os_image || prev.ostemplate)
           : prev.ostemplate,
@@ -337,7 +402,12 @@ export default function RequestFormPage({ onBack, className }) {
           : prev.disk_size,
         gpu_mapping_id: nextResourceType === "vm" && prefill.gpu_mapping_id
           ? prefill.gpu_mapping_id
-          : prev.gpu_mapping_id,
+          : "",
+        start_at: prefill.start_at || prev.start_at,
+        end_at: prefill.end_at || prev.end_at,
+        immediate_no_end: typeof prefill.immediate_no_end === "boolean"
+          ? prefill.immediate_no_end
+          : prev.immediate_no_end,
         reason: prefill.reason || prev.reason,
       };
     });
@@ -467,6 +537,9 @@ export default function RequestFormPage({ onBack, className }) {
                 null,
             }),
         ...(selectedGpuId ? { gpu_mapping_id: selectedGpuId } : {}),
+        ...(resourceType === "lxc" && form.service_template_slug
+          ? { service_template_slug: form.service_template_slug }
+          : {}),
         ...(mode === "scheduled"
           ? { start_at: form.start_at, end_at: form.end_at }
           : (!form.immediate_no_end && form.end_at ? { end_at: form.end_at } : {})),
@@ -909,6 +982,7 @@ export default function RequestFormPage({ onBack, className }) {
                       setErrors((prev) => ({ ...prev, start_at: "", end_at: "" }));
                     }}
                     onHintChange={setAvailabilityHint}
+                    onDataChange={setAvailabilityData}
                   />
                   {(errors.start_at || errors.end_at) && (
                     <p className={styles.fieldError}>{errors.start_at || errors.end_at}</p>

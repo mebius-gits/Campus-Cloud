@@ -95,6 +95,10 @@ function planSummary(data) {
     prefill.cores || prefill.memory_mb || prefill.disk_gb
       ? `建議規格：${prefill.cores ?? "-"} vCPU / ${prefill.memory_mb ?? "-"} MB RAM / ${prefill.disk_gb ?? "-"} GB Disk`
       : "",
+    prefill.gpu_mapping_id ? `建議 GPU：${prefill.gpu_mapping_id}` : "",
+    prefill.start_at && prefill.end_at
+      ? `建議時段：${new Date(prefill.start_at).toLocaleString("zh-TW")} ～ ${new Date(prefill.end_at).toLocaleString("zh-TW")}`
+      : prefill.mode === "immediate" ? "建議時段：立即使用" : "",
     prefill.reason ? `申請理由：${prefill.reason}` : "",
   ].filter(Boolean);
   return lines.join("\n");
