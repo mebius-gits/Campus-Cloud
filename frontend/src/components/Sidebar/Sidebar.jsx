@@ -3,16 +3,40 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth }  from "../../contexts/AuthContext";
 import styles from "./Sidebar.module.scss";
 import MIcon from "../MIcon";
+import Avatar from "../Avatar/Avatar";
+
+const topItems = [
+  { key: "dashboard", label: "首頁", icon: "dashboard" },
+];
 
 const navGroups = [
   {
-    key: "personal",
-    label: "個人",
-    icon: "person",
+    key: "apply",
+    label: "申請",
+    icon: "edit_note",
     items: [
-      { key: "dashboard",    label: "首頁",  icon: "dashboard" },
-      { key: "my-resources", label: "我的資源", icon: "inventory_2" },
-      { key: "my-requests",  label: "我的申請", icon: "assignment" },
+      { key: "my-requests", label: "我的申請",    icon: "assignment" },
+      { key: "ai-api",      label: "AI API 申請", icon: "psychology" },
+    ],
+  },
+  {
+    key: "resource",
+    label: "資源",
+    icon: "storage",
+    items: [
+      { key: "my-resources",  label: "我的資源",    icon: "inventory_2" },
+      { key: "resource-mgmt", label: "資源管理",    icon: "storage" },
+      { key: "templates",     label: "模板管理",    icon: "library_books" },
+      { key: "gpu-mgmt",      label: "GPU 管理",    icon: "memory" },
+    ],
+  },
+  {
+    key: "review",
+    label: "審核",
+    icon: "fact_check",
+    items: [
+      { key: "request-review", label: "申請審核", icon: "fact_check" },
+      { key: "batch-review",   label: "批量審核", icon: "library_add_check" },
     ],
   },
   {
@@ -25,30 +49,6 @@ const navGroups = [
       { key: "domain",        label: "網域管理",   icon: "domain" },
       { key: "ip-management", label: "IP 管理",    icon: "lan" },
       { key: "gateway",       label: "閘道 VM",    icon: "dns" },
-    ],
-  },
-  {
-    key: "resource",
-    label: "資源",
-    icon: "storage",
-    items: [
-      { key: "resource-mgmt",  label: "資源管理", icon: "storage" },
-      { key: "templates",      label: "模板管理", icon: "library_books" },
-      { key: "gpu-mgmt",       label: "GPU 管理", icon: "memory" },
-      { key: "request-review", label: "申請審核", icon: "fact_check" },
-      { key: "batch-review",   label: "批量審核", icon: "library_add_check" },
-    ],
-  },
-  {
-    key: "ai",
-    label: "AI 服務",
-    icon: "smart_toy",
-    items: [
-      { key: "ai-api",        label: "AI API 申請", icon: "psychology" },
-      { key: "ai-api-review", label: "AI API 審核", icon: "rate_review" },
-      { key: "ai-api-keys",   label: "AI API 金鑰", icon: "vpn_key" },
-      { key: "ai-monitoring", label: "AI 監控",     icon: "monitor_heart" },
-      { key: "ai-management", label: "AI 管理",     icon: "admin_panel_settings" },
     ],
   },
   {
@@ -67,15 +67,24 @@ const navGroups = [
     label: "系統管理",
     icon: "tune",
     items: [
-      { key: "groups",    label: "群組",       icon: "groups" },
-      { key: "admin",     label: "使用者管理", icon: "admin_panel_settings" },
-      { key: "settings",  label: "系統設定",   icon: "settings" },
-      { key: "quotas",    label: "配額管理",   icon: "data_usage" },
-      { key: "monitoring", label: "資源監控",  icon: "monitor_heart" },
-      { key: "migration", label: "Migration Jobs", icon: "move_down" },
-      { key: "jobs",      label: "背景任務",   icon: "task_alt" },
-      { key: "deploy-logs", label: "部署日誌", icon: "terminal" },
-      { key: "audit",     label: "Audit Logs", icon: "receipt_long" },
+      { key: "groups",        label: "群組",       icon: "groups" },
+      { key: "admin",         label: "使用者管理", icon: "admin_panel_settings" },
+      { key: "ai-management", label: "AI 管理",    icon: "smart_toy" },
+      { key: "quotas",        label: "配額管理",   icon: "data_usage" },
+      { key: "settings",      label: "系統設定",   icon: "settings" },
+    ],
+  },
+  {
+    key: "monitoring",
+    label: "監控與日誌",
+    icon: "insights",
+    items: [
+      { key: "monitoring",    label: "資源監控",       icon: "monitor_heart" },
+      { key: "ai-monitoring", label: "AI 監控",        icon: "monitor_heart" },
+      { key: "migration",     label: "Migration Jobs", icon: "move_down" },
+      { key: "jobs",          label: "背景任務",       icon: "task_alt" },
+      { key: "deploy-logs",   label: "部署日誌",       icon: "terminal" },
+      { key: "audit",         label: "Audit Logs",     icon: "receipt_long" },
     ],
   },
 ];
@@ -214,9 +223,7 @@ function UserPopup({ user, onLogout, onSettings, onClose, triggerRef, closing })
   return (
     <div className={`${styles.userPopup} ${closing ? styles.popupClosing : styles.popupOpening}`} ref={ref}>
       <div className={styles.userPopupHeader}>
-        <div className={styles.userPopupAvatar}>
-          {user?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "U"}
-        </div>
+        <Avatar user={user} size={32} />
         <div className={styles.userPopupInfo}>
           <span className={styles.userName}>{user?.full_name ?? "—"}</span>
           <span className={styles.userEmail}>{user?.email ?? "—"}</span>
@@ -287,6 +294,18 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
 
       {/* ===== Main nav ===== */}
       <nav className={styles.nav}>
+        {topItems.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`${styles.navItem} ${active === item.key ? styles.active : ""}`}
+            onClick={() => handleNav(item.key)}
+            title={collapsed ? item.label : undefined}
+          >
+            <MIcon name={item.icon} size={20} />
+            {!collapsed && <span className={styles.navLabel}>{item.label}</span>}
+          </button>
+        ))}
         {navGroups.map((group) => (
           <NavGroup
             key={group.key}
@@ -345,9 +364,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggle, onClose }) {
             onClick={userPopup.toggle}
             title={collapsed ? (user?.full_name ?? user?.email) : undefined}
           >
-            <div className={styles.avatar}>
-              {user?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "U"}
-            </div>
+            <Avatar user={user} size={32} className={styles.avatar} />
             {!collapsed && (
               <>
                 <div className={styles.userInfo}>

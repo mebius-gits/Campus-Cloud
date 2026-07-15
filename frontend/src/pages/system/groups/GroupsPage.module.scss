@@ -145,12 +145,8 @@
   align-items: center;
   gap: $spacing-16;
   padding: $spacing-16;
-  background: var(--color-surface-glass);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  border: 1px solid var(--color-surface-glass-border);
+  @include glass-surface($shadow: var(--shadow-sm));
   border-radius: $radius-12;
-  box-shadow: var(--shadow-sm);
   transition: box-shadow $transition-base;
 
   &:hover {
@@ -294,12 +290,8 @@
   @include flex-column;
   gap: $spacing-16;
   padding: $spacing-24;
-  background: var(--color-surface-glass);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  border: 1px solid var(--color-surface-glass-border);
+  @include glass-surface($shadow: var(--shadow-sm));
   border-radius: $radius-12;
-  box-shadow: var(--shadow-sm);
 }
 
 .memberCardHead {
@@ -386,7 +378,7 @@
 }
 
 .badge_success { background: color-mix(in srgb, #28a745 12%, transparent); color: #28a745; }
-.badge_info    { background: color-mix(in srgb, #2b4d98 12%, transparent); color: #2b4d98; }
+.badge_info    { background: color-mix(in srgb, var(--color-primary-dark) 12%, transparent); color: var(--color-primary-dark); }
 .badge_danger  { background: color-mix(in srgb, #dc3545 12%, transparent); color: #dc3545; }
 .badge_muted   { background: var(--color-hover); color: var(--color-text-muted); }
 
@@ -409,12 +401,8 @@
   @include flex-column;
   gap: $spacing-16;
   padding: $spacing-24;
-  background: var(--color-surface-glass);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  border: 1px solid var(--color-surface-glass-border);
+  @include glass-surface($shadow: var(--shadow-lg));
   border-radius: $radius-12;
-  box-shadow: var(--shadow-lg);
 }
 
 .modalWide {
@@ -523,11 +511,11 @@
 }
 
 .noticeInfo {
-  border: 1px solid color-mix(in srgb, #2b4d98 30%, transparent);
-  background: color-mix(in srgb, #2b4d98 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary-dark) 30%, transparent);
+  background: color-mix(in srgb, var(--color-primary-dark) 8%, transparent);
   color: var(--color-text-secondary);
 
-  strong { color: #2b4d98; }
+  strong { color: var(--color-primary-dark); }
 }
 
 .noticeDanger {

@@ -12,6 +12,7 @@ const KEY_PRIMARY = "SkyLab-theme-primary";
 const KEY_STYLE = "SkyLab-theme-style";
 const KEY_BACKGROUND = "SkyLab-theme-background";
 const KEY_BACKGROUND_COLOR = "SkyLab-theme-background-color";
+const KEY_BACKGROUND_IMAGE = "SkyLab-theme-background-image";
 
 export const THEME_DEFAULTS = Object.freeze({
   mode: "system",
@@ -19,6 +20,7 @@ export const THEME_DEFAULTS = Object.freeze({
   style: "glass",
   backgroundId: "auto-gradient",
   backgroundColor: "", // 空字串 = 跟隨主色
+  backgroundImage: "", // 上傳背景圖的 data URL，空字串 = 未設定
 });
 
 function read(key, fallback) {
@@ -38,19 +40,21 @@ export const themePreferenceStore = {
       style: read(KEY_STYLE, THEME_DEFAULTS.style),
       backgroundId: read(KEY_BACKGROUND, THEME_DEFAULTS.backgroundId),
       backgroundColor: read(KEY_BACKGROUND_COLOR, THEME_DEFAULTS.backgroundColor),
+      backgroundImage: read(KEY_BACKGROUND_IMAGE, THEME_DEFAULTS.backgroundImage),
     };
   },
 
   /** 局部更新，只寫入有傳的欄位 */
-  save({ mode, primaryColor, style, backgroundId, backgroundColor } = {}) {
+  save({ mode, primaryColor, style, backgroundId, backgroundColor, backgroundImage } = {}) {
     try {
       if (mode !== undefined) localStorage.setItem(KEY_MODE, mode);
       if (primaryColor !== undefined) localStorage.setItem(KEY_PRIMARY, primaryColor);
       if (style !== undefined) localStorage.setItem(KEY_STYLE, style);
       if (backgroundId !== undefined) localStorage.setItem(KEY_BACKGROUND, backgroundId);
       if (backgroundColor !== undefined) localStorage.setItem(KEY_BACKGROUND_COLOR, backgroundColor);
+      if (backgroundImage !== undefined) localStorage.setItem(KEY_BACKGROUND_IMAGE, backgroundImage);
     } catch {
-      /* localStorage 不可用（如隱私模式）時靜默略過 */
+      /* localStorage 不可用（如隱私模式）或容量不足時靜默略過 */
     }
   },
 };
