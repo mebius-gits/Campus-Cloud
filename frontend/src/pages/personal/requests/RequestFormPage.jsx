@@ -87,8 +87,6 @@ const fromDateInputValue = (value, endOfDay = false) => {
   return date.toISOString();
 };
 const GPU_OPTIONS_DEBOUNCE_MS = 300;
-const ADVISE_DEBOUNCE_MS = 500;
-const CONFIDENCE_LABEL = { high: "高信心", medium: "中信心", low: "低信心" };
 const gpuLabel = (gpu) => {
   const vram = gpu.total_vram_mb > 0
     ? ` (${gpu.total_vram_mb >= 1024 ? `${(gpu.total_vram_mb / 1024).toFixed(0)} GB` : `${gpu.total_vram_mb} MB`})`
@@ -168,11 +166,6 @@ export default function RequestFormPage({ onBack, className }) {
   const [sysTemplates, setSysTemplates]   = useState([]);
   const [sysTplLoading, setSysTplLoading] = useState(false);
   const [selectedTplId, setSelectedTplId] = useState("");
-
-  /* 類型選擇模式：manual = 手動選 LXC/VM；auto = 規則引擎自動判斷 */
-  const [typeMode, setTypeMode]           = useState("manual");
-  const [advice, setAdvice]               = useState(null);
-  const [adviseLoading, setAdviseLoading] = useState(false);
 
   /* Form state */
   const [resourceType, setResourceType] = useState("lxc");
@@ -328,53 +321,6 @@ export default function RequestFormPage({ onBack, className }) {
     setForm((prev) => ({ ...prev, [key]: val }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: "" }));
   }
-
-  /* ── VM vs LXC 自動判斷（Auto 模式）── */
-  const adviseRequest = useMemo(() => ({
-    os_info: resourceType === "lxc"
-      ? (selectedTpl?.name || (form.ostemplate ? formatOstemplate(form.ostemplate) : null))
-      : (vmTemplates.find((t) => String(t.vmid) === String(form.template_id))?.name || null),
-    reason: form.reason.trim() || null,
-    cores: Number(form.cores) || null,
-    memory: Number(form.memory) || null,
-    gpu_mapping_id: form.gpu_mapping_id?.trim() || null,
-  }), [
-    resourceType,
-    selectedTpl,
-    vmTemplates,
-    form.ostemplate,
-    form.template_id,
-    form.reason,
-    form.cores,
-    form.memory,
-    form.gpu_mapping_id,
-  ]);
-
-  /* 500ms debounce，避免每個按鍵都打 advise API */
-  useEffect(() => {
-    if (typeMode !== "auto") return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setAdviseLoading(true);
-      VmRequestsService.advise(adviseRequest)
-        .then((res) => { if (!cancelled) setAdvice(res); })
-        .catch(() => {
-          /* advisor 被管理員停用（400）→ 退回手動模式 */
-          if (cancelled) return;
-          setTypeMode("manual");
-          setAdvice(null);
-          toast.error("自動判斷目前未啟用，已切換為手動選擇。");
-        })
-        .finally(() => { if (!cancelled) setAdviseLoading(false); });
-    }, ADVISE_DEBOUNCE_MS);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [typeMode, adviseRequest]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* 建議結果 → 同步 resource_type（範本欄位區隨之切換） */
-  useEffect(() => {
-    if (typeMode !== "auto" || !advice) return;
-    if (advice.resource_type !== resourceType) setResourceType(advice.resource_type);
-  }, [typeMode, advice, resourceType]);
 
   const recommendationContext = useMemo(() => ({
     resource_type: resourceType,
@@ -566,7 +512,6 @@ export default function RequestFormPage({ onBack, className }) {
         memory:    form.memory,
         reason:    form.reason.trim(),
         storage:   "local-lvm",
-        requested_mode: typeMode,
         ...(resourceType === "lxc"
           ? {
               rootfs_size: form.rootfs_size,
@@ -669,75 +614,20 @@ export default function RequestFormPage({ onBack, className }) {
               <h2 className={styles.sectionTitle}>類型</h2>
               <div className={styles.typeToggle}>
                 {[
-                  { key: "auto",   label: "自動判斷（推薦）", icon: "auto_fix_high" },
-                  { key: "manual", label: "手動選擇",        icon: "tune" },
-                ].map((m) => (
+                  { key: "lxc", label: "LXC 容器",      icon: "dashboard" },
+                  { key: "vm",  label: "QEMU 虛擬機", icon: "computer"  },
+                ].map((t) => (
                   <button
-                    key={m.key}
+                    key={t.key}
                     type="button"
-                    className={`${styles.typeBtn} ${typeMode === m.key ? styles.typeBtnActive : ""}`}
-                    onClick={() => setTypeMode(m.key)}
+                    className={`${styles.typeBtn} ${resourceType === t.key ? styles.typeBtnActive : ""}`}
+                    onClick={() => setResourceType(t.key)}
                   >
-                    <MIcon name={m.icon} size={16} />
-                    {m.label}
+                    <MIcon name={t.icon} size={16} />
+                    {t.label}
                   </button>
                 ))}
               </div>
-
-              {typeMode === "auto" && (
-                <div className={styles.adviceCard}>
-                  {adviseLoading && !advice ? (
-                    <p className={styles.adviceEmpty}>
-                      <MIcon name="progress_activity" size={14} className={styles.adviceSpin} />
-                      分析工作負載中…
-                    </p>
-                  ) : advice ? (
-                    <>
-                      <div className={styles.adviceHeader}>
-                        <MIcon name={advice.resource_type === "vm" ? "computer" : "dashboard"} size={16} />
-                        <span className={styles.adviceTitle}>
-                          建議使用 {advice.resource_type === "vm" ? "QEMU 虛擬機" : "LXC 容器"}
-                        </span>
-                        <span className={styles.adviceBadge}>
-                          {CONFIDENCE_LABEL[advice.confidence] ?? advice.confidence}
-                        </span>
-                        {adviseLoading && (
-                          <MIcon name="progress_activity" size={13} className={styles.adviceSpin} />
-                        )}
-                      </div>
-                      <ul className={styles.adviceReasons}>
-                        {advice.reasons.map((reason) => (
-                          <li key={reason}>{reason}</li>
-                        ))}
-                      </ul>
-                      <p className={styles.adviceFootnote}>
-                        建議會依「用途說明、範本、規格、GPU」即時更新；如需固定類型請改用手動選擇。
-                      </p>
-                    </>
-                  ) : (
-                    <p className={styles.adviceEmpty}>填寫用途說明與規格後即會顯示建議。</p>
-                  )}
-                </div>
-              )}
-
-              {typeMode === "manual" && (
-                <div className={styles.typeToggle}>
-                  {[
-                    { key: "lxc", label: "LXC 容器",   icon: "dashboard" },
-                    { key: "vm",  label: "QEMU 虛擬機", icon: "computer"  },
-                  ].map((t) => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      className={`${styles.typeBtn} ${resourceType === t.key ? styles.typeBtnActive : ""}`}
-                      onClick={() => setResourceType(t.key)}
-                    >
-                      <MIcon name={t.icon} size={16} />
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* ── LXC 設定 ── */}
@@ -1135,12 +1025,6 @@ export default function RequestFormPage({ onBack, className }) {
                   <MIcon name={resourceType === "lxc" ? "dashboard" : "computer"} size={12} />
                   {resourceType === "lxc" ? "LXC 容器" : "QEMU 虛擬機"}
                 </span>
-                {typeMode === "auto" && (
-                  <span className={`${styles.summaryChip} ${styles.summaryChipAuto}`}>
-                    <MIcon name="auto_fix_high" size={12} />
-                    自動判斷
-                  </span>
-                )}
                 {isPrivileged && (
                   <span className={`${styles.summaryChip} ${mode === "scheduled" ? styles.summaryChipScheduled : styles.summaryChipImmediate}`}>
                     <MIcon name={mode === "scheduled" ? "calendar_month" : "bolt"} size={12} />
