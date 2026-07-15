@@ -928,11 +928,10 @@ export default function RequestFormPage({ onBack, className }) {
                       />
                     </FieldGroup>
                   </div>
-                  <p className={styles.fieldHint}>
-                    可直接輸入日期，範圍以現在起三個月內為主；系統會以整日計算租借區間。
-                  </p>
                   <div className={styles.scheduleDivider}><span>或使用可用性月曆</span></div>
                   <AvailabilityPanel
+                    startAt={form.start_at}
+                    endAt={form.end_at}
                     draft={{
                       resource_type: resourceType,
                       cores:         form.cores,

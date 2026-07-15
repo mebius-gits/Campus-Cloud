@@ -2,6 +2,7 @@
  * AvailabilityPanel — 月曆日期範圍選擇器版
  * Props:
  *   draft         { resource_type, cores, memory, disk_size?, rootfs_size?, gpu_required?, gpu_mapping_id? }
+ *   startAt/endAt Current form range; keeps direct input, AI import, and calendar selection in sync
  *   onChange      ({ start_at: string|null, end_at: string|null }) => void
  *   onHintChange  (hint: string|null) => void  — contextual UX hint for the parent to display
  */
@@ -31,6 +32,12 @@ function localDateAt(dateStr, hour, minute = 0, second = 0) {
   return new Date(year, month - 1, day, hour, minute, second, 0);
 }
 
+function dateStrFromValue(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : toDateStr(date);
+}
+
 function isDraftReady(draft) {
   if (!draft?.resource_type || !draft?.cores || !draft?.memory) return false;
   return draft.resource_type === "vm" ? Boolean(draft.disk_size) : Boolean(draft.rootfs_size);
@@ -43,7 +50,7 @@ function cacheAvailability(key, data) {
   }
 }
 
-export default function AvailabilityPanel({ draft, onChange, onHintChange, onDataChange }) {
+export default function AvailabilityPanel({ draft, startAt, endAt, onChange, onHintChange, onDataChange }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(false);
@@ -60,8 +67,8 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate]     = useState(null);
+  const [startDate, setStartDate] = useState(() => dateStrFromValue(startAt));
+  const [endDate, setEndDate]     = useState(() => dateStrFromValue(endAt));
   const [hoverDate, setHoverDate] = useState(null);
   const [picking, setPicking]     = useState(PICK_IDLE);
 
@@ -73,6 +80,15 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
 
   const onDataChangeRef = useRef(onDataChange);
   useEffect(() => { onDataChangeRef.current = onDataChange; }, [onDataChange]);
+
+  useEffect(() => {
+    const nextStartDate = dateStrFromValue(startAt);
+    const nextEndDate = dateStrFromValue(endAt);
+    if (startDate === nextStartDate && endDate === nextEndDate) return;
+    setStartDate(nextStartDate);
+    setEndDate(nextEndDate);
+    setPicking(PICK_IDLE);
+  }, [startAt, endAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     onDataChangeRef.current?.(data);
