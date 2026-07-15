@@ -337,9 +337,20 @@
   display: flex;
   align-items: flex-end;
   gap: $spacing-8;
+  width: 100%;
+  min-width: 0;
   animation: msgIn 0.18s ease;
 
-  &.aiMsgRowUser { flex-direction: row-reverse; }
+  &.aiMsgRowUser {
+    flex-direction: row-reverse;
+
+    .aiMsgBubble { margin-left: auto; }
+  }
+}
+
+.aiActionRow {
+  padding-left: 30px;
+  align-items: center;
 }
 
 @keyframes msgIn {
@@ -359,6 +370,7 @@
 
 .aiMsgBubble {
   max-width: 80%;
+  min-width: 0;
   padding: 8px 12px;
   font-size: $font-size-14;
   line-height: $line-height-base;
@@ -490,6 +502,7 @@
   display: flex;
   align-items: center;
   gap: $spacing-8;
+  min-width: 0;
 }
 
 .aiTemplateBtn {
@@ -503,6 +516,11 @@
   color: var(--color-text-secondary);
   font-size: $font-size-12;
   font-family: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+  max-width: 100%;
+  min-height: 30px;
+  box-sizing: border-box;
   cursor: pointer;
   transition: border-color $transition-base, color $transition-base, background $transition-base;
 
@@ -513,6 +531,16 @@
   }
 
   &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.aiInputToolbar .aiTemplateBtn {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.aiImportBtn {
+  flex: 0 1 auto;
+  justify-content: center;
 }
 
 .aiSendBtn {
@@ -638,6 +666,34 @@
   @include respond-to(sm) {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+.scheduleInputGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: $spacing-16;
+
+  @include respond-to(sm) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.scheduleDivider {
+  display: flex;
+  align-items: center;
+  gap: $spacing-8;
+  color: var(--color-text-secondary);
+  font-size: $font-size-12;
+
+  &::before,
+  &::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--color-border);
+  }
+
+  span { white-space: nowrap; }
 }
 
 .formGroup {

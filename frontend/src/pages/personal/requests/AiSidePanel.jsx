@@ -97,7 +97,7 @@ function planSummary(data) {
       : "",
     prefill.gpu_mapping_id ? `建議 GPU：${prefill.gpu_mapping_id}` : "",
     prefill.start_at && prefill.end_at
-      ? `建議時段：${new Date(prefill.start_at).toLocaleString("zh-TW")} ～ ${new Date(prefill.end_at).toLocaleString("zh-TW")}`
+      ? `建議日期：${new Date(prefill.start_at).toLocaleDateString("zh-TW")} ～ ${new Date(prefill.end_at).toLocaleDateString("zh-TW")}`
       : prefill.mode === "immediate" ? "建議時段：立即使用" : "",
     prefill.reason ? `申請理由：${prefill.reason}` : "",
   ].filter(Boolean);
@@ -217,11 +217,10 @@ export default function AiSidePanel({
           </div>
         )}
         {latestPlan?.final_plan?.form_prefill && onImportPlan && (
-          <div className={styles.aiMsgRow}>
-            <div className={styles.aiAvatar}><MIcon name="auto_fix_high" size={13} /></div>
+          <div className={`${styles.aiMsgRow} ${styles.aiActionRow}`}>
             <button
               type="button"
-              className={styles.aiTemplateBtn}
+              className={`${styles.aiTemplateBtn} ${styles.aiImportBtn}`}
               onClick={() => onImportPlan(latestPlan.final_plan.form_prefill)}
             >
               <MIcon name="download" size={14} />

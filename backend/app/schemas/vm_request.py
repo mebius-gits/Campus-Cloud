@@ -246,7 +246,7 @@ class VMRequestAvailabilityRequest(BaseModel):
     instance_count: int = Field(default=1, ge=1, le=100)
     gpu_required: int = Field(default=0, ge=0, le=16)
     gpu_mapping_id: str | None = Field(default=None, max_length=128)
-    days: int = Field(default=7, ge=1, le=14)
+    days: int = Field(default=7, ge=1, le=90)
     timezone: str = Field(default="Asia/Taipei", min_length=1, max_length=64)
     policy_role: UserRole | None = None
     detail: bool = Field(
@@ -341,7 +341,7 @@ class VMRequestAvailabilitySummary(BaseModel):
     role: str
     role_label: str
     policy_window: str
-    checked_days: int = Field(ge=1, le=14)
+    checked_days: int = Field(ge=1, le=90)
     feasible_slot_count: int = Field(default=0, ge=0)
     recommended_slot_count: int = Field(default=0, ge=0)
     current_status: str

@@ -50,6 +50,12 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
 
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toDateStr(today), [today]);
+  const maxDate = useMemo(() => {
+    const value = new Date(today);
+    value.setDate(value.getDate() + 90);
+    return value;
+  }, [today]);
+  const maxDateStr = useMemo(() => toDateStr(maxDate), [maxDate]);
 
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -142,7 +148,7 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
 
   function isDateSelectable(dateStr) {
     const level = getDayLevel(dateStr);
-    return Boolean(dateStr) && dateStr >= todayStr && level && level !== "none";
+    return Boolean(dateStr) && dateStr >= todayStr && dateStr <= maxDateStr && level && level !== "none";
   }
 
   useEffect(() => {
@@ -164,13 +170,20 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
   }, [viewYear, viewMonth]);
 
   function prevMonth() {
+    if (viewYear === today.getFullYear() && viewMonth === today.getMonth()) return;
     if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11); }
     else setViewMonth((m) => m - 1);
   }
   function nextMonth() {
+    if (viewYear === maxDate.getFullYear() && viewMonth === maxDate.getMonth()) return;
     if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0); }
     else setViewMonth((m) => m + 1);
   }
+
+  const canGoPrevious = viewYear > today.getFullYear()
+    || (viewYear === today.getFullYear() && viewMonth > today.getMonth());
+  const canGoNext = viewYear < maxDate.getFullYear()
+    || (viewYear === maxDate.getFullYear() && viewMonth < maxDate.getMonth());
 
   /* ── Day click ── */
   function handleDayClick(dateStr, level) {
@@ -242,11 +255,11 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
       {/* ── Calendar ── */}
       <div className={styles.calendar}>
         <div className={styles.calendarNav}>
-          <button type="button" className={styles.calendarNavBtn} onClick={prevMonth}>
+          <button type="button" className={styles.calendarNavBtn} onClick={prevMonth} disabled={!canGoPrevious}>
             <MIcon name="chevron_left" size={18} />
           </button>
           <span className={styles.calendarTitle}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
-          <button type="button" className={styles.calendarNavBtn} onClick={nextMonth}>
+          <button type="button" className={styles.calendarNavBtn} onClick={nextMonth} disabled={!canGoNext}>
             <MIcon name="chevron_right" size={18} />
           </button>
         </div>
@@ -259,7 +272,7 @@ export default function AvailabilityPanel({ draft, onChange, onHintChange, onDat
             const dateStr  = toDateStr(d);
             const level    = getDayLevel(dateStr);
             const isPast   = dateStr < todayStr;
-            const unavailable = isPast || !level || level === "none";
+            const unavailable = isPast || dateStr > maxDateStr || !level || level === "none";
             const disabled = unavailable;
             const isStart   = dateStr === startDate;
             const isEnd     = dateStr === endDate;

@@ -57,7 +57,35 @@ function SelectField({ value, onChange, disabled, children, placeholder }) {
 /* ── Helpers ── */
 const DT_FMT = { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" };
 const formatDT = (iso) => new Date(iso).toLocaleString("zh-TW", DT_FMT);
+const formatDateOnly = (iso) => new Date(iso).toLocaleDateString("zh-TW", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 const formatOstemplate = (v) => v.split("/").pop()?.replace(".tar.zst", "") ?? v;
+const toDateTimeLocalValue = (value) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const fromDateTimeLocalValue = (value) => value ? new Date(value).toISOString() : "";
+const toDateInputValue = (value) => toDateTimeLocalValue(value).slice(0, 10);
+const fromDateInputValue = (value, endOfDay = false) => {
+  if (!value) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(
+    year,
+    month - 1,
+    day,
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    0,
+  );
+  return date.toISOString();
+};
 const GPU_OPTIONS_DEBOUNCE_MS = 300;
 const ADVISE_DEBOUNCE_MS = 500;
 const CONFIDENCE_LABEL = { high: "高信心", medium: "中信心", low: "低信心" };
@@ -69,32 +97,38 @@ const gpuLabel = (gpu) => {
 };
 
 function buildAiScheduleOptions(availability) {
-  const slots = (availability?.days || [])
-    .flatMap((day) => day.slots || [])
-    .filter((slot) => slot.status === "available" || slot.status === "limited")
-    .sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+  const days = (availability?.days || [])
+    .filter((day) => (day.slots || []).some(
+      (slot) => slot.status === "available" || slot.status === "limited",
+    ))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const runs = [];
-  for (const slot of slots) {
+  for (const day of days) {
     const previousRun = runs[runs.length - 1];
-    const previousSlot = previousRun?.[previousRun.length - 1];
-    if (previousSlot && new Date(previousSlot.end_at).getTime() === new Date(slot.start_at).getTime()) {
-      previousRun.push(slot);
+    const previousDay = previousRun?.[previousRun.length - 1];
+    const expectedDate = previousDay
+      ? new Date(`${previousDay.date}T00:00:00`)
+      : null;
+    expectedDate?.setDate(expectedDate.getDate() + 1);
+    if (previousDay && toDateInputValue(expectedDate) === day.date) {
+      previousRun.push(day);
     } else {
-      runs.push([slot]);
+      runs.push([day]);
     }
   }
 
   const options = [];
   for (const run of runs) {
-    for (const hours of [1, 2, 3, 4, 6, 8]) {
-      if (run.length < hours) continue;
-      const selected = run.slice(0, hours);
+    for (const dayCount of [1, 3, 7, 14, 30]) {
+      if (run.length < dayCount) continue;
+      const selected = run.slice(0, dayCount);
+      const selectedSlots = selected.flatMap((day) => day.slots || []);
       options.push({
-        start_at: selected[0].start_at,
-        end_at: selected[selected.length - 1].end_at,
-        status: selected.some((slot) => slot.status === "limited") ? "limited" : "available",
-        summary: `${hours} 小時可用時段`,
-        recommended_nodes: selected[0].recommended_nodes || [],
+        start_at: fromDateInputValue(selected[0].date),
+        end_at: fromDateInputValue(selected[selected.length - 1].date, true),
+        status: selectedSlots.some((slot) => slot.status === "limited") ? "limited" : "available",
+        summary: `${dayCount} 天可用時段`,
+        recommended_nodes: selectedSlots.find((slot) => slot.recommended_nodes?.length)?.recommended_nodes || [],
       });
     }
   }
@@ -112,10 +146,11 @@ const MSG = {
   templateRequired: "範本為必填項",
   osRequired:       "作業系統為必填項",
   usernameRequired: "使用者名稱為必填項",
-  startRequired:    "請選擇開始時間",
-  endRequired:      "請選擇結束時間",
-  endBeforeStart:   "結束時間必須晚於開始時間",
+  startRequired:    "請選擇開始日期",
+  endRequired:      "請選擇結束日期",
+  endBeforeStart:   "結束日期必須晚於開始日期",
   endInPast:        "結束時間必須晚於現在",
+  scheduleOutOfRange: "租借時段需在未來三個月內",
 };
 
 export default function RequestFormPage({ onBack, className }) {
@@ -161,8 +196,17 @@ export default function RequestFormPage({ onBack, className }) {
   });
   const [errors, setErrors]           = useState({});
   const [submitting, setSubmitting]   = useState(false);
-  const [availabilityHint, setAvailabilityHint] = useState(null);
   const [availabilityData, setAvailabilityData] = useState(null);
+  const scheduleBounds = useMemo(() => {
+    const minimum = new Date();
+    minimum.setSeconds(0, 0);
+    const maximum = new Date(minimum);
+    maximum.setDate(maximum.getDate() + 90);
+    return {
+      min: toDateTimeLocalValue(minimum),
+      max: toDateTimeLocalValue(maximum),
+    };
+  }, []);
 
   /* API data */
   const [lxcTemplates, setLxcTemplates] = useState([]);
@@ -403,8 +447,12 @@ export default function RequestFormPage({ onBack, className }) {
         gpu_mapping_id: nextResourceType === "vm" && prefill.gpu_mapping_id
           ? prefill.gpu_mapping_id
           : "",
-        start_at: prefill.start_at || prev.start_at,
-        end_at: prefill.end_at || prev.end_at,
+        start_at: prefill.start_at
+          ? fromDateInputValue(toDateInputValue(prefill.start_at))
+          : prev.start_at,
+        end_at: prefill.end_at
+          ? fromDateInputValue(toDateInputValue(prefill.end_at), true)
+          : prev.end_at,
         immediate_no_end: typeof prefill.immediate_no_end === "boolean"
           ? prefill.immediate_no_end
           : prev.immediate_no_end,
@@ -446,6 +494,11 @@ export default function RequestFormPage({ onBack, className }) {
       if (!form.end_at)   errs.end_at   = MSG.endRequired;
       if (form.start_at && form.end_at && new Date(form.start_at) >= new Date(form.end_at))
         errs.end_at = MSG.endBeforeStart;
+      const maximum = new Date(scheduleBounds.max);
+      if (form.start_at && new Date(form.start_at) > maximum)
+        errs.start_at = MSG.scheduleOutOfRange;
+      if (form.end_at && new Date(form.end_at) > maximum)
+        errs.end_at = MSG.scheduleOutOfRange;
     }
     if (mode === "immediate" && !form.immediate_no_end && form.end_at) {
       if (new Date(form.end_at) <= new Date()) errs.end_at = MSG.endInPast;
@@ -932,9 +985,6 @@ export default function RequestFormPage({ onBack, className }) {
                 <h2 className={styles.sectionTitle}>
                   {mode === "immediate" ? "立即模式設定" : "租借時段"}
                 </h2>
-                {mode === "scheduled" && availabilityHint && (
-                  <span className={styles.sectionHint}>{availabilityHint}</span>
-                )}
               </div>
 
               {mode === "immediate" ? (
@@ -954,16 +1004,44 @@ export default function RequestFormPage({ onBack, className }) {
                   {!form.immediate_no_end && (
                     <FieldGroup label="結束時間" error={errors.end_at}>
                       <input
-                        type="datetime-local"
-                        className={styles.input}
-                        value={form.end_at}
-                        onChange={(e) => set("end_at", e.target.value)}
+                      type="datetime-local"
+                      className={styles.input}
+                      min={scheduleBounds.min}
+                      max={scheduleBounds.max}
+                      value={toDateTimeLocalValue(form.end_at)}
+                      onChange={(e) => set("end_at", fromDateTimeLocalValue(e.target.value))}
                       />
                     </FieldGroup>
                   )}
                 </>
               ) : (
                 <>
+                  <div className={styles.scheduleInputGrid}>
+                    <FieldGroup label="開始日期" required error={errors.start_at}>
+                      <input
+                        type="date"
+                        className={styles.input}
+                        min={scheduleBounds.min.slice(0, 10)}
+                        max={scheduleBounds.max.slice(0, 10)}
+                        value={toDateInputValue(form.start_at)}
+                        onChange={(e) => set("start_at", fromDateInputValue(e.target.value))}
+                      />
+                    </FieldGroup>
+                    <FieldGroup label="結束日期" required error={errors.end_at}>
+                      <input
+                        type="date"
+                        className={styles.input}
+                        min={toDateInputValue(form.start_at) || scheduleBounds.min.slice(0, 10)}
+                        max={scheduleBounds.max.slice(0, 10)}
+                        value={toDateInputValue(form.end_at)}
+                        onChange={(e) => set("end_at", fromDateInputValue(e.target.value, true))}
+                      />
+                    </FieldGroup>
+                  </div>
+                  <p className={styles.fieldHint}>
+                    可直接輸入日期，範圍以現在起三個月內為主；系統會以整日計算租借區間。
+                  </p>
+                  <div className={styles.scheduleDivider}><span>或使用可用性月曆</span></div>
                   <AvailabilityPanel
                     draft={{
                       resource_type: resourceType,
@@ -981,12 +1059,8 @@ export default function RequestFormPage({ onBack, className }) {
                       setForm((prev) => ({ ...prev, start_at: start_at ?? "", end_at: end_at ?? "" }));
                       setErrors((prev) => ({ ...prev, start_at: "", end_at: "" }));
                     }}
-                    onHintChange={setAvailabilityHint}
                     onDataChange={setAvailabilityData}
                   />
-                  {(errors.start_at || errors.end_at) && (
-                    <p className={styles.fieldError}>{errors.start_at || errors.end_at}</p>
-                  )}
                 </>
               )}
             </div>
@@ -1159,11 +1233,11 @@ export default function RequestFormPage({ onBack, className }) {
                 <>
                   <div className={styles.summaryRow}>
                     <span className={styles.summaryLabel}>開始</span>
-                    <span className={styles.summaryTimeValue}>{formatDT(form.start_at)}</span>
+                    <span className={styles.summaryTimeValue}>{formatDateOnly(form.start_at)}</span>
                   </div>
                   <div className={styles.summaryRow}>
                     <span className={styles.summaryLabel}>結束</span>
-                    <span className={styles.summaryTimeValue}>{formatDT(form.end_at)}</span>
+                    <span className={styles.summaryTimeValue}>{formatDateOnly(form.end_at)}</span>
                   </div>
                 </>
               ) : (
