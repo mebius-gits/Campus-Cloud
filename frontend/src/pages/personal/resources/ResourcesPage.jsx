@@ -511,18 +511,18 @@ export default function ResourcesPage() {
   const pendingSigRef = useRef(null);
 
   /** silent = true 時不觸發 skeleton / error state，供背景同步使用 */
-  const fetchResources = useCallback(async (silent = false) => {
+  const fetchResources = useCallback(async (silent = false, signal) => {
     if (!silent) {
       setLoading(true);
       setError(false);
     }
     try {
-      const data = await ResourcesService.list();
+      const data = await ResourcesService.list({ signal });
       setResources(data ?? []);
-    } catch {
-      if (!silent) setError(true);
+    } catch (err) {
+      if (!silent && !err?.cancelled) setError(true);
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && !signal?.aborted) setLoading(false);
     }
   }, []);
 
@@ -542,7 +542,9 @@ export default function ResourcesPage() {
   }, [fetchResources]);
 
   useEffect(() => {
-    fetchResources();
+    const controller = new AbortController();
+    fetchResources(false, controller.signal);
+    return () => controller.abort();
   }, [fetchResources]);
 
   useEffect(() => {
