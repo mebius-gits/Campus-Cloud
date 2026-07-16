@@ -243,7 +243,7 @@ def _build_availability_response(
     stack_label: str,
 ) -> VMRequestAvailabilityResponse:
     tz = _resolve_timezone(source_request.timezone)
-    days = max(1, min(int(source_request.days), 14))
+    days = max(1, min(int(source_request.days), 90))
     allowed_start, allowed_end = _ALL_DAY_POLICY_WINDOW
 
     placement_request = _to_placement_request(source_request)
