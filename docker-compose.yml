@@ -223,10 +223,10 @@ services:
       - skylab
 
   # -------------------------
-  # LiteLLM AI API Gateway (staging only)
+  # LiteLLM AI API Gateway
   # -------------------------
-  # This service has no database in Phase 2.  Do not add DATABASE_URL or a
-  # production Virtual Key here; those belong to the later production phase.
+  # Phase 4 adds an isolated PostgreSQL database; the Campus application
+  # database is never mounted or shared with this service.
   # Host networking is deliberate: vLLM stays a host process bound to
   # 127.0.0.1, so its 8103/8104 ports are never exposed through Docker.
   litellm:
@@ -239,12 +239,19 @@ services:
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       VLLM_UPSTREAM_API_KEY: ${VLLM_UPSTREAM_API_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-}
+      LITELLM_SERVICE_API_KEY: ${LITELLM_SERVICE_API_KEY:-}
       DO_NOT_TRACK: "true"
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
         : "$${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set for the ai-api profile}"
         : "$${VLLM_UPSTREAM_API_KEY:?VLLM_UPSTREAM_API_KEY must be set for the ai-api profile}"
+        : "$${DATABASE_URL:?DATABASE_URL must be set for the ai-api profile}"
+        : "$${LITELLM_SALT_KEY:?LITELLM_SALT_KEY must be set for the ai-api profile}"
+        : "$${LITELLM_SERVICE_API_KEY:?LITELLM_SERVICE_API_KEY must be set for the ai-api profile}"
+        unset LITELLM_SERVICE_API_KEY
         exec litellm --config /app/config.yaml --host 0.0.0.0 --port 4000 --telemetry False
     healthcheck:
       test:

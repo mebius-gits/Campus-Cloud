@@ -1,35 +1,32 @@
-# LiteLLM staging (Phase 2)
+# LiteLLM deployment
 
 This directory contains the static policy only.  The deployment list is
 always generated from `../models.json`, so alias, served model name, vLLM port
 and RPM cannot drift between the launcher and LiteLLM.
 
-## Start staging
+## Phase 4 production database and service identity
 
-On the multi-model host, start the host vLLM processes first:
+After Phase 3 contracts have passed, provision an isolated `litellm` database
+and role with the existing PostgreSQL administrator credentials from the root
+`.env`. Never run Campus Alembic against that database and never grant the
+LiteLLM role write access to Campus schemas or tables.
 
 ```bash
+# Generate the production config after injecting the service-key environment
+# variable. The generated config must contain only environment references.
 cd vllm-service
-./start_multi_model_cluster.sh
-./.venv/bin/python tools/generate_litellm_config.py --mode integration
+LITELLM_SERVICE_API_KEY=<campus-service-key> \
+  ./.venv/bin/python tools/generate_litellm_config.py --mode production
 cd ..
-./scripts/record-litellm-image.sh
-```
-
-Copy the variables in `.env.example` into the root deployment `.env` and
-replace every placeholder. `VLLM_UPSTREAM_API_KEY` must match the `API_KEY`
-that the two vLLM instances use. These keys are for isolated staging only;
-they are not Campus user keys and must never be reused in production.
-
-```bash
 docker compose --profile ai-api up -d litellm
-docker compose --profile ai-api ps litellm
 ```
 
-The service deliberately has no `DATABASE_URL`, no LiteLLM PostgreSQL role,
-and no Virtual Key in this phase. Its host-network listener on `:4000` must be
-restricted by the host firewall to the Campus backend, monitoring and admin
-sources. Do not publish `8103` or `8104`.
+`LITELLM_SALT_KEY` is immutable for the lifetime of the LiteLLM database: back
+it up with the database and test restoring both together. The Campus service
+Virtual Key is written to the ignored root `.env` and becomes `AI_API_API_KEY`
+only during the Phase 5 Campus cutover. The host-network listener on `:4000`
+must remain restricted by the host firewall to the Campus backend, monitoring
+and admin sources. Do not publish `8103` or `8104`.
 
 For a host using UFW, add the explicit allow rules for the real private source
 CIDRs first, then deny all other sources. Replace the placeholders; do not use
