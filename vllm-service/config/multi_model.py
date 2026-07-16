@@ -270,7 +270,11 @@ def build_gateway_routes(
 
         routes[instance.alias] = GatewayRoute(
             alias=instance.alias,
-            model_name=instance.settings.resolved_model_path,
+            # vLLM is started with --served-model-name. The legacy Gateway
+            # must forward that stable upstream ID, never the host-local model
+            # directory used before Phase 1; otherwise its rollback path
+            # receives a 404 after the cluster has been decoupled.
+            model_name=instance.served_model_name,
             base_url=instance.upstream_base_url,
             api_key=instance.settings.api_key,
             max_inflight=max(1, max_inflight),

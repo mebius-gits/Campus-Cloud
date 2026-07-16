@@ -60,7 +60,10 @@ services:
     ports:
       # Bind to localhost only: reachable for on-host tooling, never from the
       # public network. Inter-container access uses the `db` service DNS name.
-      - "127.0.0.1:5432:5432"
+      # 5432 is commonly occupied by an on-host PostgreSQL instance.  Keep
+      # the container's internal service port unchanged and expose 5433 only
+      # for local administration; Campus containers always use db:5432.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - app-db-data:/var/lib/postgresql/data/pgdata
     environment:

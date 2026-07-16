@@ -154,7 +154,10 @@ def _deployment(model: dict[str, Any], public_name: str) -> dict[str, Any]:
         "model_name": public_name,
         "litellm_params": {
             "model": f"hosted_vllm/{model['served_model_name']}",
-            "api_base": f"http://127.0.0.1:{model['api_port']}",
+            # The current hosted_vllm provider appends its OpenAI endpoint
+            # path directly to api_base. vLLM itself serves those routes below
+            # /v1, so the version prefix must be part of the generated base.
+            "api_base": f"http://127.0.0.1:{model['api_port']}/v1",
             "api_key": "os.environ/VLLM_UPSTREAM_API_KEY",
             "timeout": 300,
             "rpm": model["litellm"]["rpm"],

@@ -64,7 +64,7 @@ backend/
 | `firewall.py` | 防火牆拓撲、規則、NAT、Reverse Proxy |
 | `gateway.py` | 閘道 VM SSH 隧道、HAProxy / Traefik / FRP 設定 |
 | `ai_api.py` | AI API 憑證、申請審核、流量限制 |
-| `ai_proxy.py` | OpenAI 相容 `/chat/completions` 代理至 vLLM |
+| `ai_proxy.py` | OpenAI 相容文字 API allowlist（`/models`、`/chat/completions`、`/completions`、`/responses`）代理至受限 LiteLLM service key |
 | `spec_change_requests.py` | VM 規格變更申請與審核 |
 | `audit_logs.py` | 操作稽核紀錄查詢 |
 | `script_deploy.py` | 從 GitHub 自動化部署服務模板 |

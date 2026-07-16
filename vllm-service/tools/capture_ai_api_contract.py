@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,7 +47,17 @@ def _stream_chat(client: httpx.Client, payload: dict[str, Any]) -> dict[str, Any
     started = time.perf_counter()
     chunks: list[str] = []
     last_usage: dict[str, Any] | None = None
-    with client.stream("POST", "/v1/chat/completions", json={**payload, "stream": True}) as response:
+    # Match the Campus relay: streaming chat requests ask vLLM/LiteLLM for a
+    # final usage chunk so usage accounting can be verified without parsing
+    # generated content.
+    stream_options = payload.get("stream_options")
+    options = dict(stream_options) if isinstance(stream_options, dict) else {}
+    options.setdefault("include_usage", True)
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={**payload, "stream": True, "stream_options": options},
+    ) as response:
         for line in response.iter_lines():
             if not line:
                 continue
@@ -70,13 +81,27 @@ def _stream_chat(client: httpx.Client, payload: dict[str, Any]) -> dict[str, Any
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True, help="Gateway base URL, without /v1")
-    parser.add_argument("--api-key", required=True, help="test-only upstream key; never written to fixture")
+    key_source = parser.add_mutually_exclusive_group(required=True)
+    key_source.add_argument(
+        "--api-key",
+        help="test-only upstream key; prefer --api-key-env to keep it out of process arguments",
+    )
+    key_source.add_argument(
+        "--api-key-env",
+        help="environment variable containing the test-only upstream key",
+    )
     parser.add_argument("--model", action="append", default=[], help="repeat for each expected public alias")
     parser.add_argument("--output", required=True)
     parser.add_argument("--timeout", type=float, default=330)
     args = parser.parse_args()
 
-    headers = {"Authorization": f"Bearer {args.api_key}"}
+    api_key = args.api_key
+    if args.api_key_env:
+        api_key = os.getenv(args.api_key_env, "")
+        if not api_key:
+            parser.error(f"environment variable {args.api_key_env} is empty or missing")
+
+    headers = {"Authorization": f"Bearer {api_key}"}
     with httpx.Client(base_url=args.base_url.rstrip("/"), headers=headers, timeout=args.timeout) as client:
         models = _request(client, "GET", "/v1/models")
         selected_models = args.model or [item["id"] for item in models.get("body", {}).get("data", [])]

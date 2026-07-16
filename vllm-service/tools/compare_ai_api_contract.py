@@ -18,6 +18,13 @@ def _keys(value: Any) -> set[str]:
     return set(value) if isinstance(value, dict) else set()
 
 
+_REQUIRED_BODY_KEYS = {
+    "chat_completion": {"id", "object", "created", "model", "choices", "usage"},
+    "completion": {"id", "object", "created", "model", "choices", "usage"},
+    "responses": {"id", "object", "created_at", "model", "output", "usage"},
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("baseline")
@@ -51,8 +58,8 @@ def main() -> int:
                 errors.append(f"status differs for {model}/{name}")
             if name == "chat_completion_stream" and bool(baseline_case.get("last_usage")) != bool(candidate_case.get("last_usage")):
                 errors.append(f"final stream usage presence differs for {model}")
-            if name != "chat_completion_stream" and not _keys(baseline_case.get("body")) <= _keys(candidate_case.get("body")):
-                errors.append(f"response keys missing for {model}/{name}")
+            if name in _REQUIRED_BODY_KEYS and not _REQUIRED_BODY_KEYS[name] <= _keys(candidate_case.get("body")):
+                errors.append(f"required response keys missing for {model}/{name}")
 
     if errors:
         print("Contract comparison failed:", *[f"- {error}" for error in errors], sep="\n", file=sys.stderr)

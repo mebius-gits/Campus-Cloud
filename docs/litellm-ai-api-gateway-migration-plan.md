@@ -1,6 +1,6 @@
 # AI API Gateway 遷移至 LiteLLM 深入計劃
 
-文件狀態：Phase 4 已實作；Phase 5 尚未切流
+文件狀態：Phase 4 實作工件已補齊；Phase 5 尚未切流、尚未開始 24/72 小時觀察
 最後更新：2026-07-16
 
 ## 1. 決策摘要
@@ -439,7 +439,7 @@ model_list:
   - model_name: gpt-oss-20B
     litellm_params:
       model: hosted_vllm/gpt-oss-20B
-      api_base: http://127.0.0.1:8103
+      api_base: http://127.0.0.1:8103/v1
       api_key: os.environ/VLLM_UPSTREAM_API_KEY
       timeout: 300
       rpm: 10
@@ -449,7 +449,7 @@ model_list:
   - model_name: Qwen/Qwen3-14B-FP8
     litellm_params:
       model: hosted_vllm/Qwen/Qwen3-14B-FP8
-      api_base: http://127.0.0.1:8104
+      api_base: http://127.0.0.1:8104/v1
       api_key: os.environ/VLLM_UPSTREAM_API_KEY
       timeout: 300
       rpm: 10
@@ -477,7 +477,7 @@ litellm_settings:
   set_verbose: false
 ```
 
-`api_base` 由 generator 使用 `api_port` 自動組成，不再定義 `GPT_OSS_VLLM_BASE_URL` 或 `QWEN_VLLM_BASE_URL`。採 `hosted_vllm` provider 時使用 service root；正式切換前必須用鎖定版本確認實際 upstream path，不可只依 YAML 靜態判讀。
+`api_base` 由 generator 使用 `api_port` 自動組成，不再定義 `GPT_OSS_VLLM_BASE_URL` 或 `QWEN_VLLM_BASE_URL`。目前部署 image 的 `hosted_vllm` provider 會直接在 `api_base` 後加 OpenAI endpoint path，因此 generator 輸出 vLLM 的 `/v1` service root；正式切換前仍必須用鎖定 image 實測確認，不可只依 YAML 靜態判讀。
 
 Generator 必須支援兩種明確模式：
 
@@ -858,7 +858,7 @@ service key 並只輸出 `DATABASE_URL` reference。此階段仍保留
 
 工作：
 
-1. 在現有 PostgreSQL server 以可重複執行的 one-shot 指令建立獨立 `litellm` database/role；不修改 Campus database、tables 或 Alembic history。
+1. 在現有 PostgreSQL server 以可重複執行的 one-shot 指令建立獨立 `litellm` database/role；不修改 Campus database、tables 或 Alembic history。實作為 `scripts/init-litellm-db.sh`：它使用 Compose `db` container 的 PostgreSQL administrator 建立 `NOINHERIT`、非 superuser `litellm` role 與同名 database；若既有 database owner 不符會拒絕繼續，並可用 `--verify-only` 重跑驗證（包括 role 對 Campus `public` schema 沒有 `CREATE` 權限）。role password 必須由 secret manager 以 `LITELLM_DB_PASSWORD` 的 stdin 注入，不能放在 command argument 或 Git。
 2. 使用 Phase 2 已記錄 digest 的同一個 LiteLLM image，對現有 PostgreSQL 版本執行 migration、schema 驗證、restart 與 connection recovery test。
 3. 設定固定且不可任意更換的 `LITELLM_SALT_KEY`，納入 secret backup 與復原測試。
 4. 建立只允許兩個公開模型的 Campus service Virtual Key；四個一般文字 API 的 path allowlist 仍由 Campus backend 強制執行，master key 僅供管理。
@@ -874,6 +874,30 @@ service key 並只輸出 `DATABASE_URL` reference。此階段仍保留
 
 ### Phase 5：Campus backend 切換
 
+#### Repository 實作與操作界線
+
+本階段的可版控實作如下；它們不會從 `.env` 自行取得或輸出 production secret，也不會自行
+restart production service。需要 key 的命令一律由 operator/secret manager 顯式注入：
+
+- `backend/app/api/routes/ai_proxy.py` 已改為明確 data-plane allowlist：`GET /models` 與
+  `POST /chat/completions`、`/completions`、`/responses`。它驗證 `ccai_*`、套用 Campus
+  Redis rate limit、移除 client Authorization/Host/hop-by-hop headers，然後只注入
+  `AI_API_API_KEY` 的 LiteLLM service key。
+- Relay 保留 JSON、query string、SSE body 與安全的 OpenAI headers；streaming 在 response
+  完成、失敗或 client disconnect 後以獨立 DB session 寫入 `AIAPIUsage`。它不記錄 prompt、
+  completion、client key 或 upstream error body。
+- `AI_API_ALLOWED_MODELS` 是 Campus 的第二層 model allowlist；production 必須設成與
+  LiteLLM service Virtual Key 相同的兩個 public aliases。空值僅適用於尚未切流的相容環境。
+- `scripts/prepare-litellm-ai-api-cutover.py` 預設只做 no-write preflight；加上 `--apply`
+  才會備份並原子更新 `.env` 的 upstream URL、restricted service key、320 秒 timeout、
+  model allowlist，以及 admin-only LiteLLM runtime snapshot 的 internal endpoint/identity；不會寫入 master key。
+- `scripts/verify-ai-api-cutover.sh` 僅透過 Campus public API 做 post-cutover smoke test；它會
+  驗證四個文字 API 與 chat SSE，且不存取 LiteLLM 管理 endpoint。
+
+production 切換仍是受權限保護的 operator action，原因是 repository 無法判斷 private CIDR、
+VPN/host firewall、LiteLLM Virtual Key 值或既有 production access log。沒有這些輸入時，
+不得將範例 `.env` 改成 `:4000` 或重啟服務。
+
 切換前：
 
 1. 備份現有 `.env` 與服務設定。
@@ -881,6 +905,55 @@ service key 並只輸出 `DATABASE_URL` reference。此階段仍保留
 3. 確認 LiteLLM production endpoint 與 service key。
 4. 確認 readiness、現有監控頁／logs／Sentry 與告警。
 5. 暫停非必要 LiteLLM config 變更。
+
+切換 gate（全部通過才可進入下一步）：
+
+1. Phase 0 contract baseline、Phase 3 candidate contract/負載資料與 image digest 均已保存於
+   受保護部署作業目錄；不存在 blocker 差異。
+2. LiteLLM database/role 以 `scripts/init-litellm-db.sh --verify-only` 驗證；migration、
+   restart、backup/restore、DB unavailable fail-closed 都已有本次 production image 的紀錄。
+3. 受限 Campus service Virtual Key（不是 master key、不是 `ccai_*`）直接呼叫 LiteLLM
+   `/v1/models` 時只看到兩個 public alias，且兩個 deployment health 正常。
+4. 舊 Gateway `:3000` 的 `/v1/models`、chat 非串流與 chat SSE smoke test 仍通過，以確保
+   回滾入口可用。
+5. LiteLLM `:4000` 僅可由 Campus backend、監控與管理來源連入；從一般網段測試連線被拒。
+6. `AI_API_ALLOWED_MODELS` 的值與 LiteLLM Virtual Key 允許的 aliases 完全一致；不得填入
+   `served_model_name`、主機路徑或 legacy/未核准名稱。
+
+建議操作順序（在 deployment host、由有權限的 operator 執行）：
+
+```bash
+# 0. 先以 production image 產生且檢閱 secret-free config；這一步不會輸出 secret。
+cd vllm-service
+LITELLM_SERVICE_API_KEY="$LITELLM_SERVICE_API_KEY" \
+  ./.venv/bin/python tools/generate_litellm_config.py --mode production
+cd ..
+
+# 1. 不寫檔的 P5 dotenv preflight。service key 只能從環境/secret manager 注入。
+export LITELLM_SERVICE_API_KEY='<restricted-campus-service-key>'
+python scripts/prepare-litellm-ai-api-cutover.py \
+  --endpoint http://host.docker.internal:4000
+
+# 若 LiteLLM 不與 backend 同機，確認 private/TLS hostname 的網路邊界後才允許它：
+# python scripts/prepare-litellm-ai-api-cutover.py \
+#   --endpoint https://litellm.private.example --allow-hostname
+
+# 2. 建立 timestamped .env backup 並原子套用。此指令不會 restart service。
+python scripts/prepare-litellm-ai-api-cutover.py \
+  --endpoint http://host.docker.internal:4000 --apply
+
+# 3. 用既有部署程序只重建讀取 AI_API_* 的 Campus runtime；不要重建 LiteLLM 或 vLLM。
+docker compose up -d --no-deps --force-recreate backend worker
+
+# 4. 透過 Campus public endpoint 驗證，禁止以 LiteLLM /health 或 /key/* 取代此測試。
+export AI_API_SMOKE_KEY='<isolated-approved-ccai-smoke-key>'
+export AI_API_PUBLIC_BASE_URL='https://<campus-public-host>/api/v1'
+./scripts/verify-ai-api-cutover.sh
+```
+
+切換命令執行後，保留 `*.env.pre-litellm-*.bak` 至少到 72 小時觀察完成。切換前與每次
+rollback/switch 都必須記錄 `.env` backup 名稱、LiteLLM image digest、config SHA-256、操作者
+與 UTC 時間；這些紀錄不得包含任何 key 或 request body。
 
 切換：
 
@@ -899,6 +972,12 @@ AI_API_TIMEOUT=320
 - 再開放少量正式流量。
 - 觀察 401、404、429、5xx、TTFT、stream completion 與 usage。
 - 比對 Campus 與 LiteLLM 每 15 分鐘 request/token 彙總。
+
+在第一小時採 15 分鐘頻率記錄：Campus `AIAPIUsage` 的 request/success/error、每個
+model/request type token、p95 duration；LiteLLM runtime snapshot 的 readiness、deployment
+health、429、timeout 與 upstream error。每筆差異調查都以相同 UTC window 比對，且只比較
+token/request，不能把 Campus 業務帳與 LiteLLM runtime counter 相加。24 小時前不增加流量、
+不更新 LiteLLM image/config，也不停止 `:3000` rollback path。
 
 完成條件：
 

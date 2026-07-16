@@ -60,6 +60,7 @@ def test_build_gateway_routes_loads_admission_and_capabilities(tmp_path: Path) -
 
     args = instances[0].settings.build_vllm_serve_args()
     route = routes["qwen"]
+    assert route.model_name == "Qwen/Qwen3-14B-FP8"
     assert route.max_inflight == 6
     assert route.queue_timeout == 12.5
     assert route.scheduling_policy == "priority"
@@ -154,7 +155,7 @@ def test_litellm_generator_matches_models_and_uses_env_references(tmp_path: Path
     assert "model_name: public-model" in generated
     assert "model_name: old-public-model" in generated
     assert "model: hosted_vllm/upstream-model" in generated
-    assert "api_base: http://127.0.0.1:8103" in generated
+    assert "api_base: http://127.0.0.1:8103/v1" in generated
     assert "api_key: os.environ/VLLM_UPSTREAM_API_KEY" in generated
     assert "master_key: os.environ/LITELLM_MASTER_KEY" in generated
     assert "database_url:" not in generated
