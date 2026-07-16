@@ -20,6 +20,7 @@ class ModelInstanceConfig:
     """單一模型實例設定。"""
 
     alias: str
+    served_model_name: str
     model_config: dict[str, Any]
     settings: Settings
 
@@ -135,6 +136,7 @@ def load_model_instances(
     
     instances: list[ModelInstanceConfig] = []
     seen_alias: set[str] = set()
+    seen_served_model_name: set[str] = set()
     seen_port: set[int] = set()
     
     for idx, model_config in enumerate(models_config):
@@ -157,6 +159,12 @@ def load_model_instances(
         
         if alias in seen_alias:
             raise ValueError(f"MODEL_ALIAS 重複: {alias}")
+
+        served_model_name = effective_model_config.get("served_model_name", "").strip()
+        if not served_model_name:
+            raise ValueError(f"模型配置 #{idx} 缺少 'served_model_name' 欄位")
+        if served_model_name in seen_served_model_name:
+            raise ValueError(f"served_model_name 重複: {served_model_name}")
         
         # 建立 Settings，使用模型配置覆蓋 .env 的值
         # 需要將 JSON 的 snake_case 轉為環境變數格式
@@ -165,6 +173,7 @@ def load_model_instances(
         # 對應關係
         field_mapping = {
             "model_name": "MODEL_NAME",
+            "served_model_name": "SERVED_MODEL_NAME",
             "api_port": "API_PORT",
             "max_model_len": "MAX_MODEL_LEN",
             "gpu_memory_utilization": "GPU_MEMORY_UTILIZATION",
@@ -220,11 +229,13 @@ def load_model_instances(
             raise ValueError(f"API_PORT 重複: {settings.api_port} (模型: {alias})")
         
         seen_alias.add(alias)
+        seen_served_model_name.add(served_model_name)
         seen_port.add(settings.api_port)
         
         instances.append(
             ModelInstanceConfig(
                 alias=alias,
+                served_model_name=served_model_name,
                 model_config=effective_model_config,
                 settings=settings,
             )

@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         default="nvidia/Qwen3-235B-A22B-NVFP4",
         description="HuggingFace 模型名稱或路徑",
     )
+    served_model_name: str = Field(
+        default="",
+        description="vLLM OpenAI API 對外回報的模型名稱（對應 --served-model-name）",
+    )
     hf_cache_dir: str = Field(
         default="/raid/hf-cache/hub",
         description="HuggingFace 快取目錄 (共用)",
@@ -364,6 +368,8 @@ class Settings(BaseSettings):
             "--tensor-parallel-size", str(self.tensor_parallel_size),
             "--api-key", self.api_key,
         ]
+        if self.served_model_name:
+            args.extend(["--served-model-name", self.served_model_name])
 
         if self.trust_remote_code:
             args.append("--trust-remote-code")

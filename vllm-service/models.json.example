@@ -1,6 +1,7 @@
 [
   {
     "alias": "gemma-4-31b",
+    "served_model_name": "gemma-4-31b",
     "model_name": "./AImodels/Gemma-4-31B-IT-NVFP4",
     "api_port": 8103,
     "max_model_len": 24576,
@@ -20,6 +21,9 @@
     "enable_request_id_headers": true,
     "gateway_max_inflight": 6,
     "gateway_queue_timeout": 30,
+    "litellm": {
+      "rpm": 10
+    },
     "capabilities": {
       "chat": true,
       "stream": true,
@@ -33,6 +37,7 @@
   },
   {
     "alias": "qwen3-14b",
+    "served_model_name": "qwen3-14b",
     "model_name": "./AImodels/Qwen3-14B-FP8",
     "api_port": 8104,
     "max_model_len": 24576,
@@ -50,6 +55,9 @@
     "enable_request_id_headers": true,
     "gateway_max_inflight": 6,
     "gateway_queue_timeout": 30,
+    "litellm": {
+      "rpm": 10
+    },
     "capabilities": {
       "chat": true,
       "stream": true,
