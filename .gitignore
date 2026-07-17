@@ -39,7 +39,6 @@ vllm-inference/config/tool_chat_template_gemma4.jinja
 vllm-service/config/tool_chat_template_gemma4.jinja
 vllm-service/.runtime/
 vllm-service/litellm/config.yaml
-vllm-service/litellm/image.json
 AGENTS.md
 data/teacher-judge/
 data/avatars/
