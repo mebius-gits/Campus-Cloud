@@ -147,7 +147,7 @@ def validate_request_window(
         request=placement_request,
         start_at=start_at,
         end_at=end_at,
-        allow_cohort_rebalance=(
+        allow_cohort_optimization=(
             getattr(request_in, "mode", "") != "quick_template"
         ),
     )
@@ -198,7 +198,7 @@ def assess_request_window(
         request=placement_request,
         start_at=start_at,
         end_at=end_at,
-        allow_cohort_rebalance=request_in.mode != "quick_template",
+        allow_cohort_optimization=request_in.mode != "quick_template",
     )
     feasible = bool(selection.node and selection.plan.feasible)
     warnings = list(selection.plan.warnings or [])

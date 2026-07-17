@@ -24,7 +24,7 @@ from app.models import (
     SpecChangeRequest,
     SpecChangeRequestStatus,
     User,
-    VMMigrationStatus,
+    VMProvisioningStatus,
     VMRequest,
     VMRequestStatus,
 )
@@ -151,11 +151,11 @@ def _vm_request_to_job(req: VMRequest) -> JobItem:
     title = f"開機申請：{req.hostname}（{req.cores} cores / {req.memory} MB）"
     status = _VM_REQUEST_STATUS_MAP.get(req.status, JobStatus.pending)
     if req.status == VMRequestStatus.approved:
-        if req.migration_status == VMMigrationStatus.failed or req.migration_error:
+        if req.provisioning_status == VMProvisioningStatus.failed or req.provisioning_error:
             status = JobStatus.failed
         elif req.vmid is not None:
             status = JobStatus.completed
-        elif req.migration_status == VMMigrationStatus.running:
+        elif req.provisioning_status == VMProvisioningStatus.running:
             status = JobStatus.running
     progress: int | None = None
     if status == JobStatus.completed:
@@ -179,7 +179,7 @@ def _vm_request_to_job(req: VMRequest) -> JobItem:
                 overdue = True
                 overdue_minutes = int(delta // 60)
 
-    base_message = req.review_comment or req.migration_error
+    base_message = req.review_comment or req.provisioning_error
     if overdue:
         overdue_label = (
             f"{overdue_minutes // 60} 小時"
@@ -524,14 +524,14 @@ def _detail_vm_request(session: Session, raw_id: str, user: User) -> JobDetail:
         "assigned_node": req.assigned_node,
         "actual_node": req.actual_node,
         "desired_node": req.desired_node,
-        "migration_status": req.migration_status.value,
+        "provisioning_status": req.provisioning_status.value,
         "expiry_date": req.expiry_date.isoformat() if req.expiry_date else None,
         "start_at": _isoformat(req.start_at),
         "end_at": _isoformat(req.end_at),
         "reason": req.reason,
         "review_comment": req.review_comment,
     }
-    return JobDetail(item=item, error=req.migration_error, extra=extra)
+    return JobDetail(item=item, error=req.provisioning_error, extra=extra)
 
 
 def _detail_spec_change(session: Session, raw_id: str, user: User) -> JobDetail:

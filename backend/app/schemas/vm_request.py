@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field
 
 from app.models.user import UserRole
-from app.models.vm_request import VMMigrationStatus, VMRequestStatus
+from app.models.vm_request import VMProvisioningStatus, VMRequestStatus
 
 
 def _validate_unicode_hostname(v: str) -> str:
@@ -139,13 +139,9 @@ class VMRequestPublic(BaseModel):
     desired_node: str | None = None
     actual_node: str | None = None
     placement_strategy_used: str | None = None
-    migration_status: VMMigrationStatus = VMMigrationStatus.idle
-    migration_error: str | None = None
-    migration_pinned: bool = False
+    provisioning_status: VMProvisioningStatus = VMProvisioningStatus.idle
+    provisioning_error: str | None = None
     resource_warning: str | None = None
-    rebalance_epoch: int = 0
-    last_rebalanced_at: datetime | None = None
-    last_migrated_at: datetime | None = None
     recurrence_rule: str | None = None
     recurrence_duration_minutes: int | None = None
     schedule_timezone: str | None = None
@@ -185,8 +181,7 @@ class VMRequestReviewOverlapItem(BaseModel):
     actual_node: str | None = None
     projected_node: str | None = None
     projected_strategy: str | None = None
-    migration_status: VMMigrationStatus = VMMigrationStatus.idle
-    last_migrated_at: datetime | None = None
+    provisioning_status: VMProvisioningStatus = VMProvisioningStatus.idle
     is_current_request: bool = False
     is_running_now: bool = False
     is_provisioned: bool = False
@@ -201,7 +196,7 @@ class VMRequestReviewNodeScore(BaseModel):
     peak_penalty: float = 0.0
     loadavg_penalty: float = 0.0
     storage_penalty: float = 0.0
-    migration_cost: float = 0.0
+    reassignment_cost: float = 0.0
     priority: int = 5
     is_selected: bool = False
     reason: str | None = None

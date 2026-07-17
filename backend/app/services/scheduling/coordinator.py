@@ -13,7 +13,7 @@ from app.domain.scheduling.models import ScheduledTask
 from app.domain.scheduling.runner import run_polling_scheduler
 from app.exceptions import NotFoundError
 from app.models import (
-    VMMigrationStatus,
+    VMProvisioningStatus,
     VMRequest,
     VMRequestStatus,
 )
@@ -103,8 +103,8 @@ def _adopt_existing_resource(
         desired_node=desired_node or actual_node,
         actual_node=actual_node,
         placement_strategy_used=placement_strategy_used,
-        migration_status=VMMigrationStatus.completed,
-        migration_error=None,
+        provisioning_status=VMProvisioningStatus.completed,
+        provisioning_error=None,
         commit=False,
     )
     status = proxmox_service.get_status(actual_node, vmid, resource_type)
@@ -134,15 +134,15 @@ def _provision_new_resource(
     session: Session,
     request: VMRequest,
 ) -> tuple[int, str, str | None] | None:
-    """Lock, mark migration running, clone outside txn, then record VMID.
+    """Lock, mark provisioning running, clone outside txn, then record VMID.
 
     This is the core anti-duplication pattern:
     1. SELECT FOR UPDATE SKIP LOCKED; if locked, bail
-    2. migration_status = running, commit (visible to other sessions)
+    2. provisioning_status = running, commit (visible to other sessions)
     3. plan_provision (resolve storage etc.) in a short txn
     4. commit / close session
     5. execute_provision (clone VM) with no open transaction
-    6. Open new session, record vmid and migration_status, commit
+    6. Open new session, record vmid and provisioning_status, commit
     """
     resource_type = _resource_type_for_request(request)
     desired_node = str(request.desired_node or request.assigned_node or "")
@@ -152,9 +152,9 @@ def _provision_new_resource(
     if resource_type == "lxc" and request.service_template_slug:
         return _provision_via_service_template(session=session, request=request)
 
-    # --- Phase 1: mark migration running + plan (short txn) ---------------
-    request.migration_status = VMMigrationStatus.running
-    request.migration_error = None
+    # --- Phase 1: mark provisioning running + plan (short transaction) ----
+    request.provisioning_status = VMProvisioningStatus.running
+    request.provisioning_error = None
     session.add(request)
     session.commit()
     logger.info("Marked request %s as provisioning", request.id)
@@ -173,8 +173,8 @@ def _provision_new_resource(
             session=session, request_id=request.id, for_update=True,
         )
         if request:
-            request.migration_status = VMMigrationStatus.failed
-            request.migration_error = "Failed to plan provisioning"
+            request.provisioning_status = VMProvisioningStatus.failed
+            request.provisioning_error = "Failed to plan provisioning"
             session.add(request)
             session.commit()
         raise
@@ -208,8 +208,8 @@ def _provision_new_resource(
                 session=rollback_session, request_id=request_id, for_update=True,
             )
             if req and req.vmid is None:
-                req.migration_status = VMMigrationStatus.failed
-                req.migration_error = "Failed to execute provisioning"
+                req.provisioning_status = VMProvisioningStatus.failed
+                req.provisioning_error = "Failed to execute provisioning"
                 rollback_session.add(req)
                 rollback_session.commit()
                 logger.warning("Reverted request %s to approved after provision failure", request_id)
@@ -246,8 +246,8 @@ def _provision_new_resource(
             desired_node=desired_node or actual_node,
             actual_node=actual_node,
             placement_strategy_used=plan["placement_strategy"],
-            migration_status=VMMigrationStatus.completed,
-            migration_error=None,
+            provisioning_status=VMProvisioningStatus.completed,
+            provisioning_error=None,
             commit=False,
         )
         finish_session.add(req)
@@ -313,8 +313,8 @@ def _provision_via_service_template(
         raise
 
     # Mark provisioning and close txn before the long-running SSH deploy.
-    request.migration_status = VMMigrationStatus.running
-    request.migration_error = None
+    request.provisioning_status = VMProvisioningStatus.running
+    request.provisioning_error = None
     session.add(request)
     session.commit()
     logger.info(
@@ -350,8 +350,8 @@ def _provision_via_service_template(
                     session=rb, request_id=request_id, for_update=True,
                 )
                 if req and req.vmid is None:
-                    req.migration_status = VMMigrationStatus.failed
-                    req.migration_error = "Failed to allocate candidate VMID"
+                    req.provisioning_status = VMProvisioningStatus.failed
+                    req.provisioning_error = "Failed to allocate candidate VMID"
                     rb.add(req)
                     rb.commit()
             raise RuntimeError(
@@ -375,8 +375,8 @@ def _provision_via_service_template(
                     session=rb, request_id=request_id, for_update=True,
                 )
                 if req and req.vmid is None:
-                    req.migration_status = VMMigrationStatus.failed
-                    req.migration_error = "Failed to allocate static IP"
+                    req.provisioning_status = VMProvisioningStatus.failed
+                    req.provisioning_error = "Failed to allocate static IP"
                     rb.add(req)
                     rb.commit()
             raise RuntimeError(f"無法分配靜態 IP：{exc}") from exc
@@ -455,8 +455,8 @@ def _provision_via_service_template(
                 session=rb, request_id=request_id, for_update=True,
             )
             if req and req.vmid is None:
-                req.migration_status = VMMigrationStatus.failed
-                req.migration_error = "Script deploy failed"
+                req.provisioning_status = VMProvisioningStatus.failed
+                req.provisioning_error = "Script deploy failed"
                 rb.add(req)
                 rb.commit()
         raise
@@ -531,8 +531,8 @@ def _provision_via_service_template(
             desired_node=actual_node or None,
             actual_node=actual_node or None,
             placement_strategy_used="service_template",
-            migration_status=VMMigrationStatus.completed,
-            migration_error=None,
+            provisioning_status=VMProvisioningStatus.completed,
+            provisioning_error=None,
             commit=False,
         )
         finish_session.add(req)
@@ -601,11 +601,8 @@ def _refresh_actual_node(
         desired_node=actual_node,
         actual_node=actual_node,
         placement_strategy_used=db_request.placement_strategy_used,
-        migration_status=VMMigrationStatus.completed,
-        migration_error=None,
-        rebalance_epoch=db_request.rebalance_epoch,
-        last_rebalanced_at=db_request.last_rebalanced_at,
-        last_migrated_at=db_request.last_migrated_at,
+        provisioning_status=VMProvisioningStatus.completed,
+        provisioning_error=None,
         commit=False,
     )
     return actual_node, resource
@@ -634,7 +631,7 @@ def _adopt_or_provision_due_request(
     # Re-check: another process may have set vmid or changed status.
     if (
         locked.vmid is not None
-        or locked.migration_status == VMMigrationStatus.running
+        or locked.provisioning_status == VMProvisioningStatus.running
     ):
         return None
 
@@ -656,7 +653,7 @@ def _adopt_or_provision_due_request(
         return None
     started = (
         refreshed.vmid is not None
-        or refreshed.migration_status == VMMigrationStatus.running
+        or refreshed.provisioning_status == VMProvisioningStatus.running
     )
     return (
         refreshed.vmid,
@@ -674,7 +671,7 @@ def _ensure_request_running(
 ) -> bool:
     """Make sure an approved request has a live VM.
 
-    For requests without a vmid: lock, mark migration running, clone, record VMID.
+    For requests without a vmid: lock, mark provisioning running, clone, record VMID.
     For requests with a vmid: ensure the VM is started.
     """
     resource_type = _resource_type_for_request(request)
@@ -685,9 +682,7 @@ def _ensure_request_running(
         if outcome is None:
             return False
         _vmid, outcome_actual_node, _strategy, started = outcome
-        # If freshly provisioned on the desired node, mark migration as
-        # completed so any "pending/idle" state left over from the most
-        # recent active-window rebalance is reconciled.
+        # A freshly provisioned guest is complete once its actual node is recorded.
         refreshed_after = vm_request_repo.get_vm_request_by_id(
             session=session, request_id=request.id,
         )
@@ -697,8 +692,8 @@ def _ensure_request_running(
             and refreshed_after.desired_node
             and outcome_actual_node
             and refreshed_after.desired_node == outcome_actual_node
-            and refreshed_after.migration_status
-            in (VMMigrationStatus.idle, VMMigrationStatus.pending)
+            and refreshed_after.provisioning_status
+            in (VMProvisioningStatus.idle, VMProvisioningStatus.pending)
         ):
             vm_request_repo.update_vm_request_provisioning(
                 session=session,
@@ -708,11 +703,8 @@ def _ensure_request_running(
                 desired_node=refreshed_after.desired_node,
                 actual_node=outcome_actual_node,
                 placement_strategy_used=refreshed_after.placement_strategy_used,
-                migration_status=VMMigrationStatus.completed,
-                migration_error=None,
-                rebalance_epoch=refreshed_after.rebalance_epoch,
-                last_rebalanced_at=refreshed_after.last_rebalanced_at,
-                last_migrated_at=refreshed_after.last_migrated_at,
+                provisioning_status=VMProvisioningStatus.completed,
+                provisioning_error=None,
                 commit=False,
             )
             session.commit()
@@ -737,11 +729,8 @@ def _ensure_request_running(
         desired_node=actual_node,
         actual_node=actual_node,
         placement_strategy_used=request.placement_strategy_used,
-        migration_status=VMMigrationStatus.completed,
-        migration_error=None,
-        rebalance_epoch=request.rebalance_epoch,
-        last_rebalanced_at=request.last_rebalanced_at,
-        last_migrated_at=request.last_migrated_at,
+        provisioning_status=VMProvisioningStatus.completed,
+        provisioning_error=None,
         commit=False,
     )
     if not is_running:
@@ -802,7 +791,7 @@ def process_due_request_starts() -> int:
             if request.vmid is None:
                 # 尚未 provision — fan-out 到背景並行 clone（獨立 semaphore
                 # 限流），tick 不再同步等待重 I/O。防重複由 runner task_id
-                # 去重 + DB SKIP LOCKED + migration_status 再檢查三層保障。
+                # 去重 + DB SKIP LOCKED + provisioning_status 再檢查三層保障。
                 provision_pool.submit_provision(
                     request.id,
                     concurrency=governance_config.provision_max_concurrency,
