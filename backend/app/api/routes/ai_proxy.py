@@ -225,16 +225,7 @@ def _request_model(payload: dict[str, Any]) -> str | JSONResponse:
             error_type="invalid_request_error",
             code="invalid_model",
         )
-    normalized = model.strip()
-    allowed_models = ai_api_settings.ai_api_allowed_model_set
-    if allowed_models and normalized not in allowed_models:
-        return _openai_error(
-            status.HTTP_403_FORBIDDEN,
-            "The requested model is not available to this API.",
-            error_type="permission_error",
-            code="model_not_allowed",
-        )
-    return normalized
+    return model.strip()
 
 
 def _record_usage_safely(
@@ -543,13 +534,10 @@ async def list_models(request: Request, user_and_credential: AIAPIUserDep) -> Re
             code="invalid_upstream_response",
         )
 
-    allowed_models = ai_api_settings.ai_api_allowed_model_set
     now_ts = int(time.time())
     data = []
     for model in result["data"]:
         if not isinstance(model, dict):
-            continue
-        if allowed_models and model.get("id") not in allowed_models:
             continue
         if model.get("created") is None:
             model = {**model, "created": now_ts}

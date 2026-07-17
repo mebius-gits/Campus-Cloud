@@ -20,10 +20,6 @@ class AIAPIEnvSettings(BaseSettings):
     ai_api_api_key: str = "ai-api-secret-key-change-me"
     ai_api_timeout: int = 120
     ai_api_max_request_body_bytes: int = 1_048_576
-    # Empty means model permissions are enforced solely by the restricted
-    # LiteLLM Virtual Key. Production should set the two public aliases here
-    # as a second, Campus-owned allowlist.
-    ai_api_allowed_models: str = ""
 
     # Phase 2 only: this is an admin-only runtime-observation connection to
     # LiteLLM, separate from the legacy AI API upstream until Phase 5 switches
@@ -50,14 +46,5 @@ class AIAPIEnvSettings(BaseSettings):
     @property
     def ai_api_upstream_api_key(self) -> str:
         return self.ai_api_api_key
-
-    @property
-    def ai_api_allowed_model_set(self) -> frozenset[str]:
-        return frozenset(
-            model.strip()
-            for model in self.ai_api_allowed_models.split(",")
-            if model.strip()
-        )
-
 
 settings = AIAPIEnvSettings()

@@ -76,16 +76,9 @@ def test_json_payload_rejects_non_json_and_large_bodies(monkeypatch) -> None:
     assert response.status_code == 413
 
 
-def test_model_allowlist_and_usage_support_responses(monkeypatch) -> None:
-    monkeypatch.setattr(
-        ai_api_settings,
-        "ai_api_allowed_models",
-        "gpt-oss-20B,Qwen/Qwen3-14B-FP8",
-    )
-
+def test_model_is_forwarded_without_a_campus_allowlist() -> None:
     assert ai_proxy._request_model({"model": "gpt-oss-20B"}) == "gpt-oss-20B"
-    denied = ai_proxy._request_model({"model": "not-public"})
-    assert denied.status_code == 403
+    assert ai_proxy._request_model({"model": "not-public"}) == "not-public"
     assert ai_proxy._usage_tokens(
         {"usage": {"input_tokens": 11, "output_tokens": 7}}
     ) == (11, 7)
@@ -141,7 +134,6 @@ def test_generation_relay_replaces_authorization_and_preserves_query(monkeypatch
     )
     monkeypatch.setattr(ai_api_settings, "ai_api_base_url", "http://litellm.internal:4000")
     monkeypatch.setattr(ai_api_settings, "ai_api_api_key", "restricted-service-key")
-    monkeypatch.setattr(ai_api_settings, "ai_api_allowed_models", "gpt-oss-20B")
 
     request = _request(
         body=json.dumps({"model": "gpt-oss-20B", "input": "hello"}).encode(),

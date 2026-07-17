@@ -31,8 +31,10 @@ pip install vllm
 - Gateway 模式讀取 `.env.API`，主要看 `GATEWAY_*`、共用部署值與 `models.json`。
 - `models.json` 管理多模型各自的 `model_name`、`api_port`、engine/parser 參數。
 - 影片、文件、溫度、Top-P/K、重複懲罰等不常改的推論預設值集中在 `config/settings.py`。
-- `API_KEY` 是 vLLM upstream key；LiteLLM 遷移路徑須以相同值注入
-  `VLLM_UPSTREAM_API_KEY`。舊 Gateway 回滾路徑才使用 backend 的 `AI_API_API_KEY`。
+- `API_KEY` 是 vLLM 各 instance 的 Bearer key。LiteLLM 以
+  `VLLM_UPSTREAM_API_KEY` 取得同一個值，轉發到本機 vLLM `/v1`；變數名稱分開只是
+  Docker 容器注入邊界，並非第二組權限。舊 Gateway 回滾路徑才使用 backend 的
+  `AI_API_API_KEY`。
 
 ## 啟動單一模型主服務
 

@@ -886,11 +886,11 @@ restart production service。需要 key 的命令一律由 operator/secret manag
 - Relay 保留 JSON、query string、SSE body 與安全的 OpenAI headers；streaming 在 response
   完成、失敗或 client disconnect 後以獨立 DB session 寫入 `AIAPIUsage`。它不記錄 prompt、
   completion、client key 或 upstream error body。
-- `AI_API_ALLOWED_MODELS` 是 Campus 的第二層 model allowlist；production 必須設成與
-  LiteLLM service Virtual Key 相同的兩個 public aliases。空值僅適用於尚未切流的相容環境。
+- 可用模型由 `vllm-service/models.json` 生成的 LiteLLM `model_list` 決定。Campus relay
+  不另設環境變數 allowlist，並將 LiteLLM `/v1/models` 的可見模型原樣轉交給已驗證使用者。
 - `scripts/prepare-litellm-ai-api-cutover.py` 預設只做 no-write preflight；加上 `--apply`
   才會備份並原子更新 `.env` 的 upstream URL、restricted service key、320 秒 timeout、
-  model allowlist，以及 admin-only LiteLLM runtime snapshot 的 internal endpoint/identity；不會寫入 master key。
+  以及 admin-only LiteLLM runtime snapshot 的 internal endpoint/identity；不會寫入 master key。
 - `scripts/verify-ai-api-cutover.sh` 僅透過 Campus public API 做 post-cutover smoke test；它會
   驗證四個文字 API 與 chat SSE，且不存取 LiteLLM 管理 endpoint。
 
@@ -917,8 +917,8 @@ VPN/host firewall、LiteLLM Virtual Key 值或既有 production access log。沒
 4. 舊 Gateway `:3000` 的 `/v1/models`、chat 非串流與 chat SSE smoke test 仍通過，以確保
    回滾入口可用。
 5. LiteLLM `:4000` 僅可由 Campus backend、監控與管理來源連入；從一般網段測試連線被拒。
-6. `AI_API_ALLOWED_MODELS` 的值與 LiteLLM Virtual Key 允許的 aliases 完全一致；不得填入
-   `served_model_name`、主機路徑或 legacy/未核准名稱。
+6. LiteLLM `/v1/models` 的 aliases 與 `models.json` 產生的 `model_list` 一致；不得暴露
+   `served_model_name` 或主機模型路徑。
 
 建議操作順序（在 deployment host、由有權限的 operator 執行）：
 

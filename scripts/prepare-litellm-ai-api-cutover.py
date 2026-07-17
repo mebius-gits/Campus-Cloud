@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-DEFAULT_MODELS = "gpt-oss-20B,Qwen/Qwen3-14B-FP8"
 ENV_KEY_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
 
@@ -38,7 +37,6 @@ def parse_args() -> argparse.Namespace:
         default="LITELLM_SERVICE_API_KEY",
         help="Environment variable containing the restricted LiteLLM service key",
     )
-    parser.add_argument("--models", default=DEFAULT_MODELS)
     parser.add_argument("--timeout", type=int, default=320)
     parser.add_argument(
         "--allow-hostname",
@@ -82,13 +80,19 @@ def dotenv_value(value: str) -> str:
     return json.dumps(value)
 
 
-def update_dotenv(path: Path, updates: dict[str, str]) -> str:
+def update_dotenv(
+    path: Path, updates: dict[str, str], *, remove: frozenset[str] = frozenset()
+) -> str:
+    if remove.intersection(updates):
+        raise ValueError("a dotenv key cannot be both updated and removed")
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     counts = {key: 0 for key in updates}
     rendered: list[str] = []
     for line in lines:
         match = ENV_KEY_PATTERN.match(line)
         key = match.group(1) if match else None
+        if key in remove:
+            continue
         if key in updates:
             counts[key] += 1
             if counts[key] > 1:
@@ -115,15 +119,10 @@ def main() -> int:
         raise ValueError(f"inject the service key through {args.service_key_env}")
     if service_key.startswith("ccai_"):
         raise ValueError("the LiteLLM service key must not be a Campus ccai_* user key")
-    models = [model.strip() for model in args.models.split(",") if model.strip()]
-    if not models or len(models) != len(set(models)):
-        raise ValueError("--models must contain one or more unique public aliases")
-
     updates = {
         "AI_API_BASE_URL": endpoint,
         "AI_API_API_KEY": service_key,
         "AI_API_TIMEOUT": str(args.timeout),
-        "AI_API_ALLOWED_MODELS": ",".join(models),
         # The admin-only runtime snapshot is deliberately separate from the
         # public data-plane routes. Reuse the same restricted service
         # identity, never the LiteLLM master key, and keep it on the internal
@@ -131,12 +130,17 @@ def main() -> int:
         "LITELLM_RUNTIME_BASE_URL": endpoint,
         "LITELLM_RUNTIME_API_KEY": service_key,
     }
-    rendered = update_dotenv(args.env_file, updates)
+    rendered = update_dotenv(
+        args.env_file,
+        updates,
+        remove=frozenset({"AI_API_ALLOWED_MODELS"}),
+    )
     print("LiteLLM cutover preflight passed:")
     print(f"  dotenv: {args.env_file}")
     print(f"  endpoint: {endpoint}")
     print(f"  timeout: {args.timeout}s")
-    print(f"  allowed models: {', '.join(models)}")
+    print("  models: managed by vllm-service/models.json via LiteLLM")
+    print("  removed obsolete AI_API_ALLOWED_MODELS setting")
     print(f"  service key source: {args.service_key_env} (value redacted)")
     print("  runtime monitoring identity: restricted service key (value redacted)")
 
