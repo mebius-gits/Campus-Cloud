@@ -213,6 +213,25 @@ def _approve_and_place(
         requests=approved_requests,
     )
     for request in approved_requests:
+        if request.vmid is not None:
+            current_node = request.actual_node or request.assigned_node
+            if not current_node:
+                raise BadRequestError(
+                    f"Provisioned request {request.id} has no known node."
+                )
+            vm_request_repo.update_vm_request_provisioning(
+                session=session,
+                db_request=request,
+                vmid=request.vmid,
+                assigned_node=current_node,
+                desired_node=current_node,
+                actual_node=current_node,
+                placement_strategy_used=request.placement_strategy_used,
+                migration_status=VMMigrationStatus.completed,
+                migration_error=None,
+                commit=False,
+            )
+            continue
         selection = selections.get(request.id)
         if not selection or not selection.node:
             raise BadRequestError(

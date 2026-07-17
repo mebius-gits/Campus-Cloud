@@ -19,7 +19,6 @@ from app.models import (
 )
 from app.repositories import governance as governance_repo
 from app.repositories import resource as resource_repo
-from app.repositories import vm_migration_job as vm_migration_job_repo
 from app.repositories import vm_request as vm_request_repo
 from app.services.network import ip_management_service
 from app.services.proxmox import provisioning_service, proxmox_service
@@ -33,14 +32,7 @@ logger = logging.getLogger(__name__)
 
 # 這些名稱由此模組 re-export，測試以
 # ``app.services.scheduling.coordinator.<name>`` 引用或 monkeypatch。
-__all__ = [
-    "vm_migration_job_repo",
-    "_migrate_request_to_desired_node",
-    "_process_claimed_migration_job",
-]
-
 SCHEDULER_POLL_SECONDS = scheduling_policy.SCHEDULER_POLL_SECONDS
-_MigrationPolicy = scheduling_policy.MigrationPolicy
 
 
 def _utc_now() -> datetime:
@@ -53,33 +45,6 @@ def _normalize_datetime(value: datetime | None) -> datetime | None:
 
 def _resource_type_for_request(request: VMRequest) -> str:
     return scheduling_policy.resource_type_for_request(request)
-
-
-def _should_pin_request_for_auto_migration(
-    *,
-    request: VMRequest,
-    detected_runtime_pin: bool = False,
-) -> bool:
-    return scheduling_support.should_pin_request_for_auto_migration(
-        request=request,
-        detected_runtime_pin=detected_runtime_pin,
-    )
-
-
-def _get_migration_policy(*, session: Session) -> _MigrationPolicy:
-    return scheduling_policy.get_migration_policy(session=session)
-
-
-def _migration_worker_id() -> str:
-    return scheduling_policy.migration_worker_id()
-
-
-def _next_retry_at(*, now: datetime, policy: _MigrationPolicy, attempt_count: int) -> datetime:
-    return scheduling_policy.next_retry_at(
-        now=now,
-        policy=policy,
-        attempt_count=attempt_count,
-    )
 
 
 def _find_existing_resource_for_request(
@@ -138,11 +103,7 @@ def _adopt_existing_resource(
         desired_node=desired_node or actual_node,
         actual_node=actual_node,
         placement_strategy_used=placement_strategy_used,
-        migration_status=(
-            VMMigrationStatus.pending
-            if desired_node and desired_node != actual_node
-            else VMMigrationStatus.idle
-        ),
+        migration_status=VMMigrationStatus.completed,
         migration_error=None,
         commit=False,
     )
@@ -165,21 +126,6 @@ def _adopt_existing_resource(
         "Adopted existing %s resource VMID %s for request %s",
         resource_type, vmid, request.id,
     )
-    detected_runtime_pin = False
-    try:
-        detected_runtime_pin = _detect_migration_pinned(
-            node=actual_node,
-            vmid=vmid,
-            resource_type=resource_type,
-        )
-    except Exception:
-        logger.debug("Failed to detect migration pinning for VMID %s", vmid, exc_info=True)
-    if _should_pin_request_for_auto_migration(
-        request=request,
-        detected_runtime_pin=detected_runtime_pin,
-    ) and not request.migration_pinned:
-        request.migration_pinned = True
-        session.add(request)
     return vmid, actual_node, placement_strategy_used, started
 
 
@@ -240,7 +186,6 @@ def _provision_new_resource(
     request_expiry_date = request.expiry_date
     request_template_id = request.template_id
     request_resource_type = request.resource_type
-    request_migration_pinned = request.migration_pinned
     request_service_template_slug = getattr(request, "service_template_slug", None)
 
     # Close session so clone runs outside any transaction.
@@ -301,11 +246,7 @@ def _provision_new_resource(
             desired_node=desired_node or actual_node,
             actual_node=actual_node,
             placement_strategy_used=plan["placement_strategy"],
-            migration_status=(
-                VMMigrationStatus.pending
-                if desired_node and desired_node != actual_node
-                else VMMigrationStatus.completed
-            ),
+            migration_status=VMMigrationStatus.completed,
             migration_error=None,
             commit=False,
         )
@@ -319,20 +260,6 @@ def _provision_new_resource(
             details=f"Provisioned {request_resource_type} for request {request_id} on {actual_node}",
             commit=False,
         )
-        detected_runtime_pin = False
-        try:
-            detected_runtime_pin = _detect_migration_pinned(
-                node=actual_node, vmid=new_vmid,
-                resource_type="lxc" if request_resource_type == "lxc" else "qemu",
-            )
-        except Exception:
-            logger.debug("Failed to detect migration pinning for VMID %s", new_vmid, exc_info=True)
-        if _should_pin_request_for_auto_migration(
-            request=req,
-            detected_runtime_pin=detected_runtime_pin,
-        ) and not request_migration_pinned:
-            req.migration_pinned = True
-            finish_session.add(req)
         finish_session.commit()
 
     # E1：provision 完成即建受保護初始快照（best-effort，不阻斷）
@@ -666,44 +593,16 @@ def _refresh_actual_node(
             f"does not match request hostname '{expected_hostname}'"
         )
     actual_node = str(resource["node"])
-    detected_runtime_pin = False
-    try:
-        detected_runtime_pin = _detect_migration_pinned(
-            node=actual_node,
-            vmid=int(request.vmid),
-            resource_type=_resource_type_for_request(request),
-        )
-    except Exception:
-        logger.debug(
-            "Failed to refresh migration pinning for request %s (VMID %s)",
-            request.id,
-            request.vmid,
-            exc_info=True,
-        )
-    if _should_pin_request_for_auto_migration(
-        request=db_request,
-        detected_runtime_pin=detected_runtime_pin,
-    ) and not db_request.migration_pinned:
-        db_request.migration_pinned = True
-        session.add(db_request)
     vm_request_repo.update_vm_request_provisioning(
         session=session,
         db_request=db_request,
         vmid=request.vmid,
-        assigned_node=db_request.assigned_node,
-        desired_node=db_request.desired_node,
+        assigned_node=actual_node,
+        desired_node=actual_node,
         actual_node=actual_node,
         placement_strategy_used=db_request.placement_strategy_used,
-        migration_status=(
-            VMMigrationStatus.pending
-            if db_request.desired_node and db_request.desired_node != actual_node
-            else db_request.migration_status
-        ),
-        migration_error=(
-            None
-            if db_request.desired_node == actual_node
-            else db_request.migration_error
-        ),
+        migration_status=VMMigrationStatus.completed,
+        migration_error=None,
         rebalance_epoch=db_request.rebalance_epoch,
         last_rebalanced_at=db_request.last_rebalanced_at,
         last_migrated_at=db_request.last_migrated_at,
@@ -711,19 +610,6 @@ def _refresh_actual_node(
     )
     return actual_node, resource
 
-
-# Migration sub-domain has been extracted to ``app.services.scheduling.migration``.
-# Re-exported here so that callers and test monkey-patches against
-# ``app.services.scheduling.coordinator.<name>`` keep working.
-# ruff: noqa: E402, F401, I001
-from app.services.scheduling.migration import (
-    _detect_migration_pinned,
-    _effective_request_migration_state,
-    _migrate_request_to_desired_node,
-    _process_claimed_migration_job,
-    _process_pending_migration_jobs,
-    _sync_request_migration_job,
-)
 
 def _adopt_or_provision_due_request(
     *,
@@ -785,9 +671,7 @@ def _ensure_request_running(
     session: Session,
     request: VMRequest,
     now: datetime,
-    policy: _MigrationPolicy,
-    migrations_used: int,
-) -> tuple[bool, int]:
+) -> bool:
     """Make sure an approved request has a live VM.
 
     For requests without a vmid: lock, mark migration running, clone, record VMID.
@@ -799,7 +683,7 @@ def _ensure_request_running(
     if request.vmid is None:
         outcome = _adopt_or_provision_due_request(session=session, request=request)
         if outcome is None:
-            return False, migrations_used
+            return False
         _vmid, outcome_actual_node, _strategy, started = outcome
         # If freshly provisioned on the desired node, mark migration as
         # completed so any "pending/idle" state left over from the most
@@ -832,19 +716,13 @@ def _ensure_request_running(
                 commit=False,
             )
             session.commit()
-        return started, migrations_used
+        return started
 
     # ---- Already provisioned → ensure VM is started ----------------------
     actual_node, _ = _refresh_actual_node(session=session, request=request)
-    _sync_request_migration_job(
-        session=session, request=request, source_node=actual_node, now=now,
-    )
     request = vm_request_repo.get_vm_request_by_id(
         session=session, request_id=request.id, for_update=True,
     ) or request
-    effective_migration_status, effective_migration_error = _effective_request_migration_state(
-        session=session, request=request,
-    )
 
     pve_status = proxmox_service.get_status(actual_node, request.vmid, resource_type)
     is_running = str(pve_status.get("status") or "").lower() == "running"
@@ -855,20 +733,12 @@ def _ensure_request_running(
         session=session,
         db_request=request,
         vmid=request.vmid,
-        assigned_node=request.desired_node or actual_node,
-        desired_node=request.desired_node or actual_node,
+        assigned_node=actual_node,
+        desired_node=actual_node,
         actual_node=actual_node,
         placement_strategy_used=request.placement_strategy_used,
-        migration_status=(
-            VMMigrationStatus.completed
-            if request.desired_node and request.desired_node == actual_node
-            else effective_migration_status
-        ),
-        migration_error=(
-            None
-            if request.desired_node and request.desired_node == actual_node
-            else effective_migration_error
-        ),
+        migration_status=VMMigrationStatus.completed,
+        migration_error=None,
         rebalance_epoch=request.rebalance_epoch,
         last_rebalanced_at=request.last_rebalanced_at,
         last_migrated_at=request.last_migrated_at,
@@ -887,80 +757,12 @@ def _ensure_request_running(
             "Auto-started request %s on node %s with VMID %s",
             request.id, actual_node, request.vmid,
         )
-    return not is_running, migrations_used
-
-
-def _rebalance_active_window(now: datetime) -> int:
-    with Session(engine) as session:
-        policy = _get_migration_policy(session=session)
-        due_requests = vm_request_repo.list_due_for_rebalance_vm_requests(
-            session=session,
-            at_time=now,
-            interval_minutes=policy.active_rebalance_interval_minutes,
-        )
-        if not due_requests:
-            return 0
-
-        active_requests = vm_request_repo.list_active_approved_vm_requests(
-            session=session,
-            at_time=now,
-        )
-        if not active_requests:
-            return 0
-
-        selections = vm_request_placement_service.rebalance_active_assignments(
-            session=session,
-            requests=active_requests,
-        )
-        rebalance_epoch = max(
-            (int(item.rebalance_epoch or 0) for item in active_requests),
-            default=0,
-        ) + 1
-
-        for request in active_requests:
-            selection = selections.get(request.id)
-            if not selection or not selection.node:
-                raise ValueError(
-                    f"No feasible active placement exists for request {request.id}"
-                )
-            known_actual_node = request.actual_node
-            if request.vmid is not None and not known_actual_node:
-                known_actual_node = request.assigned_node
-            vm_request_repo.update_vm_request_provisioning(
-                session=session,
-                db_request=request,
-                vmid=request.vmid,
-                assigned_node=selection.node,
-                desired_node=selection.node,
-                actual_node=known_actual_node,
-                placement_strategy_used=selection.strategy,
-                migration_status=(
-                    VMMigrationStatus.pending
-                    if request.vmid is not None
-                    and known_actual_node
-                    and known_actual_node != selection.node
-                    else VMMigrationStatus.idle
-                ),
-                migration_error=None,
-                rebalance_epoch=rebalance_epoch,
-                last_rebalanced_at=now,
-                commit=False,
-            )
-            _sync_request_migration_job(
-                session=session,
-                request=request,
-                source_node=known_actual_node,
-                now=now,
-            )
-        session.commit()
-        return len(due_requests)
+    return not is_running
 
 
 def process_single_request_start(request_id: uuid.UUID) -> bool:
     """Immediately trigger provisioning for a single approved request."""
-    now = _utc_now()
     with Session(engine) as session:
-        policy = _get_migration_policy(session=session)
         request = vm_request_repo.get_vm_request_by_id(
             session=session,
             request_id=request_id,
@@ -970,12 +772,10 @@ def process_single_request_start(request_id: uuid.UUID) -> bool:
         if not request or request.status != VMRequestStatus.approved:
             return False
         try:
-            started, _ = _ensure_request_running(
+            started = _ensure_request_running(
                 session=session,
                 request=request,
-                now=now,
-                policy=policy,
-                migrations_used=0,
+                now=_utc_now(),
             )
             session.commit()
             return started
@@ -991,24 +791,10 @@ def process_due_request_starts() -> int:
     started_count = 0
     now = _utc_now()
 
-    try:
-        _rebalance_active_window(now)
-    except ValueError:
-        logger.exception("Failed to rebalance active VM request window")
-    except Exception:
-        logger.exception("Unexpected error while rebalancing active VM request window")
-
     with Session(engine) as session:
-        policy = _get_migration_policy(session=session)
         active_requests = vm_request_repo.list_active_approved_vm_requests(
             session=session,
             at_time=now,
-        )
-        migrations_used = _process_pending_migration_jobs(
-            session=session,
-            now=now,
-            policy=policy,
-            active_requests=active_requests,
         )
         governance_config = governance_repo.get_governance_config(session=session)
 
@@ -1023,12 +809,10 @@ def process_due_request_starts() -> int:
                 )
                 continue
             try:
-                started, migrations_used = _ensure_request_running(
+                started = _ensure_request_running(
                     session=session,
                     request=request,
                     now=now,
-                    policy=policy,
-                    migrations_used=migrations_used,
                 )
                 if started:
                     started_count += 1
@@ -1066,12 +850,10 @@ def process_due_request_starts() -> int:
                         request.status = VMRequestStatus.approved
                         session.add(request)
                         session.commit()
-                    started, migrations_used = _ensure_request_running(
+                    started = _ensure_request_running(
                         session=session,
                         request=request,
                         now=now,
-                        policy=policy,
-                        migrations_used=migrations_used,
                     )
                     if started:
                         started_count += 1

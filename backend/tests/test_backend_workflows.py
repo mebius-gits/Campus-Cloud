@@ -1312,6 +1312,7 @@ def test_create_vm_prefers_admin_selected_storage(
     )
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_due_request_starts_rebalances_active_window_and_migrates(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1459,6 +1460,7 @@ def test_process_due_request_starts_rebalances_active_window_and_migrates(
     assert refreshed_new.rebalance_epoch == 2
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_due_request_starts_provisions_new_active_request_on_rebalanced_node(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1567,6 +1569,7 @@ def test_process_due_request_starts_provisions_new_active_request_on_rebalanced_
     assert refreshed.last_rebalanced_at == now.replace(tzinfo=None)
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_due_request_starts_defers_when_migration_budget_is_exhausted(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1669,6 +1672,7 @@ def test_process_due_request_starts_defers_when_migration_budget_is_exhausted(
     assert "migration budget" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_due_request_starts_defers_when_recently_migrated(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1772,6 +1776,7 @@ def test_process_due_request_starts_defers_when_recently_migrated(
     assert "too recently" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_rebalance_active_window_enqueues_pending_migration_job(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1834,6 +1839,7 @@ def test_rebalance_active_window_enqueues_pending_migration_job(
     assert job.rebalance_epoch == 1
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_rebalance_active_window_requeues_after_interval_elapsed(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1892,6 +1898,7 @@ def test_rebalance_active_window_requeues_after_interval_elapsed(
     assert request.desired_node == "pve-a"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_due_request_starts_retries_pending_migration_job_until_limit(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2020,6 +2027,7 @@ def test_process_due_request_starts_retries_pending_migration_job_until_limit(
     assert request.migration_status == VMMigrationStatus.failed
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_build_plan_prefers_current_node_when_migration_cost_is_applied(
     db: Session,
 ) -> None:
@@ -2210,6 +2218,7 @@ def test_build_plan_prefers_balance_before_node_priority(
     assert plan.recommended_node == "pve-b"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_unprovisioned_request_reassignment_has_no_migration_cost(
     db: Session,
 ) -> None:
@@ -2298,6 +2307,7 @@ def test_unprovisioned_request_reassignment_has_no_migration_cost(
     assert evaluation_with_reserved_node.objective == evaluation_without_reserved_node.objective
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_migrate_request_to_desired_node_blocks_vm_with_passthrough(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2372,6 +2382,7 @@ def test_migrate_request_to_desired_node_blocks_vm_with_passthrough(
     assert "passthrough devices" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_migrate_request_to_desired_node_blocks_gpu_vm(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2432,6 +2443,7 @@ def test_migrate_request_to_desired_node_blocks_gpu_vm(
     assert "GPU mapping" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_migrate_request_to_desired_node_blocks_non_shared_storage_vm(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2505,6 +2517,7 @@ def test_migrate_request_to_desired_node_blocks_non_shared_storage_vm(
     assert "explicitly shared storage 'local-lvm'" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_migrate_request_to_desired_node_blocks_lxc_bind_mount(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2578,6 +2591,7 @@ def test_migrate_request_to_desired_node_blocks_lxc_bind_mount(
     assert "LXC containers stay on their current node" in request.migration_error
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_rebalance_active_assignments_keeps_passthrough_vm_on_current_node(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2656,6 +2670,7 @@ def test_rebalance_active_assignments_keeps_passthrough_vm_on_current_node(
     assert selection.node == "pve-a"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_rebalance_active_assignments_keeps_lxc_on_current_node(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2735,6 +2750,7 @@ def test_rebalance_active_assignments_keeps_lxc_on_current_node(
     assert selection.node == "pve-a"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_rebalance_active_assignments_keeps_non_shared_storage_vm_on_current_node(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3066,6 +3082,7 @@ def test_delete_user_rejects_owned_resources(db: Session) -> None:
     assert db.get(User, owner.id) is not None
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_delete_user_removes_owned_migration_jobs(db: Session) -> None:
     owner = _create_user(db)
     admin = _create_user(db, is_superuser=True)
@@ -3129,6 +3146,7 @@ def test_delete_user_removes_owned_migration_jobs(db: Session) -> None:
         ),
     ],
 )
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_sync_request_migration_job_uses_specific_clear_reason(
     db: Session,
     vmid: int | None,
@@ -3204,6 +3222,7 @@ def test_vm_templates_are_filtered_by_pool(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_local_rebalance_search_improves_unbalanced_initial_assignment(
     db: Session,
 ) -> None:
@@ -3303,6 +3322,7 @@ def test_local_rebalance_search_improves_unbalanced_initial_assignment(
     assert improved[request_a.id] != improved[request_b.id]
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_reserved_target_node_preview_matches_active_rebalance_objective(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -3397,6 +3417,7 @@ def test_reserved_target_node_preview_matches_active_rebalance_objective(
     assert selection.node == "pve-b"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_quick_template_reserved_target_skips_cohort_rebalance_preview(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -3544,6 +3565,7 @@ def test_storage_selection_penalizes_high_contention_even_with_better_priority()
     assert chosen.pool.storage == "slightly-lower-priority-but-cooler"
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_pending_migration_jobs_skips_job_until_backoff_expires(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3607,6 +3629,7 @@ def test_process_pending_migration_jobs_skips_job_until_backoff_expires(
     assert job.attempt_count == 0
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_pending_migration_jobs_reclaims_expired_running_claim(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3708,6 +3731,7 @@ def test_process_pending_migration_jobs_reclaims_expired_running_claim(
     assert request.migration_status == VMMigrationStatus.completed
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_pending_migration_jobs_runs_claimed_jobs_in_parallel(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3783,6 +3807,7 @@ def test_process_pending_migration_jobs_runs_claimed_jobs_in_parallel(
     assert len(set(thread_ids)) == 2
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_process_pending_migration_jobs_deletes_orphaned_jobs(
     db: Session,
 ) -> None:
@@ -3846,6 +3871,7 @@ def test_process_pending_migration_jobs_deletes_orphaned_jobs(
     assert db.get(VMMigrationJob, job_id) is None
 
 
+@pytest.mark.skip(reason="automatic VM migration feature was retired")
 def test_migrate_request_to_desired_node_refreshes_job_claim_while_waiting(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

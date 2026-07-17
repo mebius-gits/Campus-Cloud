@@ -302,7 +302,7 @@ def select_reserved_target_node(
         start_at=start_at,
         end_at=end_at,
         reserved_requests=reserved_requests,
-        allow_cohort_rebalance=not _is_quick_template_request(db_request),
+        allow_cohort_rebalance=False,
     )
 
 
@@ -433,107 +433,15 @@ def select_reserved_target_node_for_request(
         placement_strategy=strategy,
         node_priorities=get_node_priorities(session),
     )
-    if not allow_cohort_rebalance:
-        return CurrentPlacementSelection(
-            node=plan.recommended_node,
-            strategy=strategy,
-            plan=plan.model_copy(
-                update={
-                    "summary": (
-                        "Selected from currently available reserved capacity "
-                        "without previewing cohort rebalance."
-                    ),
-                }
-            ),
-        )
-
-    overlapping_start_requests = [
-        item
-        for item in reserved_requests
-        if (window := _request_window(item))[0] is not None
-        and window[1] is not None
-        and window[0] <= start_at < window[1]
-    ]
-    preview_request = _build_preview_vm_request(
-        request=request,
-        start_at=start_at,
-        end_at=end_at,
-    )
-    preview_cohort = overlapping_start_requests + [preview_request]
-    preview_ordered_requests = sorted(
-        preview_cohort,
-        key=lambda item: (
-            _normalize_datetime(item.start_at) or datetime.min.replace(tzinfo=UTC),
-            _normalize_datetime(item.reviewed_at) or datetime.min.replace(tzinfo=UTC),
-            _normalize_datetime(item.created_at) or datetime.min.replace(tzinfo=UTC),
-            str(item.id),
-        ),
-    )
-    preview_baseline_nodes = _build_rebalance_baseline_nodes(
-        session=session,
-        requests=preview_ordered_requests,
-    )
-    preview_baseline_nodes = [
-        item.model_copy(deep=True)
-        for item in preview_baseline_nodes
-        if item.node in feasible_nodes
-    ]
-    priorities = get_node_priorities(session)
-    tuning = _get_placement_tuning(session=session)
-    best_preview_node = plan.recommended_node
-    best_preview_objective: tuple[float, float, float, int] | None = None
-    candidate_evals: dict[str, _AssignmentEvaluation] = {}
-    for candidate_node in sorted(feasible_nodes):
-        try:
-            preview_assignments = _solve_rebalance_assignments(
-                session=session,
-                ordered_requests=preview_ordered_requests,
-                baseline_nodes=preview_baseline_nodes,
-                strategy=strategy,
-                priorities=priorities,
-                tuning=tuning,
-                fixed_assignments={preview_request.id: candidate_node},
-            )
-            preview_eval = _evaluate_active_assignment_map(
-                session=session,
-                ordered_requests=preview_ordered_requests,
-                baseline_nodes=preview_baseline_nodes,
-                assignments=preview_assignments,
-                priorities=priorities,
-                tuning=tuning,
-            )
-        except ValueError:
-            continue
-        if not preview_eval.feasible:
-            continue
-        candidate_evals[candidate_node] = preview_eval
-        if (
-            best_preview_objective is None
-            or preview_eval.objective < best_preview_objective
-        ):
-            best_preview_objective = preview_eval.objective
-            best_preview_node = candidate_node
-    preview_reasons = (
-        _build_preview_selection_reasons(
-            selected_node=best_preview_node,
-            selected_eval=candidate_evals[best_preview_node],
-            candidate_evals=candidate_evals,
-            priorities=priorities,
-        )
-        if best_preview_node and best_preview_node in candidate_evals
-        else list(plan.rationale or [])
-    )
     return CurrentPlacementSelection(
-        node=best_preview_node,
+        node=plan.recommended_node,
         strategy=strategy,
         plan=plan.model_copy(
             update={
-                "recommended_node": best_preview_node,
                 "summary": (
-                    "Reservation preview selected the best feasible node "
-                    "using the same active-window rebalance objective."
+                    "Selected the best feasible node from projected capacity "
+                    "for the requested rental window."
                 ),
-                "rationale": preview_reasons,
             }
         ),
     )
@@ -1197,6 +1105,13 @@ def rebuild_reserved_assignments(
     selections: dict[uuid.UUID, CurrentPlacementSelection] = {}
 
     for request in ordered_requests:
+        # 已建立的 VM/LXC 只作為租借容量占用，不再重新指派節點。
+        current_node = _provisioned_current_node(request)
+        if request.vmid is not None and current_node:
+            request.assigned_node = current_node
+            request.desired_node = current_node
+            reserved_so_far.append(request)
+            continue
         selection = select_reserved_target_node(
             session=session,
             db_request=request,

@@ -37,7 +37,6 @@ const GroupsPage = lazy(() => import("./pages/system/groups/GroupsPage"));
 const AdminPage = lazy(() => import("./pages/system/admin/AdminPage"));
 const SettingsPage = lazy(() => import("./pages/system/settings/SettingsPage"));
 const MonitoringPage = lazy(() => import("./pages/system/monitoring/MonitoringPage"));
-const MigrationPage = lazy(() => import("./pages/system/migration/MigrationPage"));
 const QuotasPage = lazy(() => import("./pages/system/quotas/QuotasPage"));
 const AuditPage = lazy(() => import("./pages/system/audit/AuditPage"));
 const JobsPage = lazy(() => import("./pages/system/jobs/JobsPage"));
@@ -110,7 +109,6 @@ function App() {
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="/quotas"    element={<QuotasPage />} />
           <Route path="/monitoring" element={<MonitoringPage />} />
-          <Route path="/migration" element={<MigrationPage />} />
           <Route path="/audit"     element={<AuditPage />} />
           <Route path="/jobs"      element={<JobsPage />} />
           <Route path="/deploy-logs" element={<DeployLogsPage />} />

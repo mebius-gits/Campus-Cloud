@@ -52,7 +52,6 @@ const PATH_MAP = {
   "/ai-api-approvals": "/ai-api-review",
   "/ai-api-credentials": "/ai-api-keys",
   "/admin/audit-logs": "/audit",
-  "/admin/migration-jobs": "/migration",
   "/admin/domains": "/domain",
   "/admin/gateway": "/gateway",
   "/admin/ip-management": "/ip-management",
