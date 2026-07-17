@@ -275,6 +275,7 @@ class GatewayAdmission:
 
 
 _VALID_QUEUE_CLASSES = {"interactive", "stream", "batch"}
+_BAD_QUEUE_CLASS_MESSAGE = "gateway_queue_class must be one of: batch, interactive, stream"
 _STANDARD_CAPABILITY_FIELDS = {
     "reasoning_effort": "reasoning",
     "structured_outputs": "structured_outputs",
@@ -379,9 +380,7 @@ def _infer_queue_class(payload: dict, stream_mode: bool) -> str:
     if explicit is not None:
         queue_class = str(explicit).strip().lower()
         if queue_class not in _VALID_QUEUE_CLASSES:
-            raise ValueError(
-                f"gateway_queue_class must be one of: {', '.join(sorted(_VALID_QUEUE_CLASSES))}"
-            )
+            raise ValueError(_BAD_QUEUE_CLASS_MESSAGE)
         return queue_class
 
     if stream_mode:
@@ -557,10 +556,23 @@ async def _proxy_openai_post(path: str, payload: dict, request: Request | None =
         admission = await _acquire_gateway_admission(route, upstream_payload, stream_mode, request)
     except ValueError as exc:
         _record_rejection("bad_queue_class", alias=route.alias)
-        return _openai_error(400, str(exc), code="bad_queue_class")
+        logger.warning("Rejected invalid gateway queue class: %s", exc)
+        return _openai_error(400, _BAD_QUEUE_CLASS_MESSAGE, code="bad_queue_class")
     except HTTPException as exc:
-        error = exc.detail.get("error", {}) if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
-        return JSONResponse(status_code=exc.status_code, content={"error": error})
+        if exc.status_code == 429:
+            return _openai_error(
+                429,
+                "Gateway queue timeout",
+                error_type="rate_limit_error",
+                code="gateway_queue_timeout",
+            )
+        logger.error("Unexpected gateway admission failure: status_code=%s", exc.status_code)
+        return _openai_error(
+            500,
+            "Gateway admission failed",
+            error_type="server_error",
+            code="gateway_admission_failed",
+        )
 
     upstream_payload["model"] = route.model_name
 
@@ -904,7 +916,8 @@ async def chat(request: Request, chat_request: ChatRequest) -> ChatResponse:
         admission = await _acquire_gateway_admission(route, upstream_payload, stream_mode=False, request=request)
     except ValueError as exc:
         _record_rejection("bad_queue_class", alias=route.alias)
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning("Rejected invalid gateway queue class: %s", exc)
+        raise HTTPException(status_code=400, detail=_BAD_QUEUE_CLASS_MESSAGE) from None
 
     upstream_payload["model"] = route.model_name
     try:

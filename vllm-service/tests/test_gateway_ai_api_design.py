@@ -113,6 +113,48 @@ def test_queue_class_is_internal_and_removed_from_payload() -> None:
     assert "gateway_queue_class" not in payload
 
 
+def test_proxy_hides_queue_class_exception_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    route = _route()
+
+    async def raise_internal_value_error(*args, **kwargs):
+        raise ValueError("internal queue implementation detail")
+
+    monkeypatch.setattr(gateway_main, "gateway_routes", {route.alias: route})
+    monkeypatch.setattr(gateway_main, "_acquire_gateway_admission", raise_internal_value_error)
+
+    response = asyncio.run(
+        gateway_main._proxy_openai_post(
+            "/chat/completions",
+            {"model": route.alias},
+        )
+    )
+
+    assert response.status_code == 400
+    assert b"internal queue implementation detail" not in response.body
+    assert b"gateway_queue_class must be one of" in response.body
+
+
+def test_proxy_hides_unexpected_http_exception_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    route = _route()
+
+    async def raise_internal_http_exception(*args, **kwargs):
+        raise HTTPException(status_code=502, detail="internal upstream implementation detail")
+
+    monkeypatch.setattr(gateway_main, "gateway_routes", {route.alias: route})
+    monkeypatch.setattr(gateway_main, "_acquire_gateway_admission", raise_internal_http_exception)
+
+    response = asyncio.run(
+        gateway_main._proxy_openai_post(
+            "/chat/completions",
+            {"model": route.alias},
+        )
+    )
+
+    assert response.status_code == 500
+    assert b"internal upstream implementation detail" not in response.body
+    assert b"gateway_admission_failed" in response.body
+
+
 def test_gateway_admission_times_out_when_model_slots_are_full() -> None:
     async def run() -> None:
         route = _route()
