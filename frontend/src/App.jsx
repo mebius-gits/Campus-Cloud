@@ -31,13 +31,17 @@ const ClassroomPage = lazy(() => import("./pages/classroom/ClassroomPage"));
 const CoursePathsPage = lazy(() => import("./pages/courses/paths/CoursePathsPage"));
 const CourseRoomPage = lazy(() => import("./pages/courses/room/CourseRoomPage"));
 const CourseCmsPage = lazy(() => import("./pages/teaching/course-cms/CourseCmsPage"));
+const CourseTemplateManagementPage = lazy(() => import("./pages/course-operations/CourseTemplateManagementPage"));
+const CourseTemplateEditorPage = lazy(() => import("./pages/course-operations/CourseTemplateEditorPage"));
+const ClassManagementPage = lazy(() => import("./pages/course-operations/ClassManagementPage"));
+const ClassCreatePage = lazy(() => import("./pages/course-operations/ClassCreatePage"));
+const ClassWorkspacePage = lazy(() => import("./pages/course-operations/ClassWorkspacePage"));
 
 // 系統管理
 const GroupsPage = lazy(() => import("./pages/system/groups/GroupsPage"));
 const AdminPage = lazy(() => import("./pages/system/admin/AdminPage"));
 const SettingsPage = lazy(() => import("./pages/system/settings/SettingsPage"));
 const MonitoringPage = lazy(() => import("./pages/system/monitoring/MonitoringPage"));
-const MigrationPage = lazy(() => import("./pages/system/migration/MigrationPage"));
 const QuotasPage = lazy(() => import("./pages/system/quotas/QuotasPage"));
 const AuditPage = lazy(() => import("./pages/system/audit/AuditPage"));
 const JobsPage = lazy(() => import("./pages/system/jobs/JobsPage"));
@@ -104,13 +108,21 @@ function App() {
           <Route path="/courses/rooms/:roomId" element={<CourseRoomPage />} />
           <Route path="/course-cms"            element={<CourseCmsPage />} />
 
+          {/* 課務管理 */}
+          <Route path="/course-template-management" element={<CourseTemplateManagementPage />} />
+          <Route path="/course-template-management/new" element={<CourseTemplateEditorPage />} />
+          <Route path="/course-template-management/:templateId" element={<CourseTemplateEditorPage />} />
+          <Route path="/class-management" element={<ClassManagementPage />} />
+          <Route path="/class-management/new" element={<ClassCreatePage />} />
+          <Route path="/class-management/:classId" element={<ClassWorkspacePage />} />
+          <Route path="/class-management/:classId/:section" element={<ClassWorkspacePage />} />
+
           {/* 系統管理 */}
           <Route path="/groups"    element={<GroupsPage />} />
           <Route path="/admin"     element={<AdminPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="/quotas"    element={<QuotasPage />} />
           <Route path="/monitoring" element={<MonitoringPage />} />
-          <Route path="/migration" element={<MigrationPage />} />
           <Route path="/audit"     element={<AuditPage />} />
           <Route path="/jobs"      element={<JobsPage />} />
           <Route path="/deploy-logs" element={<DeployLogsPage />} />
