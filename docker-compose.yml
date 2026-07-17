@@ -171,9 +171,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # Linux Docker containers must use the host-gateway address to reach the
-    # LiteLLM process, which intentionally uses host networking so it can
-    # reach vLLM instances bound to 127.0.0.1:8103/8104.
+    # The independently deployed LiteLLM gateway uses host networking so it
+    # can reach vLLM instances bound to 127.0.0.1:8103/8104.  Keep this host
+    # gateway mapping for the future AI_API_BASE_URL connection.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -224,55 +224,6 @@ services:
         condition: service_healthy
     networks:
       - skylab
-
-  # -------------------------
-  # LiteLLM AI API Gateway
-  # -------------------------
-  # Phase 4 adds an isolated PostgreSQL database; the Campus application
-  # database is never mounted or shared with this service.
-  # Host networking is deliberate: vLLM stays a host process bound to
-  # 127.0.0.1, so its 8103/8104 ports are never exposed through Docker.
-  litellm:
-    image: litellm/litellm:latest
-    profiles: ["ai-api"]
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - ./vllm-service/.runtime/litellm/config.yaml:/app/config.yaml:ro
-    environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
-      VLLM_UPSTREAM_API_KEY: ${VLLM_UPSTREAM_API_KEY:-}
-      DATABASE_URL: ${DATABASE_URL:-}
-      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-}
-      LITELLM_SERVICE_API_KEY: ${LITELLM_SERVICE_API_KEY:-}
-      DO_NOT_TRACK: "true"
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        : "$${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set for the ai-api profile}"
-        : "$${VLLM_UPSTREAM_API_KEY:?VLLM_UPSTREAM_API_KEY must be set for the ai-api profile}"
-        : "$${DATABASE_URL:?DATABASE_URL must be set for the ai-api profile}"
-        : "$${LITELLM_SALT_KEY:?LITELLM_SALT_KEY must be set for the ai-api profile}"
-        : "$${LITELLM_SERVICE_API_KEY:?LITELLM_SERVICE_API_KEY must be set for the ai-api profile}"
-        unset LITELLM_SERVICE_API_KEY
-        exec litellm --config /app/config.yaml --host 0.0.0.0 --port 4000 --telemetry False
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          /app/.venv/bin/python -c "import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).read()"
-      interval: 15s
-      timeout: 5s
-      retries: 4
-      start_period: 20s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
 
 # -------------------------
 # Volumes

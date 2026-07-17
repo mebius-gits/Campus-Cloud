@@ -2,7 +2,7 @@
 set -euo pipefail
 
 image="${1:-litellm/litellm:latest}"
-output="${2:-vllm-service/.runtime/litellm/image.json}"
+output="${2:-vllm-service/litellm/image.json}"
 
 mkdir -p "$(dirname "$output")"
 docker image inspect "$image" --format '{{json .}}' \

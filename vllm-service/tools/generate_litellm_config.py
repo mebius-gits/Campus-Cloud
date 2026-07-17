@@ -21,7 +21,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS = PROJECT_ROOT / "models.json"
 DEFAULT_TEMPLATE = PROJECT_ROOT / "litellm" / "config.template.yaml"
-DEFAULT_OUTPUT = PROJECT_ROOT / ".runtime" / "litellm" / "config.yaml"
+DEFAULT_OUTPUT = PROJECT_ROOT / "litellm" / "config.yaml"
 SECRET_ENV_REFS = {
     "os.environ/LITELLM_MASTER_KEY",
     "os.environ/VLLM_UPSTREAM_API_KEY",

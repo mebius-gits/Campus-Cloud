@@ -73,9 +73,22 @@ vLLM instance 的啟動、ready check 與優雅關閉；模型 alias／路由由
 `/v1/models` 不會暴露主機模型路徑。
 
 `generate_litellm_config.py` 讀取 `models.json` 與 `litellm/config.template.yaml`，產出
-`.runtime/litellm/config.yaml`。產物只含 `os.environ/...` secret reference，不含任何明文 key。
+`litellm/config.yaml`。產物已由 Git 忽略，且只含 `os.environ/...` secret reference，不含任何明文 key。
 `integration` 模式不含資料庫設定；`production` 模式要求部署程序先注入
 `LITELLM_SERVICE_API_KEY`，並產生 `DATABASE_URL` reference。
+
+LiteLLM 與 Campus 主 Compose 是兩個獨立專案。先建立 `litellm/.env`（可由
+`litellm/.env.example` 複製），再從該目錄啟動：
+
+```bash
+cd litellm
+docker compose up -d
+```
+
+Campus backend 未來切換時，仍透過根目錄 `.env` 的 `AI_API_BASE_URL`、
+`AI_API_API_KEY` 與 `LITELLM_RUNTIME_*` 連往獨立 gateway；同機 host-network
+部署使用 `http://host.docker.internal:4000`。根目錄 `docker-compose.yml` 不會啟動、
+停止或掛載 LiteLLM。
 
 ## 舊多模型 API Gateway（僅回滾）
 
