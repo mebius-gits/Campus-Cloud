@@ -80,7 +80,7 @@
 .actionFooter { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; border-top: 1px solid var(--color-border); }
 .formActions { padding: 4px 0 24px; }
 
-.blueprintCanvas { display: flex; align-items: stretch; min-width: max-content; padding: 0 16px 16px; overflow-x: auto; }
+.blueprintCanvas { display: flex; width: 100%; min-width: 0; align-items: stretch; padding: 0 16px 16px; overflow-x: auto; }
 .blueprintItem { display: flex; align-items: center; }
 .machineBlock { width: 260px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); }
 .machineTitle { display: flex; align-items: center; gap: 9px; padding: 12px; }
@@ -157,6 +157,7 @@
 .studentTools form, .csvArea { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .csvArea { padding-left: 20px; border-left: 1px solid var(--color-border); }
 .inlineMessage { margin: 0 16px 16px; padding: 9px 12px; border-radius: 8px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent); font-size: 12px; }
+.errorMessage { margin: 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border)); border-radius: 8px; color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface)); font-size: 13px; }
 .dot { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; }
 .dotGood { background: var(--color-success); }
 .dotWarn { background: #d99a00; }
@@ -167,6 +168,9 @@
 .confirmBar small { color: var(--color-text-secondary); font-size: 11px; }
 
 .weekTimeline { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 8px; padding: 0 16px 16px; overflow-x: auto; }
+.weekBuilder { display: grid; grid-template-columns: 1.4fr 1fr 1fr; align-items: end; gap: 12px; padding: 0 16px 16px; }
+.weekBuilder .fieldFull { grid-column: 1 / -1; }
+.weekBuilder > button { justify-self: start; }
 .weekTimeline button { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; text-align: left; color: var(--color-text); background: var(--color-surface); font: inherit; cursor: pointer; }
 .weekTimeline button:hover, .weekTimeline button.weekActive { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); }
 .weekTimeline b { color: var(--color-primary); font-size: 11px; }
@@ -199,4 +203,150 @@
 
 @media (min-width: 768px) { .page { padding: 0; } .pageTitle { font-size: 28px; } }
 @media (max-width: 1050px) { .templateChoices { grid-template-columns: 1fr; } .splitContent, .twoColumns { grid-template-columns: 1fr; } .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .weekTimeline { grid-template-columns: repeat(4, minmax(200px, 1fr)); } }
-@media (max-width: 720px) { .pageHeader, .workspaceHeader, .cardHeader, .toolbar, .integrationStrip, .confirmBar { align-items: flex-start; flex-direction: column; } .formGrid, .studentTools, .metricGrid, .weekDetail { grid-template-columns: 1fr; } .inlineBuilder { grid-template-columns: 1fr; } .csvArea { padding-top: 16px; padding-left: 0; border-top: 1px solid var(--color-border); border-left: 0; } .compactSelect { width: 100%; min-width: 0; } .ruleGrid { grid-template-columns: 1fr; } .integrationStrip .btnSecondary { align-self: stretch; } }
+@media (max-width: 720px) { .pageHeader, .workspaceHeader, .cardHeader, .toolbar, .integrationStrip, .confirmBar { align-items: flex-start; flex-direction: column; } .formGrid, .studentTools, .metricGrid, .weekDetail, .weekBuilder { grid-template-columns: 1fr; } .inlineBuilder { grid-template-columns: 1fr; } .csvArea { padding-top: 16px; padding-left: 0; border-top: 1px solid var(--color-border); border-left: 0; } .compactSelect { width: 100%; min-width: 0; } .ruleGrid { grid-template-columns: 1fr; } .integrationStrip .btnSecondary { align-self: stretch; } }
+
+/* Product-design pass: calm, task-led teacher workspace. */
+.page { width: 100%; max-width: 1440px; margin: 0 auto; gap: 20px; }
+.pageHeader { min-height: 76px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
+.pageHeading { gap: 7px; }
+.pageTitle { font-size: clamp(25px, 2.2vw, 32px); font-weight: 650; letter-spacing: -.025em; }
+.pageSubtitle { max-width: 760px; line-height: 1.6; }
+.pageKicker { color: var(--color-primary); font-size: 10px; font-weight: 750; letter-spacing: .12em; }
+.btnPrimary, .btnSecondary { min-height: 40px; border-radius: 9px; }
+.btnPrimary { box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text-primary) 18%, transparent); }
+.card { border-radius: 12px; box-shadow: none; }
+.cardHeader { padding: 20px 22px 16px; }
+.cardHeader h2 { font-size: 17px; letter-spacing: -.01em; }
+.integrationStrip { padding: 14px 16px; border-color: var(--color-border); border-radius: 10px; color: var(--color-text-secondary); background: color-mix(in srgb, var(--color-hover) 58%, var(--color-surface)); }
+.integrationStrip > svg { color: var(--color-primary); }
+.toolbar { padding: 14px 16px; background: color-mix(in srgb, var(--color-hover) 35%, var(--color-surface)); }
+.table th { height: 38px; padding-inline: 18px; background: color-mix(in srgb, var(--color-hover) 58%, var(--color-surface)); font-size: 11px; letter-spacing: .035em; text-transform: uppercase; }
+.table td { height: 62px; padding-inline: 18px; }
+.rowLink:hover { background: color-mix(in srgb, var(--color-primary) 3.5%, var(--color-surface)); }
+.listSummary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 18px; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 11px; }
+.listSummary span { display: inline-flex; align-items: center; gap: 6px; }
+.listSummary i { width: 6px; height: 6px; border-radius: 50%; background: #d99a00; }
+.readinessInline { display: flex; min-width: 130px; flex-direction: column; gap: 5px; }
+.readinessInline > i { display: block; width: 100%; max-width: 120px; height: 4px; overflow: hidden; border-radius: 99px; background: var(--color-hover); }
+.readinessInline > i > b { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
+.readinessInline small { margin: 0 !important; }
+.statusBadge { padding: 3px 9px; border: 1px solid transparent; }
+.status_planning, .status_draft { border-color: color-mix(in srgb, #d99a00 20%, var(--color-border)); background: transparent; }
+.status_active, .status_published { border-color: color-mix(in srgb, var(--color-success) 20%, var(--color-border)); background: transparent; }
+.stepTabs { align-self: flex-start; padding: 4px; border-radius: 10px; box-shadow: none; }
+.stepTabs button { min-width: 170px; justify-content: flex-start; }
+.fullPageForm { width: min(920px, 100%); }
+.formGrid { gap: 20px; padding: 4px 22px 22px; }
+.field > span { margin-bottom: 3px; font-weight: 600; }
+.field input, .field textarea, .field select, .compactSelect { border-radius: 8px; background: color-mix(in srgb, var(--color-hover) 22%, var(--color-surface)); }
+.field input:focus, .field textarea:focus, .field select:focus { background: var(--color-surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent); }
+
+.workspaceHeader { padding: 4px 0 18px; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; box-shadow: none; }
+.workspaceLayout { display: grid; grid-template-columns: 238px minmax(0, 1fr); align-items: start; gap: 28px; }
+.workspaceContent { min-width: 0; overflow: hidden; }
+.workflowRail { position: sticky; top: 20px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); }
+.workflowRailHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 10px 13px 16px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 50%, var(--color-surface)); }
+.workflowRailHeader > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.workflowRailHeader span { color: var(--color-text-muted); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
+.workflowRailHeader strong { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.railToggle { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text-secondary); background: var(--color-surface); cursor: pointer; }
+.railToggle:hover { color: var(--color-text-primary); background: var(--color-hover); }
+.workflowRail .workspaceTabs { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 0; }
+.workflowRail .workspaceTabs button { width: 100%; min-height: 52px; justify-content: flex-start; gap: 10px; padding: 8px 9px; border-radius: 8px; color: var(--color-text-secondary); text-align: left; }
+.workflowRail .workspaceTabs button > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.workflowRail .workspaceTabs button strong { color: inherit; font-size: 13px; font-weight: 600; }
+.workflowRail .workspaceTabs button small { overflow: hidden; color: var(--color-text-muted); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.workflowRail .workspaceTabs button.workspaceTabActive { color: var(--color-text-primary); background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface)); }
+.workflowRail .workspaceTabs button.workspaceTabActive small { color: var(--color-text-secondary); }
+.workflowRail .workspaceTabs button.workspaceTabLocked { opacity: .5; cursor: not-allowed; }
+.railIcon { display: grid; flex: 0 0 auto; width: 28px; height: 28px; place-items: center; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text-muted); background: var(--color-surface); }
+.workspaceTabActive .railIcon { border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border)); color: var(--color-primary); }
+.workspaceLayoutCollapsed { grid-template-columns: 62px minmax(0, 1fr); gap: 18px; }
+.workflowRailCollapsed .workflowRailHeader { justify-content: center; padding: 10px 8px; }
+.workflowRailCollapsed .workflowRailHeader > div { display: none; }
+.workflowRailCollapsed .workspaceTabs { align-items: center; padding: 8px 6px; }
+.workflowRailCollapsed .workspaceTabs button { min-height: 46px; justify-content: center; padding: 7px; }
+.workflowRailCollapsed .workspaceTabs button > span:last-child { display: none; }
+.workflowRailCollapsed .railIcon { width: 30px; height: 30px; }
+
+.readinessPanel { overflow: hidden; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
+.readinessLead { padding: 28px 28px 18px; }
+.sectionEyebrow { color: var(--color-primary); font-size: 10px; font-weight: 750; letter-spacing: .13em; }
+.readinessLead h2 { margin: 8px 0 6px; font-size: clamp(22px, 2.4vw, 30px); font-weight: 650; letter-spacing: -.025em; }
+.readinessLead p { max-width: 680px; margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.65; }
+.readinessScore { display: flex; align-items: center; gap: 20px; padding: 0 28px 22px; }
+.readinessScore > div:first-child { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.readinessScore strong { font-variant-numeric: tabular-nums; font-size: 22px; }
+.readinessScore span { color: var(--color-text-muted); font-size: 11px; }
+.readinessBar { flex: 1; height: 6px; overflow: hidden; border-radius: 99px; background: var(--color-hover); }
+.readinessBar i { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .2s ease; }
+.readinessRows { border-block: 1px solid var(--color-border); }
+.readinessRows > div { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 11px; min-height: 58px; padding: 9px 28px; border-bottom: 1px solid var(--color-divider); }
+.readinessRows > div:last-child { border-bottom: 0; }
+.readinessRows > div > span { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; }
+.readinessRows > div > div { display: flex; flex-direction: column; gap: 2px; }
+.readinessRows strong { font-size: 13px; font-weight: 600; }
+.readinessRows small { color: var(--color-text-muted); font-size: 11px; }
+.readinessDone > span { color: var(--color-text-secondary); background: var(--color-hover); }
+.readinessTodo { background: color-mix(in srgb, var(--color-primary) 3.5%, var(--color-surface)); }
+.readinessTodo > span { color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+.overviewFacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 18px 28px; }
+.overviewFacts > div { display: flex; flex-direction: column; gap: 4px; padding-right: 18px; }
+.overviewFacts > div + div { padding-left: 18px; border-left: 1px solid var(--color-border); }
+.overviewFacts span { color: var(--color-text-muted); font-size: 10px; }
+.overviewFacts strong { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; }
+.persistentFeedback { display: flex; align-items: flex-start; gap: 8px; margin: 0 28px 18px; padding: 10px 12px; border-radius: 8px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)); font-size: 12px; line-height: 1.5; }
+.primaryActionRow { display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-height: 70px; padding: 14px 28px; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 38%, var(--color-surface)); }
+.primaryActionRow > span { color: var(--color-text-muted); font-size: 11px; }
+
+.templateChoices { grid-template-columns: 1fr; gap: 0; padding: 0; border-top: 1px solid var(--color-border); }
+.templateChoices label { align-items: center; min-height: 82px; padding: 14px 20px; border: 0; border-bottom: 1px solid var(--color-divider); border-radius: 0; }
+.templateChoices label:last-child { border-bottom: 0; }
+.templateChoices label:hover, .templateChoices label.templateSelected { border-color: var(--color-divider); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); }
+.templateChoices label.templateSelected { box-shadow: inset 3px 0 var(--color-primary); }
+.templateChoices label > span { width: 34px; height: 34px; border: 1px solid var(--color-border); color: var(--color-text-secondary); background: var(--color-surface); }
+.templateChoices strong { font-size: 14px; }
+.machineBlock { border-radius: 10px; box-shadow: none; }
+.blueprintCanvas { padding: 4px 22px 22px; }
+.blueprintItem { flex: 0 0 auto; }
+.table { min-width: 720px; }
+.studentTools { grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); }
+.headerState { flex-wrap: wrap; justify-content: flex-end; }
+.confirmBar { border-color: var(--color-border); background: color-mix(in srgb, var(--color-hover) 45%, var(--color-surface)); }
+.weekBuilder { padding: 4px 22px 22px; }
+.weekTimeline { padding: 2px 22px 20px; }
+.weekTimeline button { min-height: 110px; border-radius: 8px; }
+.weekTimeline button:hover, .weekTimeline button.weekActive { border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border)); background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)); }
+
+@media (max-width: 1050px) {
+  .workspaceLayout { grid-template-columns: 1fr; gap: 18px; }
+  .workspaceLayoutCollapsed { grid-template-columns: 1fr; }
+  .workflowRail { position: static; }
+  .workflowRailCollapsed .workflowRailHeader { justify-content: space-between; padding: 13px 10px 13px 16px; }
+  .workflowRailCollapsed .workflowRailHeader > div { display: flex; }
+  .workflowRail .workspaceTabs { flex-direction: row; overflow-x: auto; }
+  .workflowRail .workspaceTabs button { flex: 0 0 170px; }
+  .workflowRailCollapsed .workspaceTabs { align-items: stretch; padding: 8px; }
+  .workflowRailCollapsed .workspaceTabs button { flex: 0 0 170px; min-height: 52px; justify-content: flex-start; padding: 8px 9px; }
+  .workflowRailCollapsed .workspaceTabs button > span:last-child { display: flex; }
+}
+
+@media (max-width: 720px) {
+  .page { gap: 16px; }
+  .pageHeader { min-height: 0; }
+  .workflowRailHeader { align-items: center; flex-direction: row; }
+  .workflowRail .workspaceTabs button { flex-basis: 150px; }
+  .railToggle { display: none; }
+  .readinessLead { padding: 22px 18px 16px; }
+  .readinessScore { padding: 0 18px 18px; }
+  .readinessRows > div { padding-inline: 18px; }
+  .overviewFacts { grid-template-columns: 1fr; gap: 12px; padding: 16px 18px; }
+  .overviewFacts > div + div { padding-left: 0; border-left: 0; }
+  .persistentFeedback { margin-inline: 18px; }
+  .primaryActionRow { align-items: stretch; flex-direction: column; padding: 14px 18px; }
+  .primaryActionRow .btnPrimary { width: 100%; }
+  .stepTabs { align-self: stretch; }
+  .stepTabs button { flex: 1; min-width: 0; }
+  .studentTools { grid-template-columns: 1fr; }
+  .listSummary { align-items: flex-start; flex-direction: column; }
+}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import MIcon from "../../components/MIcon";
 import { TemplatesService } from "../../services/templates";
-import { templateCatalog } from "./courseOperationsMock";
+import { getCourseTemplate, saveCourseTemplate } from "./courseOperationsStore";
 import styles from "./CourseOperations.module.scss";
 
 const TABS = [
@@ -59,16 +59,16 @@ export default function CourseTemplateEditorPage() {
   const [params, setParams] = useSearchParams();
   const requestedTab = params.get("tab") ?? "basic";
   const tab = TABS.some(([key]) => key === requestedTab) ? requestedTab : "basic";
-  const source = templateCatalog.find((template) => template.id === templateId);
+  const source = getCourseTemplate(templateId);
   const [template, setTemplate] = useState(() => structuredClone(source ?? emptyTemplate));
   const [pveTemplates, setPveTemplates] = useState([]);
   const isNew = !templateId;
   useEffect(() => { let active = true; TemplatesService.list().then((result) => { const rows = result?.data ?? result ?? []; if (active) setPveTemplates(rows.filter((item) => item.status === "ready")); }).catch(() => {}); return () => { active = false; }; }, []);
   function update(patch) { setTemplate((current) => ({ ...current, ...patch })); }
-  function save() { navigate("/course-template-management", { state: { savedTemplate: template } }); }
+  function save() { const saved = saveCourseTemplate(template); navigate(`/course-template-management/${saved.id}`, { replace: true, state: { saved: true } }); }
   return <div className={styles.page}>
     <button type="button" className={styles.backLink} onClick={() => navigate("/course-template-management")}><MIcon name="arrow_back" size={18} />返回上課機器模板</button>
-    <div className={styles.pageHeader}><div className={styles.pageHeading}><div className={styles.titleLine}><h1 className={styles.pageTitle}>{isNew ? "建立上課機器模板" : template.name}</h1><span className={styles.devBadge}>待開發</span></div><p className={styles.pageSubtitle}>{isNew ? "定義學生上課使用的固定機器、規格與連線。" : `${template.code} · v${template.version} · ${template.updatedAt}`}</p></div><div className={styles.pageActions}><button type="button" className={styles.btnSecondary} onClick={() => navigate("/course-template-management")}>取消</button><button type="button" className={styles.btnPrimary} disabled={!template.name.trim() || template.nodes.length === 0} onClick={save}><MIcon name="save" size={16} />儲存模板</button></div></div>
+    <div className={styles.pageHeader}><div className={styles.pageHeading}><div className={styles.titleLine}><h1 className={styles.pageTitle}>{isNew ? "建立課程機器模板" : template.name}</h1></div><p className={styles.pageSubtitle}>{isNew ? "老師先定義課程會使用的機器組合，之後可套用到不同班級。" : `${template.code} · v${template.version} · ${template.updatedAt}`}</p></div><div className={styles.pageActions}><button type="button" className={styles.btnSecondary} onClick={() => navigate("/course-template-management")}>取消</button><button type="button" className={styles.btnPrimary} disabled={!template.name.trim() || !template.code.trim() || template.nodes.length === 0} onClick={save}><MIcon name="save" size={16} />儲存模板</button></div></div>
     <div className={styles.stepTabs}>{TABS.map(([key, icon, label], index) => <button type="button" key={key} className={tab === key ? styles.stepActive : ""} onClick={() => setParams({ tab: key })}><span>{index + 1}</span><MIcon name={icon} size={17} />{label}</button>)}</div>
     {tab === "basic" && <section className={styles.card}><div className={styles.cardHeader}><div><h2>基本資料</h2><p>上課機器模板只組合既有 PVE 範本，不管理班級任務或進度。</p></div></div><div className={styles.formGrid}><label className={styles.field}><span>模板名稱</span><input value={template.name} onChange={(event) => update({ name: event.target.value })} placeholder="例如：Linux 三層式上課環境" /></label><label className={styles.field}><span>模板代碼</span><input value={template.code} onChange={(event) => update({ code: event.target.value })} placeholder="LINUX-3TIER" /></label><label className={`${styles.field} ${styles.fieldFull}`}><span>環境用途</span><textarea rows={5} value={template.description} onChange={(event) => update({ description: event.target.value })} /></label></div><div className={styles.actionFooter}><button type="button" className={styles.btnPrimary} onClick={() => setParams({ tab: "machines" })}>下一步：機器配置<MIcon name="arrow_forward" size={16} /></button></div></section>}
     {tab === "machines" && <MachineEditor value={template.nodes} onChange={(nodes) => update({ nodes })} pveTemplates={pveTemplates} />}
