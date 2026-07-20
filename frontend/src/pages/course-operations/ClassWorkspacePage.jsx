@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MIcon from "../../components/MIcon";
 import { TeachingClassesService } from "../../services/teachingClasses";
 import { listCourseTemplates } from "./courseOperationsStore";
@@ -8,7 +8,7 @@ import styles from "./CourseOperations.module.scss";
 const TABS = [
   ["overview", "dashboard", "班級總覽", "確認開課條件"],
   ["students", "groups", "加入學生", "建立正式名單"],
-  ["machines", "account_tree", "課程機器", "套用環境模板"],
+  ["machines", "account_tree", "上課環境", "套用環境模板"],
   ["weekly", "calendar_view_week", "每週內容", "可隨時補充"],
   ["progress", "checklist", "學生機器", "逐人多機狀態"],
   ["ai", "auto_awesome", "AI 檢查", "機器與上課情況"],
@@ -54,32 +54,47 @@ function normalizeClass(item) {
   };
 }
 
-function ScheduleSummary({ item }) {
-  const weekday = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][item.weekday];
-  return <div className={styles.scheduleStrip}>
-    <div><span>固定上課</span><strong>{weekday} {item.startTime}–{item.endTime}</strong></div>
-    <div><span>時區</span><strong>{item.timezone}</strong></div>
-    <div><span>提前開機</span><strong>{item.bootLeadMinutes} 分鐘</strong></div>
-    <div><span>課程期間</span><strong>{item.startDate}–{item.endDate}</strong></div>
-  </div>;
-}
-
-function Overview({ item, template, onProvision, provisioning, message }) {
+function Overview({ item, template, onProvision, onNavigate, provisioning, message }) {
   const studentsReady = item.students.length > 0;
   const machinesReady = item.nodes.length > 0;
   const completed = [studentsReady, machinesReady].filter(Boolean).length;
   const canProvision = completed === 2 && item.status === "planning";
+  const setupItems = [
+    [studentsReady, "學生名單", studentsReady ? `${item.students.length} 位學生` : "尚未加入學生"],
+    [machinesReady, "上課環境", machinesReady ? `${template?.name ?? "已套用環境模板"} · 每位學生 ${item.nodes.length} 台` : "尚未選擇環境模板"],
+  ];
+  let title = `還差 ${2 - completed} 項設定`;
+  let description = "完成學生名單與上課環境後，即可送出建機。";
+  let actionLabel = studentsReady ? "選擇環境模板" : "加入學生";
+  let actionIcon = studentsReady ? "account_tree" : "person_add";
+  let action = () => onNavigate(studentsReady ? "machines" : "students");
+  if (canProvision) {
+    title = "可以送出建機";
+    description = `${item.students.length} 位學生，每位 ${item.nodes.length} 台機器。送出後設定將鎖定並等待審核。`;
+    actionLabel = provisioning ? "正在送出…" : "確認並送出建機";
+    actionIcon = "rocket_launch";
+    action = onProvision;
+  } else if (item.status === "pending_review") {
+    title = "等待建機審核"; description = "設定已鎖定，審核通過後會開始建立全班環境。"; actionLabel = "";
+  } else if (item.status === "provisioning") {
+    title = "正在建立全班環境"; description = "系統正在處理每位學生的機器，結果會自動更新。"; actionLabel = "";
+  } else if (item.status === "partial_failed") {
+    title = "部分機器建立失敗"; description = "請查看下方失敗節點，處理完成後才能正式上課。"; actionLabel = "";
+  } else if (item.status === "active") {
+    title = "班級已就緒"; description = `${item.readyMachines}/${item.totalMachines} 台機器已完成，可以查看學生環境。`; actionLabel = "查看學生機器"; actionIcon = "checklist"; action = () => onNavigate("progress");
+  } else if (item.status === "archived") {
+    title = "班級已結束"; description = "學生、機器與每週內容已保留為歷史紀錄。"; actionLabel = "";
+  }
   return <div className={styles.stack}>
     <section className={styles.readinessPanel}>
-      <div className={styles.readinessLead}><span className={styles.sectionEyebrow}>CLASS READINESS</span><h2>{item.status === "active" ? "全部機器已就緒，班級正式啟用" : item.status === "partial_failed" ? "部分機器建立失敗" : completed === 2 ? "設定完成，可送出建機審核" : "完成學生與課程機器設定"}</h2><p>每週內容可以稍後再補；送出後會為每個機器節點建立批次工作。</p></div>
-      <div className={styles.readinessScore}><div><strong>{completed}/2</strong><span>建機設定</span></div><div className={styles.readinessBar}><i style={{ width: `${completed / 2 * 100}%` }} /></div></div>
-      <div className={styles.readinessRows}>
-        {[[studentsReady, "學生名單", studentsReady ? `${item.students.length} 位學生` : "尚未加入學生"], [machinesReady, "課程機器", machinesReady ? `${template?.name ?? "已設定模板"} · 每人 ${item.nodes.length} 台` : "尚未選擇模板"]].map(([done, label, note]) => <div key={label} className={done ? styles.readinessDone : styles.readinessTodo}><span><MIcon name={done ? "check" : "arrow_forward"} size={16} /></span><div><strong>{label}</strong><small>{note}</small></div></div>)}
+      <div className={styles.setupSummary}>
+        <span className={styles.setupSummaryIcon}><MIcon name={item.status === "active" ? "check" : item.status === "partial_failed" ? "error_outline" : "assignment"} size={22} /></span>
+        <div><span>建機準備 · {completed}/2</span><h2>{title}</h2><p>{description}</p></div>
+        {actionLabel && <button type="button" className={styles.btnPrimary} disabled={provisioning} onClick={action}><MIcon name={actionIcon} size={17} />{actionLabel}</button>}
       </div>
-      <ScheduleSummary item={item} />
+      <div className={styles.setupChecklist}>{setupItems.map(([done, label, note]) => <div key={label} className={done ? styles.setupItemDone : styles.setupItemTodo}><span><MIcon name={done ? "check" : "radio_button_unchecked"} size={17} /></span><div><strong>{label}</strong><small>{note}</small></div><em>{done ? "完成" : "待設定"}</em></div>)}</div>
       {item.jobs.length > 0 && <div className={styles.jobGrid}>{item.jobs.map((job, index) => <article key={job.id}><span>節點 {index + 1}</span><strong>{JOB_STATUS[job.status] ?? job.status}</strong><small>{job.done}/{job.total} 成功 · {job.failed_count} 失敗</small></article>)}</div>}
       {message && <p className={styles.persistentFeedback}><MIcon name="info" size={17} />{message}</p>}
-      <div className={styles.primaryActionRow}><span>{item.status === "planning" ? "確認後設定即鎖定，等待管理員審核" : `目前狀態：${STATUS[item.status] ?? item.status}`}</span><button type="button" className={styles.btnPrimary} disabled={!canProvision || provisioning} onClick={onProvision}><MIcon name="rocket_launch" size={17} />{provisioning ? "正在建立批次工作…" : "確認設定並送出建機"}</button></div>
     </section>
   </div>;
 }
@@ -195,8 +210,9 @@ function WeeklyContent({ item, onRefresh }) {
   </div>;
 }
 
-function Machines({ item, templates, template, onRefresh, onTemplate }) {
-  const [message, setMessage] = useState("");
+function Machines({ item, templates, template, onRefresh, onTemplate, createdTemplateId }) {
+  const navigate = useNavigate();
+  const [message, setMessage] = useState(createdTemplateId ? "環境模板已建立，請選擇套用到這個班級。" : "");
   const locked = item.status !== "planning";
   async function choose(candidate) {
     if (candidate.nodes.some((node) => !node.sourceTemplateId)) { setMessage("此課程模板仍有節點未綁定可用的 PVE 範本。"); return; }
@@ -205,7 +221,7 @@ function Machines({ item, templates, template, onRefresh, onTemplate }) {
       onTemplate(candidate.id); onRefresh(result); setMessage(`已套用「${candidate.name}」。`);
     } catch (error) { setMessage(error?.message ?? "套用模板失敗"); }
   }
-  return <div className={styles.stack}><section className={styles.card}><div className={styles.cardHeader}><div><h2>選擇上課環境</h2><p>套用老師已建立的環境模板；每位學生會取得相同的一組固定機器。</p></div>{locked && <span className={styles.lockBadge}><MIcon name="lock" size={14} />設定已鎖定</span>}</div><div className={styles.templateChoices}>{templates.filter((row) => row.status !== "archived").map((candidate) => <button type="button" key={candidate.id} disabled={locked} className={template?.id === candidate.id ? styles.templateSelected : ""} onClick={() => choose(candidate)}><span><MIcon name="account_tree" size={21} /></span><div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>每位學生 {candidate.nodes.length} 台 · {candidate.nodes.every((node) => node.sourceTemplateId) ? "可以使用" : "模板設定尚未完成"}</small></div></button>)}</div>{message && <p className={styles.inlineMessage}>{message}</p>}</section>{item.nodes.length > 0 && <section className={styles.card}><div className={styles.cardHeader}><div><h2>每位學生的機器</h2><p>全班共需要 {item.students.length * item.nodes.length} 台機器。</p></div></div><div className={styles.blueprintCanvas}>{item.nodes.map((node, index) => <div className={styles.blueprintItem} key={node.id}><article className={styles.machineBlock}><div className={styles.machineTitle}><span><MIcon name="dns" size={20} /></span><div><strong>{node.name}</strong><small>{node.role}</small></div><em>{node.resource_type}</em></div><div className={styles.machineSpecs}><span>{node.cpu} CPU</span><span>{Math.round(node.memory_mb / 1024)} GB RAM</span><span>{node.disk_gb} GB Disk</span></div></article>{index < item.nodes.length - 1 && <div className={styles.connection}><span>{node.network}</span><i /><MIcon name="arrow_forward" size={18} /></div>}</div>)}</div></section>}</div>;
+  return <div className={styles.stack}><section className={styles.card}><div className={styles.cardHeader}><div><h2>選擇環境模板</h2><p>套用後，每位學生會取得相同的一組固定機器。</p></div><div className={styles.pageActions}>{!locked && <button type="button" className={styles.btnSecondary} onClick={() => navigate(`/course-template-management/new?returnTo=${encodeURIComponent(`/class-management/${item.id}/machines`)}`)}><MIcon name="add" size={16} />建立新模板</button>}{locked && <span className={styles.lockBadge}><MIcon name="lock" size={14} />設定已鎖定</span>}</div></div><div className={styles.templateChoices}>{templates.filter((row) => row.status !== "archived").map((candidate) => <button type="button" key={candidate.id} disabled={locked} className={`${template?.id === candidate.id ? styles.templateSelected : ""} ${String(candidate.id) === String(createdTemplateId) ? styles.templateSuggested : ""}`} onClick={() => choose(candidate)}><span><MIcon name="account_tree" size={21} /></span><div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>每位學生 {candidate.nodes.length} 台 · {candidate.nodes.every((node) => node.sourceTemplateId) ? "可以使用" : "模板設定尚未完成"}</small></div></button>)}</div>{message && <p className={styles.inlineMessage}>{message}</p>}</section>{item.nodes.length > 0 && <section className={styles.card}><div className={styles.cardHeader}><div><h2>已套用的上課環境</h2><p>每位學生 {item.nodes.length} 台，全班共需要 {item.students.length * item.nodes.length} 台機器。</p></div></div><div className={styles.blueprintCanvas}>{item.nodes.map((node, index) => <div className={styles.blueprintItem} key={node.id}><article className={styles.machineBlock}><div className={styles.machineTitle}><span><MIcon name="dns" size={20} /></span><div><strong>{node.name}</strong><small>{node.role}</small></div><em>{node.resource_type}</em></div><div className={styles.machineSpecs}><span>{node.cpu} CPU</span><span>{Math.round(node.memory_mb / 1024)} GB RAM</span><span>{node.disk_gb} GB Disk</span></div></article>{index < item.nodes.length - 1 && <div className={styles.connection}><span>{node.network}</span><i /><MIcon name="arrow_forward" size={18} /></div>}</div>)}</div></section>}</div>;
 }
 
 function StudentMachines({ item, ai = false }) {
@@ -214,12 +230,13 @@ function StudentMachines({ item, ai = false }) {
 }
 
 function LockedFeature({ section }) {
-  return <section className={styles.lockedFeature}><span><MIcon name="lock" size={22} /></span><div><span className={styles.sectionEyebrow}>AFTER ALL MACHINES READY</span><h2>{section === "ai" ? "AI 檢查尚未開放" : "學生機器尚未開放"}</h2><p>班級必須通過審核，且每位學生的所有節點都建立成功後才會正式啟用。</p></div></section>;
+  return <section className={styles.lockedFeature}><span><MIcon name="lock" size={22} /></span><div><h2>{section === "ai" ? "AI 檢查尚未開放" : "學生機器尚未開放"}</h2><p>班級必須通過審核，且每位學生的所有節點都建立成功後才會正式啟用。</p></div></section>;
 }
 
 export default function ClassWorkspacePage() {
   const { classId, section } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const tab = section ?? "overview";
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -267,10 +284,10 @@ export default function ClassWorkspacePage() {
       <div className={styles.workflowProgress}><span>準備進度</span><strong>{item.status === "active" ? "全部就緒" : `${completed}/2 已完成`}</strong></div>
     </section>
     <main className={styles.workspaceContent}>
-      {tab === "overview" && <Overview item={item} template={template} onProvision={provision} provisioning={provisioning} message={message} />}
+      {tab === "overview" && <Overview item={item} template={template} onProvision={provision} onNavigate={(target) => navigate(`/class-management/${classId}/${target}`)} provisioning={provisioning} message={message} />}
       {tab === "students" && <Students item={item} onRefresh={refresh} />}
       {tab === "weekly" && <WeeklyContent item={item} onRefresh={refresh} />}
-      {tab === "machines" && <Machines item={item} templates={templates} template={template} onRefresh={refresh} onTemplate={setTemplateId} />}
+      {tab === "machines" && <Machines item={item} templates={templates} template={template} onRefresh={refresh} onTemplate={setTemplateId} createdTemplateId={location.state?.createdTemplateId} />}
       {postUnavailable && <LockedFeature section={tab} />}
       {tab === "progress" && !postUnavailable && <StudentMachines item={item} />}
       {tab === "ai" && !postUnavailable && <StudentMachines item={item} ai />}

@@ -20,10 +20,10 @@ export default function CourseTemplateManagementPage() {
   return <div className={styles.page}>
     <div className={styles.pageHeader}>
       <div className={styles.pageHeading}>
-        <div className={styles.titleLine}><h1 className={styles.pageTitle}>課程機器模板</h1></div>
-        <p className={styles.pageSubtitle}>老師先定義一位學生需要的固定機器組合；任務、教材與進度留在班級內設定。</p>
+        <div className={styles.titleLine}><h1 className={styles.pageTitle}>環境模板</h1></div>
+        <p className={styles.pageSubtitle}>定義每位學生需要的機器組合，再重複套用到不同班級。</p>
       </div>
-      <button type="button" className={styles.btnPrimary} onClick={() => navigate("/course-template-management/new")}><MIcon name="add" size={16} />建立課程模板</button>
+      <button type="button" className={styles.btnPrimary} onClick={() => navigate("/course-template-management/new")}><MIcon name="add" size={16} />建立環境模板</button>
     </div>
 
     <section className={styles.card}>
@@ -38,7 +38,7 @@ export default function CourseTemplateManagementPage() {
         <td><span className={`${styles.statusBadge} ${styles[`status_${template.status}`]}`}>{STATUS_LABEL[template.status]}</span></td>
         <td><button type="button" className={styles.iconBtn} aria-label="開啟模板"><MIcon name="chevron_right" size={19} /></button></td>
       </tr>)}</tbody></table></div>
-      {!rows.length && <div className={styles.emptyState}><MIcon name="view_quilt" size={32} /><p>沒有符合條件的上課機器模板。</p></div>}
+      {!rows.length && <div className={styles.emptyState}><MIcon name="view_quilt" size={32} /><p>沒有符合條件的環境模板。</p></div>}
     </section>
   </div>;
 }

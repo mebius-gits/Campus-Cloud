@@ -42,7 +42,7 @@ function normalizeClass(item) {
 
 function nextStep(item) {
   if (!item.students) return ["加入學生", "students"];
-  if (!item.nodes.length) return ["選擇課程機器", "machines"];
+  if (!item.nodes.length) return ["設定上課環境", "machines"];
   if (item.status === "planning") return ["確認並送出建機", "overview"];
   if (item.status === "partial_failed") return ["查看失敗項目", "overview"];
   if (item.status === "active") return ["進入班級", "overview"];

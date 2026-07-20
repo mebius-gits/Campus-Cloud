@@ -74,8 +74,6 @@
 .field input:focus, .field textarea:focus, .field select:focus, .compactSelect:focus, .machineTitle input:focus, .machineFields input:focus { border-color: var(--color-primary); }
 .field textarea { resize: vertical; }
 .field input[readonly] { color: var(--color-text-muted); background: var(--color-hover); }
-.inlineBuilder { display: grid; grid-template-columns: minmax(260px, 1fr) auto; align-items: end; gap: 12px; padding: 0 16px 16px; }
-.inlineBuilder .helperText { grid-column: 1 / -1; }
 .helperText { color: var(--color-text-muted); font-size: 12px; }
 .actionFooter { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; border-top: 1px solid var(--color-border); }
 .formActions { padding: 4px 0 24px; }
@@ -98,11 +96,6 @@
 .connection { display: flex; width: 105px; flex-direction: column; align-items: center; color: var(--color-text-muted); font-size: 10px; }
 .connection i { width: 68px; height: 1px; margin-top: 5px; background: var(--color-border); }
 .connection svg { margin-top: -10px; color: var(--color-primary); background: var(--color-surface); }
-.metricGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.metricGrid > div { display: flex; flex-direction: column; gap: 3px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.metricGrid span { color: var(--color-text-secondary); font-size: 12px; }
-.metricGrid strong { color: var(--color-text-primary); font-size: 18px; }
-.metricGrid small { color: var(--color-text-muted); font-size: 11px; }
 
 .splitContent, .twoColumns { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(0, 1.2fr); gap: 16px; align-items: start; }
 .weekNav { display: flex; flex-direction: column; gap: 4px; padding: 0 12px 12px; }
@@ -224,8 +217,8 @@
 .textMuted { color: var(--color-text-muted) !important; font-weight: 400 !important; }
 
 @media (min-width: 768px) { .page { padding: 0; } .pageTitle { font-size: 28px; } }
-@media (max-width: 1050px) { .templateChoices { grid-template-columns: 1fr; } .splitContent, .twoColumns { grid-template-columns: 1fr; } .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .weekTimeline { grid-template-columns: repeat(4, minmax(200px, 1fr)); } }
-@media (max-width: 720px) { .pageHeader, .workspaceHeader, .cardHeader, .toolbar, .integrationStrip, .confirmBar { align-items: flex-start; flex-direction: column; } .formGrid, .studentTools, .metricGrid, .weekDetail, .weekBuilder { grid-template-columns: 1fr; } .inlineBuilder { grid-template-columns: 1fr; } .csvArea { padding-top: 16px; padding-left: 0; border-top: 1px solid var(--color-border); border-left: 0; } .compactSelect { width: 100%; min-width: 0; } .ruleGrid { grid-template-columns: 1fr; } .integrationStrip .btnSecondary { align-self: stretch; } }
+@media (max-width: 1050px) { .templateChoices { grid-template-columns: 1fr; } .splitContent, .twoColumns { grid-template-columns: 1fr; } .weekTimeline { grid-template-columns: repeat(4, minmax(200px, 1fr)); } }
+@media (max-width: 720px) { .pageHeader, .workspaceHeader, .cardHeader, .toolbar, .integrationStrip, .confirmBar { align-items: flex-start; flex-direction: column; } .formGrid, .studentTools, .weekDetail, .weekBuilder { grid-template-columns: 1fr; } .csvArea { padding-top: 16px; padding-left: 0; border-top: 1px solid var(--color-border); border-left: 0; } .compactSelect { width: 100%; min-width: 0; } .ruleGrid { grid-template-columns: 1fr; } .integrationStrip .btnSecondary { align-self: stretch; } }
 
 /* Product-design pass: calm, task-led teacher workspace. */
 .page { width: 100%; max-width: 1440px; margin: 0 auto; gap: 20px; }
@@ -331,49 +324,64 @@
 .workflowProgress strong { font-size: 12px; font-weight: 650; white-space: nowrap; }
 
 .readinessPanel { overflow: hidden; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
-.readinessLead { padding: 28px 28px 18px; }
-.sectionEyebrow { color: var(--color-primary); font-size: 10px; font-weight: 750; letter-spacing: .13em; }
-.readinessLead h2 { margin: 8px 0 6px; font-size: clamp(22px, 2.4vw, 30px); font-weight: 650; letter-spacing: -.025em; }
-.readinessLead p { max-width: 680px; margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.65; }
-.readinessScore { display: flex; align-items: center; gap: 20px; padding: 0 28px 22px; }
-.readinessScore > div:first-child { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
-.readinessScore strong { font-variant-numeric: tabular-nums; font-size: 22px; }
-.readinessScore span { color: var(--color-text-muted); font-size: 11px; }
-.readinessBar { flex: 1; height: 6px; overflow: hidden; border-radius: 99px; background: var(--color-hover); }
-.readinessBar i { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); transition: width .2s ease; }
-.readinessRows { border-block: 1px solid var(--color-border); }
-.readinessRows > div { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 11px; min-height: 58px; padding: 9px 28px; border-bottom: 1px solid var(--color-divider); }
-.readinessRows > div:last-child { border-bottom: 0; }
-.readinessRows > div > span { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; }
-.readinessRows > div > div { display: flex; flex-direction: column; gap: 2px; }
-.readinessRows strong { font-size: 13px; font-weight: 600; }
-.readinessRows small { color: var(--color-text-muted); font-size: 11px; }
-.readinessDone > span { color: var(--color-text-secondary); background: var(--color-hover); }
-.readinessTodo { background: color-mix(in srgb, var(--color-primary) 3.5%, var(--color-surface)); }
-.readinessTodo > span { color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
-.overviewFacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 18px 28px; }
-.overviewFacts > div { display: flex; flex-direction: column; gap: 4px; padding-right: 18px; }
-.overviewFacts > div + div { padding-left: 18px; border-left: 1px solid var(--color-border); }
-.overviewFacts span { color: var(--color-text-muted); font-size: 10px; }
-.overviewFacts strong { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; }
+.setupSummary { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 22px 24px; }
+.setupSummaryIcon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface)); }
+.setupSummary > div { min-width: 0; }
+.setupSummary > div > span { color: var(--color-text-muted); font-size: 11px; font-weight: 550; }
+.setupSummary h2 { margin: 3px 0 2px; font-size: 20px; font-weight: 650; letter-spacing: -.015em; }
+.setupSummary p { margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; }
+.setupChecklist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--color-border); }
+.setupChecklist > div { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 66px; padding: 11px 20px; }
+.setupChecklist > div + div { border-left: 1px solid var(--color-border); }
+.setupChecklist > div > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; }
+.setupChecklist > div > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.setupChecklist strong { font-size: 13px; font-weight: 600; }
+.setupChecklist small { overflow: hidden; color: var(--color-text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.setupChecklist em { padding: 3px 7px; border-radius: 99px; font-size: 10px; font-style: normal; font-weight: 600; white-space: nowrap; }
+.setupItemDone > span { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface)); }
+.setupItemDone em { color: var(--color-text-muted); background: var(--color-hover); }
+.setupItemTodo { background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)); }
+.setupItemTodo > span, .setupItemTodo em { color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface)); }
 .persistentFeedback { display: flex; align-items: flex-start; gap: 8px; margin: 0 28px 18px; padding: 10px 12px; border-radius: 8px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)); font-size: 12px; line-height: 1.5; }
 .lockedFeature { display: flex; align-items: flex-start; gap: 16px; padding: 28px; border: 1px dashed var(--color-border); border-radius: 12px; background: color-mix(in srgb, var(--color-hover) 35%, var(--color-surface)); }
 .lockedFeature > span { display: grid; flex: 0 0 auto; width: 42px; height: 42px; place-items: center; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-muted); background: var(--color-surface); }
 .lockedFeature h2 { margin: 6px 0; font-size: 18px; }
 .lockedFeature p { max-width: 620px; margin: 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
-.primaryActionRow { display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-height: 70px; padding: 14px 28px; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 38%, var(--color-surface)); }
-.primaryActionRow > span { color: var(--color-text-muted); font-size: 11px; }
 
 .templateChoices { grid-template-columns: 1fr; gap: 0; padding: 0; border-top: 1px solid var(--color-border); }
 .templateChoices label, .templateChoices button { align-items: center; min-height: 82px; padding: 14px 20px; border: 0; border-bottom: 1px solid var(--color-divider); border-radius: 0; }
 .templateChoices label:last-child, .templateChoices button:last-child { border-bottom: 0; }
 .templateChoices label:hover, .templateChoices label.templateSelected, .templateChoices button:hover, .templateChoices button.templateSelected { border-color: var(--color-divider); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); }
 .templateChoices label.templateSelected, .templateChoices button.templateSelected { box-shadow: inset 3px 0 var(--color-primary); }
+.templateChoices button.templateSuggested { background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)); box-shadow: inset 3px 0 var(--color-primary); }
 .templateChoices label > span, .templateChoices button > span { width: 34px; height: 34px; border: 1px solid var(--color-border); color: var(--color-text-secondary); background: var(--color-surface); }
 .templateChoices strong { font-size: 14px; }
 .machineBlock { border-radius: 10px; box-shadow: none; }
 .blueprintCanvas { padding: 4px 22px 22px; }
 .blueprintItem { flex: 0 0 auto; }
+.templateMachineWorkspace { min-height: 430px; }
+.machineWorkspaceHeader { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--color-border); }
+.machineWorkspaceHeader h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.machineWorkspaceHeader p { margin: 4px 0 0; color: var(--color-text-secondary); font-size: 13px; }
+.machineTotals { display: flex; flex: 0 0 auto; align-items: center; overflow: hidden; border: 1px solid var(--color-border); border-radius: 9px; background: color-mix(in srgb, var(--color-hover) 30%, var(--color-surface)); }
+.machineTotals span { padding: 8px 12px; color: var(--color-text-muted); font-size: 11px; white-space: nowrap; }
+.machineTotals span + span { border-left: 1px solid var(--color-border); }
+.machineTotals strong { margin-right: 3px; color: var(--color-text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+.machineAddBar { display: grid; grid-template-columns: minmax(280px, 560px) auto; align-items: end; gap: 10px; padding: 13px 22px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 24%, var(--color-surface)); }
+.machineAddBar .field { gap: 3px; }
+.machineAddBar .field > span { color: var(--color-text-secondary); font-size: 11px; }
+.templateMachineWorkspace .blueprintCanvas { min-height: 260px; align-items: center; justify-content: center; padding: 30px 28px 34px; }
+.templateMachineWorkspace .machineBlock { width: 300px; border-radius: 12px; background: var(--color-surface); }
+.templateMachineWorkspace .machineTitle { padding: 16px; }
+.templateMachineWorkspace .machineTitle > span { width: 40px; height: 40px; }
+.templateMachineWorkspace .machineTitle input { min-height: 34px; font-size: 14px; }
+.templateMachineWorkspace .machineFields { gap: 12px; padding: 0 16px 16px; }
+.templateMachineWorkspace .machineFields label { font-size: 11px; }
+.templateMachineWorkspace .machineFields input { min-height: 34px; padding: 7px 9px; font-size: 12px; }
+.templateMachineWorkspace .machineSpecs { min-height: 40px; gap: 12px; padding: 9px 16px; font-size: 11px; }
+.templateMachineWorkspace .machineSpecs button { font-size: 11px; }
+.templateMachineWorkspace .connection { width: 92px; }
+.templateMachineWorkspace .connection i { width: 60px; }
 .table { min-width: 720px; }
 .studentTools { grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); }
 .headerState { flex-wrap: wrap; justify-content: flex-end; }
@@ -382,11 +390,7 @@
 .weekTimeline { padding: 2px 22px 20px; }
 .weekTimeline button { min-height: 110px; border-radius: 8px; }
 .weekTimeline button:hover, .weekTimeline button.weekActive { border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border)); background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)); }
-.scheduleStrip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; padding: 18px 28px; border-bottom: 1px solid var(--color-border); }
-.scheduleStrip > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding-right: 18px; }
-.scheduleStrip > div + div { padding-left: 18px; border-left: 1px solid var(--color-border); }
-.scheduleStrip span, .jobGrid span { color: var(--color-text-muted); font-size: 10px; }
-.scheduleStrip strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.jobGrid span { color: var(--color-text-muted); font-size: 10px; }
 .jobGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 16px 28px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 34%, var(--color-surface)); }
 .jobGrid article { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
 .jobGrid strong { font-size: 12px; }
@@ -409,6 +413,9 @@
 
 @media (max-width: 1050px) {
   .workflowTabsBar .workspaceTabs button { flex: 0 0 auto; }
+  .machineWorkspaceHeader { align-items: flex-start; flex-direction: column; }
+  .templateMachineWorkspace .blueprintCanvas { justify-content: flex-start; }
+  .templateMachineWorkspace .machineBlock { width: 280px; }
   .weekRows article { grid-template-columns: 100px minmax(220px, 1fr); }
   .weekFiles { grid-column: 2; }
   .memberRow { grid-template-columns: minmax(200px, 1.3fr) minmax(100px, .7fr) 100px 34px; }
@@ -421,14 +428,12 @@
   .workflowTabsBar { align-items: stretch; flex-direction: column-reverse; }
   .workflowProgress { min-height: 48px; flex-direction: row; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--color-border); border-left: 0; }
   .workflowTabsBar .workspaceTabs button { min-width: 112px; padding-inline: 12px; }
-  .readinessLead { padding: 22px 18px 16px; }
-  .readinessScore { padding: 0 18px 18px; }
-  .readinessRows > div { padding-inline: 18px; }
-  .overviewFacts { grid-template-columns: 1fr; gap: 12px; padding: 16px 18px; }
-  .overviewFacts > div + div { padding-left: 0; border-left: 0; }
+  .setupSummary { grid-template-columns: 38px minmax(0, 1fr); padding: 18px; }
+  .setupSummaryIcon { width: 38px; height: 38px; }
+  .setupSummary .btnPrimary { grid-column: 1 / -1; width: 100%; }
+  .setupChecklist { grid-template-columns: 1fr; }
+  .setupChecklist > div + div { border-top: 1px solid var(--color-border); border-left: 0; }
   .persistentFeedback { margin-inline: 18px; }
-  .primaryActionRow { align-items: stretch; flex-direction: column; padding: 14px 18px; }
-  .primaryActionRow .btnPrimary { width: 100%; }
   .stepTabs { align-self: stretch; }
   .stepTabs button { flex: 1; min-width: 0; }
   .studentTools { grid-template-columns: 1fr; }
@@ -450,8 +455,12 @@
   .createDialogOverlay { align-items: end; padding: 0; }
   .createDialog { width: 100%; max-height: calc(100vh - 24px); border-radius: 16px 16px 0 0; }
   .createDialogBody { max-height: calc(100vh - 156px); }
-  .scheduleStrip { grid-template-columns: 1fr 1fr; gap: 14px 0; padding: 16px 18px; }
-  .scheduleStrip > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .machineWorkspaceHeader { padding: 18px; }
+  .machineTotals { width: 100%; overflow-x: auto; }
+  .machineTotals span { flex: 1 0 auto; text-align: center; }
+  .machineAddBar { grid-template-columns: 1fr; padding: 14px 18px; }
+  .machineAddBar .btnSecondary { width: 100%; }
+  .templateMachineWorkspace .blueprintCanvas { padding: 22px 18px 28px; }
   .weekRows article { grid-template-columns: 1fr; align-items: stretch; padding: 16px 18px; }
   .weekFiles { grid-column: auto; }
 }
