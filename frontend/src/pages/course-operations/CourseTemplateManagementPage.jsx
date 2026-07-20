@@ -20,16 +20,10 @@ export default function CourseTemplateManagementPage() {
   return <div className={styles.page}>
     <div className={styles.pageHeader}>
       <div className={styles.pageHeading}>
-        <span className={styles.pageKicker}>TEACHER · ENVIRONMENT TEMPLATES</span><div className={styles.titleLine}><h1 className={styles.pageTitle}>課程機器模板</h1></div>
+        <div className={styles.titleLine}><h1 className={styles.pageTitle}>課程機器模板</h1></div>
         <p className={styles.pageSubtitle}>老師先定義一位學生需要的固定機器組合；任務、教材與進度留在班級內設定。</p>
       </div>
       <button type="button" className={styles.btnPrimary} onClick={() => navigate("/course-template-management/new")}><MIcon name="add" size={16} />建立課程模板</button>
-    </div>
-
-    <div className={styles.integrationStrip}>
-      <MIcon name="hub" size={19} />
-      <div><strong>機器來源沿用既有 PVE 範本</strong><span>此功能只負責把一台或多台 PVE 範本組成可重複使用的上課環境。</span></div>
-      <button type="button" className={styles.btnSecondary} onClick={() => navigate("/templates")}>查看 PVE 範本</button>
     </div>
 
     <section className={styles.card}>
