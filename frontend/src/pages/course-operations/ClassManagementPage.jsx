@@ -103,13 +103,9 @@ export default function ClassManagementPage({ openCreate = false }) {
               <span className={`${styles.statusBadge} ${styles[`status_${item.status}`]}`}>{STATUS[item.status] ?? item.status}</span>
             </div>
             <div className={styles.classSchedule}><MIcon name="calendar_today" size={17} /><div><strong>每週{["一", "二", "三", "四", "五", "六", "日"][item.weekday]} {item.startTime}–{item.endTime}</strong><small>{item.startDate} 至 {item.endDate} · 提前 {item.bootLeadMinutes} 分鐘開機</small></div></div>
-            <div className={styles.classMetrics}>
-              <div><strong>{item.students}</strong><span>學生</span></div>
-              <div><strong>{item.weeks.length}</strong><span>課次</span></div>
-              <div><strong>{item.nodes.length}</strong><span>每人機器</span></div>
-            </div>
             <div className={styles.classProgress}><div><span>{item.status === "planning" ? "建機準備" : "機器建立"}</span><strong>{item.status === "planning" ? `${setupReady}/2` : `${item.readyMachines}/${item.totalMachines}`}</strong></div><i><b style={{ width: `${progress}%` }} /></i></div>
           </button>
+          <div className={styles.classInfoLine}><span>{item.students} 位學生</span><span>{item.weeks.length} 個課次</span><span>每位 {item.nodes.length} 台機器</span></div>
           <div className={styles.classCardAction}><span>{item.status === "active" ? "環境已準備完成" : action}</span><button type="button" onClick={() => navigate(target === "overview" ? `/class-management/${item.id}` : `/class-management/${item.id}/${target}`)}>{action}<MIcon name="arrow_forward" size={17} /></button></div>
         </article>;
       })}

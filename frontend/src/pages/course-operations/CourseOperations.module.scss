@@ -247,30 +247,27 @@
 .classLoading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 220px; color: var(--color-text-muted); font-size: 12px; }
 .classLoading span { width: 16px; height: 16px; border: 2px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: classSpin .8s linear infinite; }
 @keyframes classSpin { to { transform: rotate(360deg); } }
-.classCardGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.classCardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 420px)); gap: 14px; align-items: start; }
 .classCard { min-width: 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: 13px; background: var(--color-surface); transition: border-color .15s, box-shadow .15s, transform .15s; }
 .classCard:hover { border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border)); box-shadow: 0 7px 24px color-mix(in srgb, var(--color-text-primary) 8%, transparent); transform: translateY(-1px); }
-.classCardMain { display: flex; width: 100%; flex-direction: column; gap: 16px; padding: 20px 20px 17px; border: 0; color: inherit; text-align: left; background: transparent; font: inherit; cursor: pointer; }
+.classCardMain { display: flex; width: 100%; flex-direction: column; gap: 12px; padding: 16px 16px 14px; border: 0; color: inherit; text-align: left; background: transparent; font: inherit; cursor: pointer; }
 .classCardTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .classCardTop > div { min-width: 0; }
 .classCardTop > div > span { color: var(--color-text-muted); font-size: 10px; font-weight: 650; letter-spacing: .04em; }
 .classCardTop h2 { overflow: hidden; margin: 5px 0 0; font-size: 17px; font-weight: 650; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
-.classSchedule { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 9px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); }
+.classSchedule { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); }
 .classSchedule > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .classSchedule strong { color: var(--color-text-primary); font-size: 12px; }
 .classSchedule small { overflow: hidden; color: var(--color-text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.classMetrics { display: grid; grid-template-columns: repeat(3, 1fr); }
-.classMetrics > div { display: flex; align-items: baseline; gap: 5px; min-width: 0; padding: 2px 12px; border-right: 1px solid var(--color-border); }
-.classMetrics > div:first-child { padding-left: 0; }
-.classMetrics > div:last-child { padding-right: 0; border-right: 0; }
-.classMetrics strong { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.classMetrics span { color: var(--color-text-muted); font-size: 10px; }
 .classProgress { display: flex; flex-direction: column; gap: 7px; }
 .classProgress > div { display: flex; justify-content: space-between; color: var(--color-text-secondary); font-size: 10px; }
 .classProgress > div strong { color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .classProgress > i { height: 5px; overflow: hidden; border-radius: 99px; background: var(--color-hover); }
 .classProgress > i > b { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
-.classCardAction { display: flex; align-items: center; justify-content: space-between; min-height: 50px; gap: 12px; padding: 9px 13px 9px 20px; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 35%, var(--color-surface)); }
+.classInfoLine { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; min-height: 34px; padding: 7px 16px; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 10px; }
+.classInfoLine span { position: relative; white-space: nowrap; }
+.classInfoLine span + span::before { position: absolute; top: 50%; left: -8px; width: 2px; height: 2px; border-radius: 50%; background: var(--color-text-muted); content: ""; transform: translateY(-50%); }
+.classCardAction { display: flex; align-items: center; justify-content: space-between; min-height: 44px; gap: 12px; padding: 7px 10px 7px 16px; border-top: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 35%, var(--color-surface)); }
 .classCardAction > span { color: var(--color-text-muted); font-size: 10px; }
 .classCardAction button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 9px; border: 0; border-radius: 7px; color: var(--color-primary); background: transparent; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
 .classCardAction button:hover { background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
@@ -367,14 +364,16 @@
 .machineTotals span { padding: 8px 12px; color: var(--color-text-muted); font-size: 11px; white-space: nowrap; }
 .machineTotals span + span { border-left: 1px solid var(--color-border); }
 .machineTotals strong { margin-right: 3px; color: var(--color-text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
-.machineAddBar { display: grid; grid-template-columns: minmax(280px, 560px) auto; align-items: end; gap: 10px; padding: 13px 22px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 24%, var(--color-surface)); }
+.machineAddBar { display: grid; grid-template-columns: minmax(280px, 560px) max-content; align-items: end; justify-content: start; gap: 10px; padding: 13px 22px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-hover) 24%, var(--color-surface)); }
 .machineAddBar .field { gap: 3px; }
 .machineAddBar .field > span { color: var(--color-text-secondary); font-size: 11px; }
-.templateMachineWorkspace .blueprintCanvas { min-height: 260px; align-items: center; justify-content: center; padding: 30px 28px 34px; }
+.machineAddBar .btnPrimary { min-width: 138px; min-height: 40px; }
+.templateMachineWorkspace .blueprintCanvas { box-sizing: border-box; max-width: 100%; min-height: 260px; align-items: center; justify-content: center; padding: 30px 28px 34px; }
 .templateMachineWorkspace .machineBlock { width: 300px; border-radius: 12px; background: var(--color-surface); }
-.templateMachineWorkspace .machineTitle { padding: 16px; }
+.templateMachineWorkspace .machineTitle { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; padding: 16px; }
 .templateMachineWorkspace .machineTitle > span { width: 40px; height: 40px; }
-.templateMachineWorkspace .machineTitle input { min-height: 34px; font-size: 14px; }
+.templateMachineWorkspace .machineTitle input { min-width: 0; min-height: 34px; font-size: 14px; }
+.templateMachineWorkspace .machineTitle em { max-width: 42px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .templateMachineWorkspace .machineFields { gap: 12px; padding: 0 16px 16px; }
 .templateMachineWorkspace .machineFields label { font-size: 11px; }
 .templateMachineWorkspace .machineFields input { min-height: 34px; padding: 7px 9px; font-size: 12px; }
@@ -382,6 +381,7 @@
 .templateMachineWorkspace .machineSpecs button { font-size: 11px; }
 .templateMachineWorkspace .connection { width: 92px; }
 .templateMachineWorkspace .connection i { width: 60px; }
+.templateMachineWorkspace .connection span { display: block; width: 82px; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .table { min-width: 720px; }
 .studentTools { grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); }
 .headerState { flex-wrap: wrap; justify-content: flex-end; }
@@ -458,8 +458,8 @@
   .machineWorkspaceHeader { padding: 18px; }
   .machineTotals { width: 100%; overflow-x: auto; }
   .machineTotals span { flex: 1 0 auto; text-align: center; }
-  .machineAddBar { grid-template-columns: 1fr; padding: 14px 18px; }
-  .machineAddBar .btnSecondary { width: 100%; }
+  .machineAddBar { grid-template-columns: 1fr; justify-content: stretch; padding: 14px 18px; }
+  .machineAddBar .btnPrimary { width: 100%; }
   .templateMachineWorkspace .blueprintCanvas { padding: 22px 18px 28px; }
   .weekRows article { grid-template-columns: 1fr; align-items: stretch; padding: 16px 18px; }
   .weekFiles { grid-column: auto; }
