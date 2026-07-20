@@ -457,8 +457,12 @@ async def upload_week_file(
     filename = (file.filename or "task-file").replace("\\", "/").split("/")[-1].strip()
     if not filename or filename in {".", ".."}:
         raise BadRequestError("檔案名稱無效")
-    relative_path = Path(str(class_id)) / str(week_id) / f"{uuid.uuid4().hex}-{filename}"
-    destination = TASK_FILE_ROOT / relative_path
+    if len(filename) > 255:
+        raise BadRequestError("Task file name must be 255 characters or fewer")
+
+    file_id = uuid.uuid4()
+    storage_key = f"{file_id.hex}.task"
+    destination = TASK_FILE_ROOT / storage_key
     destination.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     try:
@@ -476,9 +480,10 @@ async def upload_week_file(
 
     session.add(
         TeachingClassTaskFile(
+            id=file_id,
             week_id=week_id,
             filename=filename,
-            storage_key=relative_path.as_posix(),
+            storage_key=storage_key,
         )
     )
     session.commit()
