@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import MIcon from "../../components/MIcon";
+import ClassroomWatchDialog from "../../components/Classroom/ClassroomWatchDialog";
+import { ClassroomService } from "../../services/classroom";
 import { TeachingClassesService } from "../../services/teachingClasses";
 import { listCourseTemplates } from "./courseOperationsStore";
 import styles from "./CourseOperations.module.scss";
@@ -10,6 +12,7 @@ const TABS = [
   ["students", "groups", "加入學生", "建立正式名單"],
   ["machines", "account_tree", "上課環境", "套用環境模板"],
   ["weekly", "calendar_view_week", "每週內容", "可隨時補充"],
+  ["classroom", "cast_for_education", "上課監看", "觀看與直播"],
   ["progress", "checklist", "學生機器", "逐人多機狀態"],
   ["ai", "auto_awesome", "AI 檢查", "機器與上課情況"],
 ];
@@ -59,6 +62,10 @@ function Overview({ item, template, onProvision, onNavigate, provisioning, messa
   const machinesReady = item.nodes.length > 0;
   const completed = [studentsReady, machinesReady].filter(Boolean).length;
   const canProvision = completed === 2 && item.status === "planning";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: item.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const currentWeek = [...item.weeks].reverse().find((week) => week.date <= today) ?? item.weeks.find((week) => week.date > today);
+  const weekLabel = currentWeek?.date === today ? "本週課程" : currentWeek?.date > today ? "下一次課程" : currentWeek === item.weeks.at(-1) && today > currentWeek.date ? "最後一週" : "目前週次";
+  const weekday = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][item.weekday];
   const setupItems = [
     [studentsReady, "學生名單", studentsReady ? `${item.students.length} 位學生` : "尚未加入學生"],
     [machinesReady, "上課環境", machinesReady ? `${template?.name ?? "已套用環境模板"} · 每位學生 ${item.nodes.length} 台` : "尚未選擇環境模板"],
@@ -96,6 +103,20 @@ function Overview({ item, template, onProvision, onNavigate, provisioning, messa
       {item.jobs.length > 0 && <div className={styles.jobGrid}>{item.jobs.map((job, index) => <article key={job.id}><span>節點 {index + 1}</span><strong>{JOB_STATUS[job.status] ?? job.status}</strong><small>{job.done}/{job.total} 成功 · {job.failed_count} 失敗</small></article>)}</div>}
       {message && <p className={styles.persistentFeedback}><MIcon name="info" size={17} />{message}</p>}
     </section>
+    <div className={styles.overviewDetailGrid}>
+      <section className={styles.overviewInfoCard}>
+        <div className={styles.overviewCardHeader}><h2>班級資訊</h2></div>
+        <div className={styles.classFacts}>
+          <div><span>班級代碼</span><strong>{item.code}</strong></div><div><span>學期</span><strong>{item.term}</strong></div>
+          <div><span>固定上課</span><strong>{weekday} {item.startTime}–{item.endTime}</strong></div><div><span>提前開機</span><strong>{item.bootLeadMinutes} 分鐘</strong></div>
+          <div><span>課程期間</span><strong>{item.startDate}–{item.endDate}</strong></div><div><span>時區</span><strong>{item.timezone}</strong></div>
+        </div>
+      </section>
+      <section className={styles.overviewInfoCard}>
+        <div className={styles.overviewCardHeader}><h2>{weekLabel}</h2><button type="button" onClick={() => onNavigate("weekly")}>查看全部週次<MIcon name="arrow_forward" size={15} /></button></div>
+        {currentWeek ? <div className={styles.currentWeekSummary}><div><span>第 {currentWeek.week} 週</span><strong>{currentWeek.title || "尚未設定主題／任務"}</strong><small>{currentWeek.date} · {item.startTime}–{item.endTime}</small></div><span className={styles.weekFileCount}><MIcon name="attach_file" size={15} />{currentWeek.files.length} 個檔案</span></div> : <div className={styles.currentWeekEmpty}>目前沒有課程週次</div>}
+      </section>
+    </div>
   </div>;
 }
 
@@ -224,13 +245,79 @@ function Machines({ item, templates, template, onRefresh, onTemplate, createdTem
   return <div className={styles.stack}><section className={styles.card}><div className={styles.cardHeader}><div><h2>選擇環境模板</h2><p>套用後，每位學生會取得相同的一組固定機器。</p></div><div className={styles.pageActions}>{!locked && <button type="button" className={styles.btnSecondary} onClick={() => navigate(`/course-template-management/new?returnTo=${encodeURIComponent(`/class-management/${item.id}/machines`)}`)}><MIcon name="add" size={16} />建立新模板</button>}{locked && <span className={styles.lockBadge}><MIcon name="lock" size={14} />設定已鎖定</span>}</div></div><div className={styles.templateChoices}>{templates.filter((row) => row.status !== "archived").map((candidate) => <button type="button" key={candidate.id} disabled={locked} className={`${template?.id === candidate.id ? styles.templateSelected : ""} ${String(candidate.id) === String(createdTemplateId) ? styles.templateSuggested : ""}`} onClick={() => choose(candidate)}><span><MIcon name="account_tree" size={21} /></span><div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>每位學生 {candidate.nodes.length} 台 · {candidate.nodes.every((node) => node.sourceTemplateId) ? "可以使用" : "模板設定尚未完成"}</small></div></button>)}</div>{message && <p className={styles.inlineMessage}>{message}</p>}</section>{item.nodes.length > 0 && <section className={styles.card}><div className={styles.cardHeader}><div><h2>已套用的上課環境</h2><p>每位學生 {item.nodes.length} 台，全班共需要 {item.students.length * item.nodes.length} 台機器。</p></div></div><div className={styles.blueprintCanvas}>{item.nodes.map((node, index) => <div className={styles.blueprintItem} key={node.id}><article className={styles.machineBlock}><div className={styles.machineTitle}><span><MIcon name="dns" size={20} /></span><div><strong>{node.name}</strong><small>{node.role}</small></div><em>{node.resource_type}</em></div><div className={styles.machineSpecs}><span>{node.cpu} CPU</span><span>{Math.round(node.memory_mb / 1024)} GB RAM</span><span>{node.disk_gb} GB Disk</span></div></article>{index < item.nodes.length - 1 && <div className={styles.connection}><span>{node.network}</span><i /><MIcon name="arrow_forward" size={18} /></div>}</div>)}</div></section>}</div>;
 }
 
+function ClassMonitor({ item }) {
+  const [students, setStudents] = useState(null);
+  const [sources, setSources] = useState([]);
+  const [message, setMessage] = useState("");
+  const [watch, setWatch] = useState(null);
+  const [watching, setWatching] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcast, setBroadcast] = useState(null);
+  const load = useCallback(async () => {
+    try { setStudents(await ClassroomService.listClassStudents(item.id)); }
+    catch (error) { setMessage(error?.message ?? "無法讀取班級監看狀態"); setStudents((current) => current ?? []); }
+  }, [item.id]);
+  useEffect(() => {
+    load();
+    ClassroomService.listClassBroadcastSources(item.id).then(setSources).catch(() => setSources([]));
+    const timer = window.setInterval(load, 10000);
+    return () => window.clearInterval(timer);
+  }, [item.id, load]);
+  const orderedStudents = useMemo(() => [...(students ?? [])].sort((a, b) => {
+    const aReady = a.online && a.vms.some((vm) => vm.status === "running");
+    const bReady = b.online && b.vms.some((vm) => vm.status === "running");
+    return Number(aReady) - Number(bReady);
+  }), [students]);
+  const onlineCount = (students ?? []).filter((student) => student.online).length;
+  const machineCount = (students ?? []).reduce((sum, student) => sum + student.vms.length, 0);
+  const runningCount = (students ?? []).reduce((sum, student) => sum + student.vms.filter((vm) => vm.status === "running").length, 0);
+  async function openWatch(student, vm) {
+    setWatching(true); setMessage("");
+    try {
+      const session = await ClassroomService.createSession({ vmid: vm.vmid, mode: "monitor", class_id: item.id });
+      setWatch({ sessionId: session.id, title: `${student.full_name || student.email} · ${vm.name || `VM ${vm.vmid}`}` });
+    } catch (error) { setMessage(error?.message ?? "開啟觀看失敗"); }
+    finally { setWatching(false); }
+  }
+  async function closeWatch() {
+    if (watch) ClassroomService.stopSession(watch.sessionId).catch(() => {});
+    setWatch(null);
+  }
+  async function startBroadcast(vmid) {
+    if (!vmid) return;
+    setBroadcasting(true); setMessage("");
+    try {
+      const session = await ClassroomService.createSession({ vmid: Number(vmid), mode: "broadcast", class_id: item.id });
+      setBroadcast(session); setMessage("已開始向班級直播示範畫面。");
+    } catch (error) { setMessage(error?.message ?? "開始直播失敗"); }
+    finally { setBroadcasting(false); }
+  }
+  async function stopBroadcast() {
+    if (!broadcast) return;
+    setBroadcasting(true);
+    try { await ClassroomService.stopSession(broadcast.id); setBroadcast(null); setMessage("直播已結束。"); }
+    catch (error) { setMessage(error?.message ?? "結束直播失敗"); }
+    finally { setBroadcasting(false); }
+  }
+  return <div className={styles.stack}>
+    <section className={styles.classroomPanel}>
+      <div className={styles.classroomHeader}><div><h2>上課監看</h2><p>未就緒與離線學生會優先顯示。</p></div><div className={styles.classroomStats}><span><strong>{onlineCount}</strong>/{students?.length ?? 0} 在線</span><span><strong>{runningCount}</strong>/{machineCount} 執行中</span></div></div>
+      <div className={styles.broadcastTools}><MIcon name="sensors" size={18} /><strong>直播示範</strong>{broadcast ? <><span>直播進行中</span><button type="button" className={styles.btnSecondary} disabled={broadcasting} onClick={stopBroadcast}>結束直播</button></> : <><select disabled={broadcasting || !sources.length} defaultValue="" onChange={(event) => { startBroadcast(event.target.value); event.target.value = ""; }}><option value="">{sources.length ? "選擇教師的執行中 VM" : "目前沒有可直播的 VM"}</option>{sources.map((source) => <option key={source.vmid} value={source.vmid}>{source.name || `VM ${source.vmid}`}</option>)}</select></>}</div>
+      {message && <p className={styles.inlineMessage}>{message}</p>}
+      {students === null ? <div className={styles.classroomLoading}>正在讀取學生狀態…</div> : orderedStudents.length ? <div className={styles.classroomList}>{orderedStudents.map((student) => <article className={styles.classroomStudentRow} key={student.user_id}><div className={styles.classroomStudentIdentity}><strong>{student.full_name || student.email}</strong><span>{student.email}</span></div><span className={`${styles.classroomPresence} ${student.online ? styles.classroomOnline : ""}`}><i />{student.online ? "在線" : "離線"}</span><div className={styles.classroomMachines}>{student.vms.map((vm) => { const canWatch = vm.vm_type !== "lxc" && vm.status === "running"; return <div className={styles.classroomMachine} key={vm.vmid}><span><strong>{vm.name || `VM ${vm.vmid}`}</strong><small>{vm.status === "running" ? "執行中" : vm.status === "completed" ? "尚未開機" : vm.status}</small></span><button type="button" disabled={!canWatch || watching} onClick={() => openWatch(student, vm)}>{vm.vm_type === "lxc" ? "LXC" : "觀看"}</button></div>; })}{!student.vms.length && <span className={styles.classroomNoMachine}>尚無班級機器</span>}</div></article>)}</div> : <div className={styles.emptyState}><MIcon name="groups" size={30} /><p>班級目前沒有學生機器。</p></div>}
+    </section>
+    {watch && <ClassroomWatchDialog sessionId={watch.sessionId} title={watch.title} canControl onClose={closeWatch} />}
+  </div>;
+}
+
 function StudentMachines({ item, ai = false }) {
   const issues = item.students.flatMap((student) => student.machines.filter((machine) => machine.status === "failed").map((machine) => ({ student, machine })));
   return <div className={styles.stack}>{ai && <div className={styles.integrationStrip}><MIcon name="auto_awesome" size={19} /><div><strong>AI 上課檢查</strong><span>集中查看機器異常與學生環境完整度，協助老師快速找到需要處理的學生。</span></div><span className={styles.devBadge}>判讀功能準備中</span></div>}<section className={styles.card}><div className={styles.cardHeader}><div><h2>{ai ? "需要注意的環境" : "學生機器狀態"}</h2><p>{ai ? (issues.length ? `有 ${issues.length} 個機器項目需要處理。` : "目前沒有發現建立失敗的機器。") : "逐一確認每位學生的上課環境。"}</p></div></div><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>學生</th>{item.nodes.map((node) => <th key={node.id}>{node.name}</th>)}<th>結果</th></tr></thead><tbody>{item.students.map((student) => { const byNode = Object.fromEntries(student.machines.map((machine) => [String(machine.machine_node_id), machine])); const ready = student.machines.filter((machine) => machine.status === "completed").length; return <tr key={student.id}><td><strong>{student.full_name || student.email}</strong><small>{student.email}</small></td>{item.nodes.map((node) => { const machine = byNode[String(node.id)]; return <td key={node.id}><strong>{machine?.vmid ?? "—"}</strong><small>{machine ? JOB_STATUS[machine.status] ?? machine.status : "尚未建立"}</small></td>; })}<td><span className={`${styles.statusBadge} ${ready === item.nodes.length ? styles.status_active : styles.status_partial_failed}`}>{ready}/{item.nodes.length} 就緒</span></td></tr>; })}</tbody></table></div></section></div>;
 }
 
 function LockedFeature({ section }) {
-  return <section className={styles.lockedFeature}><span><MIcon name="lock" size={22} /></span><div><h2>{section === "ai" ? "AI 檢查尚未開放" : "學生機器尚未開放"}</h2><p>班級必須通過審核，且每位學生的所有節點都建立成功後才會正式啟用。</p></div></section>;
+  const label = section === "ai" ? "AI 檢查" : section === "classroom" ? "上課監看" : "學生機器";
+  return <section className={styles.lockedFeature}><span><MIcon name="lock" size={22} /></span><div><h2>{label}尚未開放</h2><p>班級必須通過審核，且每位學生的所有節點都建立成功後才會正式啟用。</p></div></section>;
 }
 
 export default function ClassWorkspacePage() {
@@ -268,7 +355,7 @@ export default function ClassWorkspacePage() {
 
   if (loading) return <div className={styles.emptyState}><p>正在讀取班級…</p></div>;
   if (!item) return <div className={styles.page}><button type="button" className={styles.backLink} onClick={() => navigate("/class-management")}><MIcon name="arrow_back" size={18} />返回班級清單</button><p className={styles.errorMessage}>{error || "找不到班級"}</p></div>;
-  const postUnavailable = (tab === "progress" || tab === "ai") && item.status !== "active";
+  const postUnavailable = ["classroom", "progress", "ai"].includes(tab) && item.status !== "active";
   const completed = [item.students.length > 0, item.nodes.length > 0].filter(Boolean).length;
 
   return <div className={styles.page}>
@@ -277,7 +364,7 @@ export default function ClassWorkspacePage() {
     {error && <p className={styles.errorMessage}>{error}</p>}
     <section className={styles.workflowTabsBar} aria-label="班級管理流程">
       <nav className={styles.workspaceTabs}>{TABS.map(([key, icon, label]) => {
-        const unavailable = (key === "progress" || key === "ai") && item.status !== "active";
+        const unavailable = ["classroom", "progress", "ai"].includes(key) && item.status !== "active";
         const done = key === "students" ? item.students.length > 0 : key === "weekly" ? item.weeks.some((week) => week.title.trim()) : key === "machines" ? item.nodes.length > 0 : false;
         return <button type="button" key={key} disabled={unavailable} title={unavailable ? "全部機器成功後開放" : undefined} className={`${tab === key ? styles.workspaceTabActive : ""} ${unavailable ? styles.workspaceTabLocked : ""}`} onClick={() => navigate(key === "overview" ? `/class-management/${classId}` : `/class-management/${classId}/${key}`)}><MIcon name={unavailable ? "lock" : done ? "check" : icon} size={17} /><strong>{label}</strong></button>;
       })}</nav>
@@ -289,6 +376,7 @@ export default function ClassWorkspacePage() {
       {tab === "weekly" && <WeeklyContent item={item} onRefresh={refresh} />}
       {tab === "machines" && <Machines item={item} templates={templates} template={template} onRefresh={refresh} onTemplate={setTemplateId} createdTemplateId={location.state?.createdTemplateId} />}
       {postUnavailable && <LockedFeature section={tab} />}
+      {tab === "classroom" && !postUnavailable && <ClassMonitor item={item} />}
       {tab === "progress" && !postUnavailable && <StudentMachines item={item} />}
       {tab === "ai" && !postUnavailable && <StudentMachines item={item} ai />}
       {!TABS.some(([key]) => key === tab) && <LockedFeature section={tab} />}
