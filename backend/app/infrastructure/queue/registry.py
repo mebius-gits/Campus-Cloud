@@ -174,4 +174,12 @@ async def run_registered_task_locally(
         raise RuntimeError(f"queue task '{name}' is not registered")
     handler, _ = registered
     runner = _wrap(name, handler)
-    await runner({}, record_id, payload)
+    while True:
+        try:
+            await runner({}, record_id, payload)
+            return
+        except Retry as retry:
+            # 沒有 arq 幫忙重排：自己等 defer 後再跑一次。任務留在 runner 裡
+            # 算「進行中」，同 job id 的去重在等待期間仍然有效
+            await asyncio.sleep((retry.defer_score or 0) / 1000)
+

@@ -151,3 +151,27 @@ def test_queue_task_passes_max_tries_and_keep_result(clean_registry) -> None:
     fn = next(f for f in registry.registered_functions() if f.name == "test.opts")
     assert fn.max_tries == 99
     assert fn.keep_result_s == 0
+
+
+@pytest.mark.asyncio
+async def test_local_runner_reruns_after_retry(clean_registry, monkeypatch) -> None:
+    """REDIS_ENABLED=false 沒有 arq 重排：本機 runner 自己等 defer 再跑一次。"""
+    from arq.worker import Retry
+
+    monkeypatch.setattr(registry, "_mark_running", lambda tid: None)
+    monkeypatch.setattr(registry, "_mark_requeued", lambda tid: None)
+    monkeypatch.setattr(registry, "_mark_finished", lambda *a, **k: None)
+    attempts: list[int] = []
+
+    @registry.queue_task("test.local_retry")
+    async def handler(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any]:
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise Retry(defer=0.001)
+        return {"ok": True}
+
+    await registry.run_registered_task_locally(
+        "test.local_retry", str(uuid.uuid4()), {}
+    )
+
+    assert len(attempts) == 3
