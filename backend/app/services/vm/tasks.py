@@ -19,7 +19,10 @@ from app.services.vm import batch_provision_service
     timeout_seconds=3600,
     # 固定 job id 去重：完成後立刻釋放，失敗重試才入得了列
     keep_result_seconds=0,
+    # 名額滿時以 Retry 重排（每次都算一次 try），上限要遠大於可能的等待輪數
+    max_tries=provision_pool.PROVISION_MAX_TRIES,
 )
+
 async def provision_vm_request(
     task_id: uuid.UUID,  # noqa: ARG001 - handler 固定簽名
     payload: dict[str, Any],

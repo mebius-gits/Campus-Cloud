@@ -161,10 +161,10 @@ services:
   # -------------------------
   mailcatcher:
     image: schickling/mailcatcher
-    # 只在 dev profile 啟動（.env.example 預設 COMPOSE_PROFILES=dev）；正式部署
-    # 的 .env 不設 profile，就不會把開發用的收信匣一起帶上線。
-    profiles: ["dev"]
+    # SMTP_HOST 預設就是 mailcatcher（見 x-backend-env），所以它必須跟著起來；
+    # 正式環境在 .env 設真正的 SMTP_HOST 後，這個容器只是閒置，不對外暴露。
     ports:
+
 
       # Dev-only mail sink — bind to localhost so captured mail (incl. password
       # reset links) is not readable from the public network. Replace with a

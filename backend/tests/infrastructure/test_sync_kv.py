@@ -97,3 +97,15 @@ def test_redis_failure_falls_back_to_memory(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert kv.get("code1") == {"token": None}
     assert kv.count() == 1
+
+
+def test_redis_miss_falls_through_to_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redis 短暫故障時寫進記憶體的 key，Redis 恢復後仍要讀得到。"""
+    monkeypatch.setattr(core_settings, "REDIS_ENABLED", True)
+    fake = _FakeRedis(fail=True)
+    kv = sync_kv.ExpiringKV("device", ttl_seconds=300)
+    monkeypatch.setattr(kv, "_redis", lambda: fake)
+    kv.set("code1", {"token": None})  # 落到記憶體
+
+    fake.fail = False  # Redis 恢復，但那個 key 不在 Redis 裡
+    assert kv.get("code1") == {"token": None}

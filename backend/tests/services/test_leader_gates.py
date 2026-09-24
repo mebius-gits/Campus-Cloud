@@ -109,3 +109,55 @@ async def test_run_reconciler_uses_gated_tick(monkeypatch: pytest.MonkeyPatch) -
     await asyncio.wait_for(wireguard_service.run_reconciler(stop), timeout=5)
 
     assert ticks == ["tick"]
+
+
+def test_push_gate_resets_baseline_when_not_leader(monkeypatch: pytest.MonkeyPatch) -> None:
+    """失去 leader 的行程要清掉去重基準，之後搶回時才不會補推一整段舊事件。"""
+    resets: list[str] = []
+    monkeypatch.setattr(leader, "scheduler_leader_lock", _fake_lock(False, []))
+    monkeypatch.setattr(web_push_service, "reset_tick_state", lambda: resets.append("reset"))
+
+    with web_push_service.push_notifier_leader_gate() as is_leader:
+        assert is_leader is False
+    assert resets == ["reset"]
+
+    monkeypatch.setattr(leader, "scheduler_leader_lock", _fake_lock(True, []))
+    with web_push_service.push_notifier_leader_gate() as is_leader:
+        assert is_leader is True
+    assert resets == ["reset"]  # leader 那一輪不清
+
+
+async def test_polling_scheduler_enters_gate_off_the_loop_thread() -> None:
+    """leader 鎖是同步 DB I/O：要在執行緒裡進出，不能凍住 event loop。"""
+    import threading
+
+    from app.domain.scheduling import runner
+    from app.domain.scheduling.models import ScheduledTask
+
+    loop_thread = threading.get_ident()
+    seen: dict[str, int] = {}
+    stop = asyncio.Event()
+
+    @contextmanager
+    def gate():
+        seen["enter"] = threading.get_ident()
+        try:
+            yield True
+        finally:
+            seen["exit"] = threading.get_ident()
+
+    def task() -> None:
+        stop.set()
+
+    await asyncio.wait_for(
+        runner.run_polling_scheduler(
+            stop_event=stop,
+            interval_seconds=1,
+            tasks=[ScheduledTask(name="t", handler=task)],
+            leader_gate=gate,
+        ),
+        timeout=5,
+    )
+
+    assert seen["enter"] != loop_thread
+    assert seen["exit"] != loop_thread

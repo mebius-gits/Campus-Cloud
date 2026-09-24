@@ -641,8 +641,6 @@ def list_all(
         raise ProxmoxError(f"Failed to get resources: {e}")
 
 
-DELETED_TOMBSTONE_DAYS = 30
-
 # Marker written onto a VMRequest's resource_warning / provisioning_error /
 # review_comment when the user explicitly deletes the live resource. Used
 # by list_by_user to suppress the now-defunct approved request from being
@@ -650,7 +648,6 @@ DELETED_TOMBSTONE_DAYS = 30
 # consumed request from the applications list. 定義在 domain 層，這裡只是
 # re-export 讓既有的 ``resource_service.RESOURCE_*`` 引用不用改。
 _RESOURCE_DELETED_MARKERS = RESOURCE_DELETED_MARKERS
-
 
 
 def mark_linked_request_consumed(

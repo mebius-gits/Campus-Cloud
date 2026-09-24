@@ -179,3 +179,61 @@ def test_execute_deletion_continues_after_winning_claim() -> None:
         deletion_service._execute_deletion(session, _pending_request())  # type: ignore[arg-type]
 
     assert session.exec_calls == 1
+
+
+# ─── TaskRecord 殭屍回收 ──────────────────────────────────────────────────────
+
+
+def test_reap_stale_task_records_marks_lost_tasks_failed() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import TaskRecord, TaskRecordStatus
+    from app.repositories import task_record as task_record_repo
+
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+    lost_running = TaskRecord(
+        task_type="resource.reset", user_id=uuid.uuid4(), payload="{}",
+        status=TaskRecordStatus.running, started_at=now - timedelta(hours=3),
+    )
+    lost_queued = TaskRecord(
+        task_type="template.clone", user_id=uuid.uuid4(), payload="{}",
+        status=TaskRecordStatus.queued, created_at=now - timedelta(days=2),
+    )
+
+    class _Result:
+        def all(self) -> list[TaskRecord]:
+            return [lost_running, lost_queued]
+
+    class _Session:
+        def __init__(self) -> None:
+            self.statement = None
+            self.committed = 0
+
+        def exec(self, statement: Any) -> _Result:
+            self.statement = statement
+            return _Result()
+
+        def add(self, _obj: Any) -> None:
+            """測試替身。"""
+
+        def commit(self) -> None:
+            self.committed += 1
+
+    session = _Session()
+    reaped = task_record_repo.reap_stale_task_records(session=session, now=now)  # type: ignore[arg-type]
+
+    assert reaped == 2
+    assert session.committed == 1
+    assert lost_running.status == TaskRecordStatus.failed
+    assert lost_queued.status == TaskRecordStatus.failed
+    assert "2h" in (lost_running.error or "")
+    assert "24h" in (lost_queued.error or "")
+    compiled = str(session.statement.compile(compile_kwargs={"literal_binds": True}))
+    assert "task_records.status" in compiled and "started_at" in compiled
+
+
+def test_task_record_reaper_is_registered_on_scheduler() -> None:
+    from app.services.scheduling import coordinator
+
+    assert callable(coordinator.reap_stale_task_records_task)
+    assert "reap_stale_task_records" in coordinator.run_scheduler.__code__.co_consts

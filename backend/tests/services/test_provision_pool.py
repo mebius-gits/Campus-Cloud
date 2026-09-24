@@ -1,4 +1,4 @@
-"""克隆 fan-out：API 端入列（job id 去重）、worker 端 semaphore 限流。"""
+"""克隆 fan-out：API 端入列（job id 去重）、worker 端名額滿時 Retry 重排。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from arq.worker import Retry
 
 from app.models import VMProvisioningStatus
 from app.services.scheduling import provision_pool
@@ -19,28 +20,10 @@ def _seed_first_superuser() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _fresh_semaphore():
-    provision_pool.reset_provision_semaphore()
+def _fresh_counter():
+    provision_pool.reset_in_flight()
     yield
-    provision_pool.reset_provision_semaphore()
-
-
-class _Tracker:
-    def __init__(self, delay: float = 0.03) -> None:
-        self.delay = delay
-        self.in_flight = 0
-        self.peak = 0
-        self.calls: list[uuid.UUID] = []
-
-    async def fake_execute(self, request_id: uuid.UUID) -> bool:
-        self.in_flight += 1
-        self.peak = max(self.peak, self.in_flight)
-        try:
-            await asyncio.sleep(self.delay)
-            self.calls.append(request_id)
-            return True
-        finally:
-            self.in_flight -= 1
+    provision_pool.reset_in_flight()
 
 
 # ─── API 端：入列 ─────────────────────────────────────────────────────────────
@@ -71,24 +54,65 @@ def test_submit_provision_enqueues_with_stable_job_id(
     assert calls[0]["job_id"] == f"vm_request:{request_id}"
 
 
-# ─── worker 端：限流與結果 ────────────────────────────────────────────────────
+# ─── worker 端：名額、結果 ────────────────────────────────────────────────────
 
 
-async def test_worker_concurrency_capped_by_semaphore(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tracker = _Tracker()
-    monkeypatch.setattr(provision_pool, "_execute_provision", tracker.fake_execute)
+async def test_worker_runs_when_slot_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[int] = []
+
+    async def fake_execute(_request_id: uuid.UUID) -> bool:
+        seen.append(provision_pool.in_flight_count())
+        return True
+
+    monkeypatch.setattr(provision_pool, "_execute_provision", fake_execute)
     monkeypatch.setattr(provision_pool, "_provisioning_failure", lambda _rid: None)
 
-    ids = [uuid.uuid4() for _ in range(20)]
-    results = await asyncio.gather(
-        *(provision_pool.run_provision_job(rid, concurrency=4) for rid in ids)
-    )
+    result = await provision_pool.run_provision_job(uuid.uuid4(), concurrency=2)
 
-    assert tracker.peak <= 4
-    assert sorted(map(str, tracker.calls)) == sorted(map(str, ids))
-    assert all(r["started"] is True for r in results)
+    assert result["started"] is True
+    assert seen == [1]  # 執行期間計數 +1
+    assert provision_pool.in_flight_count() == 0  # 結束後歸還
+
+
+async def test_worker_defers_with_retry_when_full(monkeypatch: pytest.MonkeyPatch) -> None:
+    """名額滿時不佔 slot 等待，改丟 Retry 讓 arq 稍後重排。"""
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow_execute(_request_id: uuid.UUID) -> bool:
+        started.set()
+        await gate.wait()
+        return True
+
+    monkeypatch.setattr(provision_pool, "_execute_provision", slow_execute)
+    monkeypatch.setattr(provision_pool, "_provisioning_failure", lambda _rid: None)
+
+    running = asyncio.create_task(
+        provision_pool.run_provision_job(uuid.uuid4(), concurrency=1)
+    )
+    await started.wait()
+
+    with pytest.raises(Retry) as excinfo:
+        await provision_pool.run_provision_job(uuid.uuid4(), concurrency=1)
+    assert excinfo.value.defer_score == provision_pool.PROVISION_RETRY_DEFER_SECONDS * 1000
+    assert provision_pool.in_flight_count() == 1  # 被擋下的那個沒有佔名額
+
+    gate.set()
+    await running
+    assert provision_pool.in_flight_count() == 0
+
+
+async def test_worker_releases_slot_when_execute_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def boom(_request_id: uuid.UUID) -> bool:
+        raise RuntimeError("pve down")
+
+    monkeypatch.setattr(provision_pool, "_execute_provision", boom)
+
+    with pytest.raises(RuntimeError, match="pve down"):
+        await provision_pool.run_provision_job(uuid.uuid4(), concurrency=1)
+    assert provision_pool.in_flight_count() == 0
 
 
 async def test_worker_raises_when_request_ends_failed(
@@ -137,9 +161,9 @@ def test_provisioning_failure_reads_request_state(monkeypatch: pytest.MonkeyPatc
     assert provision_pool._provisioning_failure(uuid.uuid4()) is None
 
 
-async def test_semaphore_rebuilt_on_size_change() -> None:
-    sem_a = provision_pool.get_provision_semaphore(2)
-    sem_a2 = provision_pool.get_provision_semaphore(2)
-    sem_b = provision_pool.get_provision_semaphore(6)
-    assert sem_a is sem_a2
-    assert sem_b is not sem_a
+def test_provision_task_retry_budget_covers_long_waits() -> None:
+    # 每次重排算一次 try；上限要遠大於大班級開機時可能的等待輪數
+    assert (
+        provision_pool.PROVISION_MAX_TRIES * provision_pool.PROVISION_RETRY_DEFER_SECONDS
+        >= 24 * 3600
+    )

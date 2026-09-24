@@ -61,13 +61,16 @@ class ExpiringKV:
         if client is not None:
             try:
                 raw = client.get(self._key(key))
-                return json.loads(raw) if raw else None
+                if raw:
+                    return json.loads(raw)
+                # Redis 沒有 → 可能是 Redis 短暫故障期間寫進記憶體的，往下找
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "Redis KV get failed (namespace=%s); using in-memory fallback",
                     self._namespace, exc_info=True,
                 )
         return self._memory_get(key)
+
 
     def set(
         self, key: str, value: dict[str, Any], *, ttl_seconds: int | None = None

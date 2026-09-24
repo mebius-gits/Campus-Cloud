@@ -347,9 +347,9 @@ def test_class_reclaim_queues_idempotent_deletion_with_retries(monkeypatch):
     )
     submitted = []
     monkeypatch.setattr(
-        class_lifecycle_service,
-        "submit_sync",
-        lambda *args, **kwargs: submitted.append((args, kwargs)),
+        class_lifecycle_service.deletion_service,
+        "enqueue_processing",
+        lambda *, session, req: submitted.append(req.id),
     )
 
     result = class_lifecycle_service.queue_reclaim(
@@ -360,7 +360,8 @@ def test_class_reclaim_queues_idempotent_deletion_with_retries(monkeypatch):
     )
 
     assert result["queued_vmids"] == [801]
-    assert submitted[0][1]["max_retries"] == 2
+    assert submitted == [request_id]
+
 
 
 def test_class_reclaim_hides_infrastructure_exception(monkeypatch):

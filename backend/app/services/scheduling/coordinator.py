@@ -679,6 +679,15 @@ def process_due_request_starts() -> int:
 
         for request in active_requests:
             if request.vmid is None:
+                if (
+                    request.provisioning_status == VMProvisioningStatus.running
+                    and not scheduling_policy.is_provisioning_stale(
+                        request.provisioning_started_at, now=now
+                    )
+                ):
+                    # worker 正在 clone：不用再送，job id 去重也擋得住，但這裡
+                    # 先跳過省一次 Redis 往返
+                    continue
                 # 尚未 provision — 入列到 arq worker 並行 clone（worker 內
                 # semaphore 限流），tick 不再同步等待重 I/O。防重複由 job id
                 # 去重 + DB SKIP LOCKED + provisioning_status 再檢查三層保障。
@@ -896,6 +905,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
             ScheduledTask(
                 name="reap_stale_script_runs", handler=reap_stale_script_runs_task
             ),
+            ScheduledTask(
+                name="reap_stale_task_records", handler=reap_stale_task_records_task
+            ),
+
 
             ScheduledTask(
                 name="process_recurrence_windows",
@@ -1011,6 +1024,18 @@ def process_snapshot_cleanup_task() -> int:
     )
 
     return snapshot_cleanup_service.process_snapshot_cleanup()
+
+
+def reap_stale_task_records_task() -> int:
+    """Scheduler tick：把 worker 被硬殺後永遠停在 running／queued 的 TaskRecord 收成 failed。"""
+    from app.repositories import task_record as task_record_repo  # noqa: PLC0415
+
+    try:
+        with Session(engine) as session:
+            return task_record_repo.reap_stale_task_records(session=session)
+    except Exception:
+        logger.exception("reap_stale_task_records_task failed")
+        return 0
 
 
 def reap_stale_script_runs_task() -> int:

@@ -16,7 +16,8 @@ import asyncio
 import json
 import logging
 import uuid
-from contextlib import AbstractContextManager
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -302,14 +303,22 @@ def process_push_notifications() -> int:
     return sent_total
 
 
-def push_notifier_leader_gate() -> AbstractContextManager[bool]:
-    """推播迴圈專用的 leader 鎖：多副本時只有一個行程推，避免重複通知。"""
+@contextmanager
+def push_notifier_leader_gate() -> Iterator[bool]:
+    """推播迴圈專用的 leader 鎖：多副本時只有一個行程推，避免重複通知。
+
+    沒拿到鎖的那一輪順手清掉行程內的去重基準：否則這個行程之後搶回 leader
+    時，會拿幾小時前的舊基準去 diff，把中間所有終態變化一次補推出去。
+    """
     from app.services.scheduling.leader import (  # noqa: PLC0415 — 避免 import cycle
         PUSH_NOTIFIER_LEADER_LOCK_KEY,
         scheduler_leader_lock,
     )
 
-    return scheduler_leader_lock(PUSH_NOTIFIER_LEADER_LOCK_KEY)
+    with scheduler_leader_lock(PUSH_NOTIFIER_LEADER_LOCK_KEY) as is_leader:
+        if not is_leader:
+            reset_tick_state()
+        yield is_leader
 
 
 async def run_push_notifier(stop_event: asyncio.Event) -> None:

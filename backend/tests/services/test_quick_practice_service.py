@@ -395,10 +395,11 @@ def test_queue_session_reclaim_uses_idempotent_deletion_queue(
     submitted: list[uuid.UUID] = []
     monkeypatch.setattr(deletion_service, "create_deletion_request", create_deletion)
     monkeypatch.setattr(
-        quick_practice,
-        "submit_sync",
-        lambda _fn, request_id, **_kwargs: submitted.append(request_id),
+        deletion_service,
+        "enqueue_processing",
+        lambda *, session, req: submitted.append(req.id),
     )
+
 
     queued = quick_practice._queue_session_reclaim(quick_db, practice=practice)
 

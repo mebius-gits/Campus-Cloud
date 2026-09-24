@@ -11,7 +11,6 @@ from sqlmodel import Session, col, func, select
 from app.core.i18n import t
 from app.core.permissions import is_admin
 from app.exceptions import BadRequestError, NotFoundError
-from app.infrastructure.worker import submit_sync
 from app.models import (
     CourseEnvironment,
     CourseEnvironmentEdge,
@@ -405,14 +404,9 @@ def _queue_session_reclaim(
             purge=True,
             force=True,
         )
-        submit_sync(
-            deletion_service.process_one_request,
-            deletion.id,
-            name=f"quick-practice-reclaim:{practice.id}:{resource.vmid}",
-            task_id=str(deletion.id),
-            max_retries=2,
-        )
+        deletion_service.enqueue_processing(session=session, req=deletion)
         queued += 1
+
 
     refreshed = session.get(QuickPracticeSession, practice.id)
     if refreshed is not None:
