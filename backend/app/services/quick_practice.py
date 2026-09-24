@@ -717,6 +717,7 @@ def launch(
     )
 
     request_ids: list[uuid.UUID] = []
+    requester_id = user.id
     for node in nodes:
         request_in = _machine_request(
             session=session,
@@ -750,8 +751,11 @@ def launch(
     session.commit()
     session.refresh(practice)
     for request_id in request_ids:
-        vm_request_service.submit_course_provision(request_id)
+        vm_request_service.submit_course_provision(
+            session, request_id=request_id, user_id=requester_id
+        )
     return practice
+
 
 
 def end_session(

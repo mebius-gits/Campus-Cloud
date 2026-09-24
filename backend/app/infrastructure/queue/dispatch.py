@@ -32,8 +32,14 @@ async def enqueue_task(
     user_id: uuid.UUID,
     payload: dict[str, Any],
     template_id: uuid.UUID | None = None,
-) -> TaskRecord:
-    """建立 TaskRecord 並入列；入列失敗時記錄 failed 後拋出。"""
+    job_id: str | None = None,
+) -> TaskRecord | None:
+    """建立 TaskRecord 並入列；入列失敗時記錄 failed 後拋出。
+
+    ``job_id`` 指定 arq job id 以做跨行程去重：同 id 的 job 還在排隊或執行中
+    時不會再入列，剛建立的 TaskRecord 會被刪掉並回傳 None。未指定時以
+    TaskRecord id 當 job id（永不重複）。
+    """
     record = task_record_repo.create_task_record(
         session=session,
         task_type=task_type,
@@ -41,10 +47,12 @@ async def enqueue_task(
         payload=payload,
         template_id=template_id,
     )
-    await _dispatch_record(
-        session=session, record=record, task_type=task_type, payload=payload
-    )
-    return record
+    if await _dispatch_record(
+        session=session, record=record, task_type=task_type, payload=payload,
+        job_id=job_id,
+    ):
+        return record
+    return None
 
 
 def enqueue_task_sync(
@@ -54,7 +62,8 @@ def enqueue_task_sync(
     user_id: uuid.UUID,
     payload: dict[str, Any],
     template_id: uuid.UUID | None = None,
-) -> TaskRecord:
+    job_id: str | None = None,
+) -> TaskRecord | None:
     """``enqueue_task`` 的 sync 版：從 threadpool（sync 路由）呼叫。
 
     TaskRecord 在呼叫端執行緒寫入；只有 arq 的 enqueue 需要 event loop，
@@ -82,17 +91,24 @@ def enqueue_task_sync(
         template_id=template_id,
     )
     coro = _dispatch_record(
-        session=session, record=record, task_type=task_type, payload=payload
+        session=session, record=record, task_type=task_type, payload=payload,
+        job_id=job_id,
     )
     runner = get_runner()
     loop = runner.bound_loop() if runner is not None else None
     if loop is None or loop.is_closed():
         # 沒有 lifespan（單元測試、CLI 腳本）：就地跑一個 loop 完成入列
-        asyncio.run(coro)
-        return record
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    future.result(timeout=ENQUEUE_SYNC_TIMEOUT_SECONDS)
-    return record
+        dispatched = asyncio.run(coro)
+    else:
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        dispatched = future.result(timeout=ENQUEUE_SYNC_TIMEOUT_SECONDS)
+    return record if dispatched else None
+
+
+def _discard_duplicate_record(*, session: Session, record: TaskRecord) -> None:
+    """同 job id 已在隊列中：這筆 TaskRecord 不會有人執行，直接刪掉。"""
+    session.delete(record)
+    session.commit()
 
 
 async def _dispatch_record(
@@ -101,17 +117,23 @@ async def _dispatch_record(
     record: TaskRecord,
     task_type: str,
     payload: dict[str, Any],
-) -> None:
+    job_id: str | None = None,
+) -> bool:
+    """把 record 送進隊列；回傳 False 代表被 ``job_id`` 去重擋下（record 已刪）。"""
     try:
         if not settings.redis_enabled:
             # Import task modules lazily so their decorators populate the
             # registry without creating an import cycle during app startup.
-            from app.infrastructure.worker import submit  # noqa: PLC0415
+            from app.infrastructure.worker import is_active, submit  # noqa: PLC0415
 
             from .modules import import_task_modules  # noqa: PLC0415
             from .registry import run_registered_task_locally  # noqa: PLC0415
 
             import_task_modules()
+            local_task_id = job_id or str(record.id)
+            if job_id is not None and is_active(local_task_id):
+                _discard_duplicate_record(session=session, record=record)
+                return False
             submitted_id = submit(
                 run_registered_task_locally(
                     task_type,
@@ -119,21 +141,29 @@ async def _dispatch_record(
                     payload,
                 ),
                 name=task_type,
-                task_id=str(record.id),
+                task_id=local_task_id,
             )
+
             if not submitted_id:
                 raise RuntimeError("local background runner is not available")
-            return
+            return True
 
         pool = await get_arq_pool()
         job = await pool.enqueue_job(
             task_type,
             str(record.id),
             payload,
-            _job_id=str(record.id),
+            _job_id=job_id or str(record.id),
             _queue_name=QUEUE_NAME,
         )
         if job is None:
+            if job_id is not None:
+                logger.info(
+                    "queue task '%s' job_id=%s already queued; skipping duplicate",
+                    task_type, job_id,
+                )
+                _discard_duplicate_record(session=session, record=record)
+                return False
             raise RuntimeError(f"duplicate job id {record.id}")
     except Exception as exc:
         logger.exception("enqueue task '%s' failed", task_type)
@@ -144,3 +174,5 @@ async def _dispatch_record(
             error=f"入列失敗: {exc}",
         )
         raise
+    return True
+

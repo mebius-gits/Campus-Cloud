@@ -1,16 +1,15 @@
-"""克隆請求 fan-out 併發池。
+"""克隆請求 fan-out：入列到 arq worker，並在 worker 內限制同時 clone 數。
 
-clone 是 PVE 磁碟 I/O 重活 — 以獨立的 ``asyncio.Semaphore`` 限制同時
-在跑的 provision 數（``GovernanceConfig.provision_max_concurrency``），
-並以 ``bypass_semaphore=True`` 略過 runner 全域信號量，避免排隊等待的
-clone 任務佔滿 runner slot、餓死發信/狀態同步等輕量任務。
+clone 是 PVE 磁碟 I/O 重活。API 行程只負責入列（``submit_provision``），
+真正的 clone 由 worker 的 ``vm_request.provision`` 任務執行，並以 worker 內
+的 ``asyncio.Semaphore``（``GovernanceConfig.provision_max_concurrency``）限制
+同時在跑的數量。job 存在 Redis，worker 重啟後續跑，API 重啟不再讓申請單
+卡到 30 分鐘的 stale 回收才被撿起。
 
-防重複三層：runner ``task_id=vm_request:{request_id}`` 去重（本模組）→
+防重複三層：arq job id ``vm_request:{request_id}`` 去重（排隊中／執行中的
+同一單不會再入列；任務完成即釋放 id，失敗重試不受影響）→
 DB ``SELECT FOR UPDATE SKIP LOCKED``（coordinator 既有）→
 ``provisioning_status``/vmid 再檢查（coordinator 既有）。
-
-task_id 必須與 ``vm_request_service`` 的 review／cancel／retry 路徑同一個命名
-空間，否則 ``cancel()`` 找不到排程 fan-out 出去的任務，取消後 clone 仍會跑完。
 """
 
 from __future__ import annotations
@@ -18,10 +17,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from typing import Any
 
-from app.infrastructure.worker import background_tasks
+from sqlmodel import Session
+
+from app.infrastructure.queue import enqueue_task_sync
+from app.models import TaskRecord, VMProvisioningStatus
 
 logger = logging.getLogger(__name__)
+
+TASK_PROVISION = "vm_request.provision"
+DEFAULT_PROVISION_CONCURRENCY = 2
+
 
 class _PoolState:
     """目前的 provision 信號量與其上限（集中在物件上，避免 global 重新指派）。"""
@@ -34,7 +41,7 @@ _pool = _PoolState()
 
 
 def provision_task_id(request_id: uuid.UUID) -> str:
-    """單一申請單的 provision 背景任務 id；所有提交／取消路徑都用這個。"""
+    """單一申請單的 provision job id；所有提交路徑都用這個做去重。"""
     return f"vm_request:{request_id}"
 
 
@@ -56,29 +63,73 @@ def reset_provision_semaphore() -> None:
     _pool.size = 0
 
 
-async def _execute_provision(request_id: uuid.UUID) -> None:
+def submit_provision(
+    session: Session,
+    *,
+    request_id: uuid.UUID,
+    user_id: uuid.UUID,
+    concurrency: int,
+) -> TaskRecord | None:
+    """把單一 request 的 provision 入列到 arq worker。
+
+    同一 request 已在排隊／執行中時（job id 去重）回傳 None。
+    """
+    return enqueue_task_sync(
+        session=session,
+        task_type=TASK_PROVISION,
+        user_id=user_id,
+        payload={"request_id": str(request_id), "concurrency": int(concurrency)},
+        job_id=provision_task_id(request_id),
+    )
+
+
+# ─── worker 端 ────────────────────────────────────────────────────────────────
+
+
+async def _execute_provision(request_id: uuid.UUID) -> bool:
     from app.services.scheduling import (
         coordinator,  # noqa: PLC0415 — 避免 import cycle
     )
 
-    await asyncio.to_thread(coordinator.process_single_request_start, request_id)
+    return await asyncio.to_thread(coordinator.process_single_request_start, request_id)
 
 
-async def _provision_with_semaphore(
-    request_id: uuid.UUID, concurrency: int
-) -> None:
-    async with get_provision_semaphore(concurrency):
-        await _execute_provision(request_id)
+def _provisioning_failure(request_id: uuid.UUID) -> str | None:
+    """provision 後申請單若停在 failed，回傳錯誤訊息讓 TaskRecord 也標 failed。"""
+    from app.core.db import engine  # noqa: PLC0415 — 避免 import cycle
+    from app.repositories import vm_request as vm_request_repo  # noqa: PLC0415
+
+    with Session(engine) as session:
+        request = vm_request_repo.get_vm_request_by_id(
+            session=session, request_id=request_id
+        )
+        if (
+            request is not None
+            and request.vmid is None
+            and request.provisioning_status == VMProvisioningStatus.failed
+        ):
+            return request.provisioning_error or "provisioning failed"
+    return None
 
 
-def submit_provision(request_id: uuid.UUID, *, concurrency: int) -> str:
-    """把單一 request 的 provision 丟進背景並行執行。
+async def run_provision_job(
+    request_id: uuid.UUID, *, concurrency: int
+) -> dict[str, Any]:
+    """worker handler 本體：受 semaphore 限流後執行 provision。"""
+    async with get_provision_semaphore(max(1, concurrency)):
+        started = await _execute_provision(request_id)
+    failure = await asyncio.to_thread(_provisioning_failure, request_id)
+    if failure:
+        raise RuntimeError(failure)
+    return {"request_id": str(request_id), "started": bool(started)}
 
-    同一 request 已在跑時（runner task_id 去重）為 no-op。
-    """
-    return background_tasks.submit_factory(
-        lambda: _provision_with_semaphore(request_id, concurrency),
-        name="provision",
-        task_id=provision_task_id(request_id),
-        bypass_semaphore=True,
-    )
+
+__all__ = [
+    "DEFAULT_PROVISION_CONCURRENCY",
+    "TASK_PROVISION",
+    "get_provision_semaphore",
+    "provision_task_id",
+    "reset_provision_semaphore",
+    "run_provision_job",
+    "submit_provision",
+]

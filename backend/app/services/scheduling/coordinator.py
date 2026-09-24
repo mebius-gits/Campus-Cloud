@@ -679,14 +679,17 @@ def process_due_request_starts() -> int:
 
         for request in active_requests:
             if request.vmid is None:
-                # 尚未 provision — fan-out 到背景並行 clone（獨立 semaphore
-                # 限流），tick 不再同步等待重 I/O。防重複由 runner task_id
+                # 尚未 provision — 入列到 arq worker 並行 clone（worker 內
+                # semaphore 限流），tick 不再同步等待重 I/O。防重複由 job id
                 # 去重 + DB SKIP LOCKED + provisioning_status 再檢查三層保障。
                 provision_pool.submit_provision(
-                    request.id,
+                    session,
+                    request_id=request.id,
+                    user_id=request.user_id,
                     concurrency=governance_config.provision_max_concurrency,
                 )
                 continue
+
             try:
                 started = _ensure_request_running(
                     session=session,

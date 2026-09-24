@@ -11,6 +11,7 @@ from typing import Any
 
 from app.infrastructure.queue import queue_task
 from app.services.proxmox import provisioning_service
+from app.services.scheduling import provision_pool
 from app.services.vm import batch_provision_service
 
 
@@ -24,7 +25,27 @@ async def admin_create_vm(
     )
 
 
+@queue_task(
+    provision_pool.TASK_PROVISION,
+    timeout_seconds=3600,
+    # 固定 job id 去重：完成後立刻釋放，失敗重試才入得了列
+    keep_result_seconds=0,
+)
+async def provision_vm_request(
+    task_id: uuid.UUID,  # noqa: ARG001 - handler 固定簽名
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """VM 申請佈建：clone 一台機器並掛到申請單上（worker 內限流）。"""
+    return await provision_pool.run_provision_job(
+        uuid.UUID(str(payload["request_id"])),
+        concurrency=int(
+            payload.get("concurrency") or provision_pool.DEFAULT_PROVISION_CONCURRENCY
+        ),
+    )
+
+
 @queue_task(batch_provision_service.TASK_RUN_BATCH_JOB, timeout_seconds=6 * 3600)
+
 async def run_batch_provision_job(
     task_id: uuid.UUID, payload: dict[str, Any]
 ) -> dict[str, Any]:

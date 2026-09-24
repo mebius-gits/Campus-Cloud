@@ -23,7 +23,9 @@ EXPECTED_TASK_TYPES = {
     "resource.reset",
     "vm.admin_create",
     "batch_provision.run",
+    "vm_request.provision",
 }
+
 
 
 def test_import_task_modules_registers_every_queue_task() -> None:

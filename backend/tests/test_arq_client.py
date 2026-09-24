@@ -152,8 +152,10 @@ def test_enqueue_task_sync_uses_bound_loop_from_worker_thread(
         dispatch.task_record_repo, "create_task_record", lambda **_: record
     )
 
-    async def fake_dispatch(**_kwargs: object) -> None:
+    async def fake_dispatch(**_kwargs: object) -> bool:
         seen_loops.append(asyncio.get_running_loop())
+        return True
+
 
     monkeypatch.setattr(dispatch, "_dispatch_record", fake_dispatch)
 
@@ -183,3 +185,61 @@ async def test_enqueue_task_sync_refuses_event_loop_thread() -> None:
             user_id=uuid.uuid4(),
             payload={},
         )
+
+
+async def test_enqueue_with_job_id_discards_duplicate_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """固定 job id 已在隊列：arq 回 None，剛建的 TaskRecord 要刪掉、回傳 None。"""
+    record = SimpleNamespace(id=uuid.uuid4())
+    deleted: list[object] = []
+    committed: list[bool] = []
+    session = SimpleNamespace(
+        delete=lambda obj: deleted.append(obj), commit=lambda: committed.append(True)
+    )
+    monkeypatch.setattr(core_settings, "REDIS_ENABLED", True)
+    monkeypatch.setattr(
+        dispatch.task_record_repo, "create_task_record", lambda **_: record
+    )
+    pool = SimpleNamespace(enqueue_job=AsyncMock(return_value=None))
+    monkeypatch.setattr(dispatch, "get_arq_pool", AsyncMock(return_value=pool))
+    marked: list[object] = []
+    monkeypatch.setattr(
+        dispatch.task_record_repo, "mark_task_finished", lambda **kw: marked.append(kw)
+    )
+
+    result = await dispatch.enqueue_task(
+        session=session,  # type: ignore[arg-type]
+        task_type="vm_request.provision",
+        user_id=uuid.uuid4(),
+        payload={},
+        job_id="vm_request:abc",
+    )
+
+    assert result is None
+    assert deleted == [record]
+    assert committed == [True]
+    assert marked == []  # 去重不是失敗，不能把 record 標成 failed
+    assert pool.enqueue_job.await_args.kwargs["_job_id"] == "vm_request:abc"
+
+
+async def test_enqueue_without_job_id_uses_record_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = SimpleNamespace(id=uuid.uuid4())
+    monkeypatch.setattr(core_settings, "REDIS_ENABLED", True)
+    monkeypatch.setattr(
+        dispatch.task_record_repo, "create_task_record", lambda **_: record
+    )
+    pool = SimpleNamespace(enqueue_job=AsyncMock(return_value=object()))
+    monkeypatch.setattr(dispatch, "get_arq_pool", AsyncMock(return_value=pool))
+
+    result = await dispatch.enqueue_task(
+        session=object(),  # type: ignore[arg-type]
+        task_type="template.convert",
+        user_id=uuid.uuid4(),
+        payload={},
+    )
+
+    assert result is record
+    assert pool.enqueue_job.await_args.kwargs["_job_id"] == str(record.id)

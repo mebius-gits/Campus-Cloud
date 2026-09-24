@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 TaskHandler = Callable[[uuid.UUID, dict[str, Any]], Awaitable[dict[str, Any] | None]]
 
 _registry: dict[str, tuple[TaskHandler, int]] = {}
+# arq 端保留結果的秒數；None 用 worker 預設。設 0 代表完成後立刻釋放 job id，
+# 讓「固定 job id 去重」的任務（例如 vm_request.provision）跑完就能再入列。
+_keep_result_seconds: dict[str, int | None] = {}
 
 
 def queue_task(
-    name: str, *, timeout_seconds: int = 1800
+    name: str, *, timeout_seconds: int = 1800, keep_result_seconds: int | None = None
 ) -> Callable[[TaskHandler], TaskHandler]:
     """註冊一個隊列任務 handler（以 name 作為 arq function 名）。"""
 
@@ -40,6 +43,7 @@ def queue_task(
         if name in _registry:
             raise ValueError(f"queue task '{name}' already registered")
         _registry[name] = (handler, timeout_seconds)
+        _keep_result_seconds[name] = keep_result_seconds
         return handler
 
     return decorator
@@ -118,9 +122,15 @@ def _wrap(name: str, handler: TaskHandler) -> WorkerCoroutine:
 def registered_functions() -> list[Function]:
     """把所有已註冊 handler 轉為 arq Function 清單（worker 啟動時呼叫）。"""
     return [
-        arq_func(_wrap(name, handler), name=name, timeout=timeout)
+        arq_func(
+            _wrap(name, handler),
+            name=name,
+            timeout=timeout,
+            keep_result=_keep_result_seconds.get(name),
+        )
         for name, (handler, timeout) in _registry.items()
     ]
+
 
 
 async def run_registered_task_locally(

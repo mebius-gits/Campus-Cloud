@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlmodel import Session
 
@@ -19,7 +20,6 @@ from app.exceptions import (
     NotFoundError,
     ProvisioningError,
 )
-from app.infrastructure.worker import submit_sync
 from app.models import (
     User,
     VMProvisioningStatus,
@@ -45,7 +45,7 @@ from app.schemas import (
 )
 from app.services.proxmox import proxmox_service
 from app.services.resource import quota_service
-from app.services.scheduling import vm_request_schedule_service
+from app.services.scheduling import provision_pool
 from app.services.template import password_policy
 from app.services.user import audit_service
 from app.services.vm import (
@@ -524,14 +524,7 @@ def create(
     # immediately (a VM clone can take 30+ seconds and must not block the
     # request handler).
     if auto_approved and mode in {"immediate", "quick_template"}:
-        submit_sync(
-            vm_request_schedule_service.process_single_request_start,
-            db_request.id,
-            name=f"provision_vm_request:{db_request.id}",
-            task_id=f"vm_request:{db_request.id}",
-            max_retries=1,
-            retry_delay=15.0,
-        )
+        _submit_provision(session, db_request)
 
     logger.info(f"User {user.email} submitted VM request {db_request.id}")
     return _to_public(db_request, user_override=user)
@@ -581,15 +574,27 @@ def create_quick_practice_request(
     return db_request
 
 
-def submit_course_provision(request_id: uuid.UUID) -> None:
-    """課程實驗機 provision 背景觸發（commit 後呼叫）。"""
-    submit_sync(
-        vm_request_schedule_service.process_single_request_start,
-        request_id,
-        name=f"provision_vm_request:{request_id}",
-        task_id=f"vm_request:{request_id}",
-        max_retries=1,
-        retry_delay=15.0,
+def _submit_provision(session: Session, db_request: VMRequest) -> None:
+    """把已核准、可立即開始的申請單入列給 arq worker clone。"""
+    governance = governance_repo.get_governance_config(session=session)
+    provision_pool.submit_provision(
+        session,
+        request_id=db_request.id,
+        user_id=db_request.user_id,
+        concurrency=governance.provision_max_concurrency,
+    )
+
+
+def submit_course_provision(
+    session: Session, *, request_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """課程實驗機 provision 入列（commit 後呼叫）。"""
+    governance = governance_repo.get_governance_config(session=session)
+    provision_pool.submit_provision(
+        session,
+        request_id=request_id,
+        user_id=user_id,
+        concurrency=governance.provision_max_concurrency,
     )
 
 
@@ -962,18 +967,25 @@ def review(
         if start_at.tzinfo is None:
             start_at = start_at.replace(tzinfo=UTC)
         if start_at <= _utc_now():
-            submit_sync(
-                vm_request_schedule_service.process_single_request_start,
-                refreshed.id,
-                name=f"provision_vm_request:{refreshed.id}",
-                task_id=f"vm_request:{refreshed.id}",
-                max_retries=1,
-                retry_delay=15.0,
-            )
+            _submit_provision(session, refreshed)
     return _to_public(refreshed)
 
 
+def _is_provisioning_in_flight(db_request: Any) -> bool:
+    """clone 是否正在 worker 上跑：running 且未超過 stale 門檻。"""
+    from app.services.scheduling import (  # noqa: PLC0415 — 避免 import cycle
+        policy as scheduling_policy,
+    )
+
+    if getattr(db_request, "provisioning_status", None) != VMProvisioningStatus.running:
+        return False
+    return not scheduling_policy.is_provisioning_stale(
+        getattr(db_request, "provisioning_started_at", None), now=_utc_now()
+    )
+
+
 def cancel(
+
     *,
     session: Session,
     request_id: uuid.UUID,
@@ -993,13 +1005,6 @@ def cancel(
       or lifecycle management). The resource deletion flow keeps the approval record
       intact and marks the request as no longer schedulable.
     """
-    from app.infrastructure.worker import (  # noqa: PLC0415
-        cancel as _cancel_bg_task,
-    )
-    from app.infrastructure.worker import (
-        is_active as _is_bg_task_active,
-    )
-
     db_request = vm_request_repo.get_vm_request_by_id(
         session=session,
         request_id=request_id,
@@ -1027,14 +1032,15 @@ def cancel(
             t("vm_request.cancel_already_provisioned")
         )
 
-    if db_request.status == VMRequestStatus.approved and db_request.vmid is None:
-        bg_task_id = f"vm_request:{db_request.id}"
-        cancelled_in_runner = _cancel_bg_task(bg_task_id)
-        if not cancelled_in_runner and _is_bg_task_active(bg_task_id):
-            # Active but cancel returned False — race. Be honest about it.
-            raise BadRequestError(
-                t("vm_request.cancel_provisioning_in_progress")
-            )
+    if (
+        db_request.status == VMRequestStatus.approved
+        and db_request.vmid is None
+        and _is_provisioning_in_flight(db_request)
+    ):
+        # clone 正在 worker 上跑（DB 是唯一跨行程的證據）：這時取消會留下
+        # 孤兒機器，請使用者等完成後走刪除流程。排隊中但還沒開始的任務
+        # 會在開跑時看到 status != approved 自行放棄。
+        raise BadRequestError(t("vm_request.cancel_provisioning_in_progress"))
 
     vm_request_repo.update_vm_request_status(
         session=session,
@@ -1103,12 +1109,6 @@ def retry(
             t("vm_request.retry_requires_failed")
         )
 
-    submit_sync(
-        vm_request_schedule_service.process_single_request_start,
-        db_request.id,
-        name=f"provision_vm_request:{db_request.id}",
-        task_id=f"vm_request:{db_request.id}",
-        max_retries=1,
-        retry_delay=15.0,
-    )
+    _submit_provision(session, db_request)
     return _to_public(db_request)
+
