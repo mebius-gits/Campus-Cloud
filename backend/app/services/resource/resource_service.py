@@ -11,6 +11,12 @@ from sqlmodel import Session, col, select
 
 from app.core.authorizers import can_bypass_resource_ownership
 from app.core.security import decrypt_value
+from app.domain.resource_markers import (  # noqa: F401 — re-export 給既有引用
+    RESOURCE_CONVERTED_TO_TEMPLATE_MARKER,
+    RESOURCE_DELETED_BY_USER_MARKER,
+    RESOURCE_DELETED_MARKERS,
+    RESOURCE_DELETED_ORPHAN_MARKER,
+)
 from app.exceptions import BadRequestError, PermissionDeniedError, ProxmoxError
 from app.models import (
     BatchProvisionJob,
@@ -641,17 +647,10 @@ DELETED_TOMBSTONE_DAYS = 30
 # review_comment when the user explicitly deletes the live resource. Used
 # by list_by_user to suppress the now-defunct approved request from being
 # resurrected as a "failed" placeholder, and by the frontend to hide the
-# consumed request from the applications list.
-RESOURCE_DELETED_BY_USER_MARKER = "Resource deleted by user"
-RESOURCE_DELETED_ORPHAN_MARKER = "Resource deleted (orphan DB cleanup)"
-RESOURCE_CONVERTED_TO_TEMPLATE_MARKER = "Resource converted to template"
-_RESOURCE_DELETED_MARKERS = frozenset(
-    {
-        RESOURCE_DELETED_BY_USER_MARKER,
-        RESOURCE_DELETED_ORPHAN_MARKER,
-        RESOURCE_CONVERTED_TO_TEMPLATE_MARKER,
-    }
-)
+# consumed request from the applications list. 定義在 domain 層，這裡只是
+# re-export 讓既有的 ``resource_service.RESOURCE_*`` 引用不用改。
+_RESOURCE_DELETED_MARKERS = RESOURCE_DELETED_MARKERS
+
 
 
 def mark_linked_request_consumed(
@@ -1728,8 +1727,6 @@ def batch_action(
     from app.api.deps.proxmox import (  # noqa: PLC0415 — 權限規則只維護在 deps 這一份
         check_resource_control_access,
     )
-    from app.infrastructure.worker import submit_sync  # noqa: PLC0415
-    from app.models.deletion_request import DeletionRequestStatus  # noqa: PLC0415
     from app.services.resource import deletion_service  # noqa: PLC0415
 
     results: list[BatchActionResultItem] = []
@@ -1748,15 +1745,9 @@ def batch_action(
                     purge=True,
                     force=False,
                 )
-                if req.status == DeletionRequestStatus.pending:
-                    submit_sync(
-                        deletion_service.process_one_request,
-                        req.id,
-                        name=f"delete_resource:{vmid}",
-                        task_id=str(req.id),
-                        max_retries=0,
-                    )
+                deletion_service.enqueue_processing(session=session, req=req)
                 message = f"Resource {vmid} deletion queued"
+
             else:
                 check_resource_control_access(vmid, user, session)
                 control(

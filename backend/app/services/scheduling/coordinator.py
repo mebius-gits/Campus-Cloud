@@ -298,7 +298,7 @@ def _provision_new_resource(
             )
             finish_session.commit()
             try:
-                provisioning_service._cleanup_failed_resource(
+                provisioning_service.cleanup_failed_resource(
                     actual_node, new_vmid, plan["resource_type"]
                 )
             except Exception:
@@ -891,6 +891,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
             ),
             ScheduledTask(name="process_pending_deletions", handler=process_pending_deletions_task),
             ScheduledTask(
+                name="reap_stale_script_runs", handler=reap_stale_script_runs_task
+            ),
+
+            ScheduledTask(
                 name="process_recurrence_windows",
                 handler=recurrence_scheduler.process_recurrence_windows,
             ),
@@ -1004,6 +1008,21 @@ def process_snapshot_cleanup_task() -> int:
     )
 
     return snapshot_cleanup_service.process_snapshot_cleanup()
+
+
+def reap_stale_script_runs_task() -> int:
+    """Scheduler tick：把被硬殺的 Teacher Judge script run 從 running 收成 failed。"""
+    from app.ai.teacher_judge import (
+        script_executor_service,  # noqa: PLC0415 — 避免 import cycle
+    )
+
+    try:
+        with Session(engine) as session:
+            reaped = script_executor_service.reap_stale_script_runs(session)
+        return reaped
+    except Exception:
+        logger.exception("reap_stale_script_runs_task failed")
+        return 0
 
 
 def process_pending_deletions_task() -> int:

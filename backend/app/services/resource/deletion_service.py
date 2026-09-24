@@ -9,12 +9,14 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.exceptions import AppError
+from app.infrastructure.queue import enqueue_task_sync
 from app.models import (
     DeletionRequest,
     DeletionRequestStatus,
@@ -24,6 +26,8 @@ from app.models import (
 from app.services.resource import resource_service
 
 logger = logging.getLogger(__name__)
+
+TASK_DELETE = "resource.delete"
 
 
 def _utc_now() -> datetime:
@@ -104,14 +108,12 @@ def cancel_deletion_request(
     """Cancel a pending or in-flight deletion request.
 
     - ``pending``: simply mark cancelled.
-    - ``running``: best-effort cancel the underlying background task and
-      mark the request cancelled. Note that if the worker thread is in
-      the middle of a Proxmox API call the call will run to completion;
-      the cancel only prevents further retries / follow-up work.
+    - ``running``: mark the request cancelled. The worker re-reads the row
+      before every attempt (see ``process_one_request``), so cancelling stops
+      further retries and follow-up work; a Proxmox call already in flight
+      runs to completion.
     - terminal (completed/failed/cancelled): rejected with 409.
     """
-    from app.infrastructure.worker import cancel as _cancel_bg_task  # noqa: PLC0415
-
     req = session.get(DeletionRequest, request_id)
     if req is None:
         raise AppError(404, "Deletion request not found")
@@ -124,15 +126,6 @@ def cancel_deletion_request(
         )
 
     was_running = req.status == DeletionRequestStatus.running
-    if was_running:
-        # Best-effort: cancel the asyncio task; effective if it's still
-        # waiting for the semaphore or sleeping between retries.
-        cancelled_in_runner = _cancel_bg_task(str(req.id))
-        logger.info(
-            "Best-effort cancel for running deletion request %s: runner_cancelled=%s",
-            req.id, cancelled_in_runner,
-        )
-
     req.status = DeletionRequestStatus.cancelled
     req.completed_at = _utc_now()
     if was_running:
@@ -362,6 +355,31 @@ def _execute_deletion(session: Session, req: DeletionRequest) -> None:
         raise
 
 
+def enqueue_processing(*, session: Session, req: DeletionRequest) -> None:
+    """把剛建立的 pending 刪除單交給 arq worker（``resource.delete``）。
+
+    只對 ``pending`` 的單入列：``create_deletion_request`` 去重回傳既有的
+    pending/running 單時，那張單已經有人在處理。入列失敗會拋出，呼叫端
+    不用補救：排程 tick 的 ``process_pending_deletions`` 會撿起 pending 單。
+    """
+    if req.status != DeletionRequestStatus.pending:
+        return
+    enqueue_task_sync(
+        session=session,
+        task_type=TASK_DELETE,
+        user_id=req.user_id,
+        payload={"request_id": str(req.id), "vmid": req.vmid},
+    )
+
+
+def run_delete_task(task_id: uuid.UUID, payload: dict[str, Any]) -> dict[str, Any]:
+    """worker 端 handler：解包 payload 後跑 ``process_one_request``。"""
+    request_id = uuid.UUID(str(payload["request_id"]))
+    logger.info("Deletion task %s started for request %s", task_id, request_id)
+    process_one_request(request_id)
+    return {"request_id": str(request_id), "vmid": payload.get("vmid")}
+
+
 def process_one_request(
     request_id: uuid.UUID,
     *,
@@ -370,6 +388,7 @@ def process_one_request(
     retry_backoff: float = 2.0,
 ) -> None:
     """Background entrypoint: process a single DeletionRequest by id.
+
 
     Opens its own DB session per attempt so it's safe to run as a
     fire-and-forget task. On failure, retries up to ``max_retries`` times

@@ -6,7 +6,6 @@ from fastapi import APIRouter
 
 from app.api.deps import AdminUser, CurrentUser, SessionDep
 from app.core.authorizers import can_bypass_resource_ownership
-from app.infrastructure.worker import submit_sync
 from app.models.deletion_request import DeletionRequestStatus
 from app.schemas.deletion_request import (
     DeletionRequestPublic,
@@ -91,13 +90,8 @@ def retry_deletion_request(
         user_id=current_user.id,
         is_admin=can_bypass_resource_ownership(current_user),
     )
-    submit_sync(
-        deletion_service.process_one_request,
-        req.id,
-        name=f"delete_resource:{req.vmid}",
-        task_id=str(req.id),
-        max_retries=0,
-    )
+    deletion_service.enqueue_processing(session=session, req=req)
     return DeletionRequestPublic(
+
         **deletion_service.to_public_with_user(session=session, req=req)
     )

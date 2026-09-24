@@ -1,13 +1,9 @@
-import json
 import logging
 import secrets
-import time
 import uuid
-from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import httpx
 from sqlalchemy import and_, case, distinct, func, or_
 from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
@@ -668,124 +664,6 @@ def record_template_call(
         input_tokens,
         output_tokens,
     )
-
-
-# ===== 新增：代理到 VLLM 功能 =====
-
-
-async def proxy_to_vllm_chat_completion(
-    *,
-    user: User,
-    request_data: dict,
-) -> dict:
-    """
-    代理聊天补全請求到 VLLM Gateway（非流式）
-
-    Returns:
-        dict: VLLM 回應（附加 duration_ms 耗時資訊）
-    """
-    url = f"{ai_api_settings.resolved_vllm_base_url}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {ai_api_settings.ai_api_api_key}",
-        "Content-Type": "application/json",
-    }
-
-    start_time = time.time()
-    model_name = request_data.get("model", "unknown")
-
-    try:
-        async with httpx.AsyncClient(timeout=ai_api_settings.ai_api_timeout) as client:
-            response = await client.post(url, json=request_data, headers=headers)
-            response.raise_for_status()
-            result = response.json()
-
-        duration_ms = int((time.time() - start_time) * 1000)
-        result["duration_ms"] = duration_ms  # 附加耗時到回應
-
-        usage = result.get("usage", {})
-        logger.info(
-            "User %s completed chat request: model=%s, tokens=%d, duration=%dms",
-            user.email,
-            model_name,
-            usage.get("total_tokens", 0),
-            duration_ms,
-        )
-
-        return result
-
-    except httpx.HTTPStatusError as e:
-        logger.error(
-            "VLLM request failed for user %s: %s",
-            user.email,
-            f"VLLM returned {e.response.status_code}: {e.response.text}",
-        )
-        raise
-
-    except httpx.RequestError as e:
-        logger.error("VLLM connection failed for user %s: %s", user.email, str(e))
-        raise
-
-    except Exception as e:
-        logger.error("Unexpected error for user %s: %s", user.email, str(e))
-        raise
-
-
-async def proxy_to_vllm_chat_completion_stream(
-    *,
-    user: User,
-    request_data: dict,
-) -> AsyncGenerator[str, None]:
-    """
-    代理聊天补全請求到 VLLM Gateway（流式）
-
-    流式回應的 usage 資訊已包含在 vLLM 传輸的各個 chunk 中（若模型支援）。
-    """
-    request_data["stream"] = True
-    request_data.setdefault("stream_options", {})["include_usage"] = True
-
-    url = f"{ai_api_settings.resolved_vllm_base_url}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {ai_api_settings.ai_api_api_key}",
-        "Content-Type": "application/json",
-    }
-
-    start_time = time.time()
-    model_name = request_data.get("model", "unknown")
-
-    try:
-        async with httpx.AsyncClient(timeout=ai_api_settings.ai_api_timeout) as client:
-            async with client.stream(
-                "POST", url, json=request_data, headers=headers
-            ) as response:
-                response.raise_for_status()
-
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        continue
-
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-
-                        if data_str == "[DONE]":
-                            duration_ms = int((time.time() - start_time) * 1000)
-                            logger.info(
-                                "User %s completed stream: model=%s, duration=%dms",
-                                user.email,
-                                model_name,
-                                duration_ms,
-                            )
-                            yield "data: [DONE]\n\n"
-                            break
-
-                        try:
-                            chunk = json.loads(data_str)
-                            yield f"data: {json.dumps(chunk)}\n\n"
-                        except json.JSONDecodeError:
-                            yield f"data: {data_str}\n\n"
-
-    except Exception as e:
-        logger.error("Stream error for user %s: %s", user.email, str(e))
-        raise
 
 
 # ===== 新增：查询使用统计 =====

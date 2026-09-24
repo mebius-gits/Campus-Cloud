@@ -323,7 +323,7 @@ def _build_availability_response(
                 node_names=[item.node for item in baseline_capacities],
             )
         )
-        lite_tuning = vm_request_placement_service._get_placement_tuning(
+        lite_tuning = vm_request_placement_service.get_placement_tuning(
             session=session
         )
 

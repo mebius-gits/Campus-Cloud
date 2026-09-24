@@ -9,10 +9,13 @@ from app.api.routes.course_environments import (
     EnvironmentEdgeIn,
     EnvironmentNodeIn,
 )
-from app.api.routes.teaching_classes import _generate_weeks, _recurrence
+from app.api.routes.teaching_classes import _generate_weeks
 from app.exceptions import BadRequestError
 from app.models import BatchProvisionJobStatus, TeachingClassWeek
 from app.services.teaching import class_capacity_service, class_network_service
+from app.services.teaching.class_provision_service import (
+    recurrence_rule as _recurrence,
+)
 from app.services.vm import batch_provision_service
 
 

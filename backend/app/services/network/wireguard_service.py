@@ -237,7 +237,7 @@ def _gateway_client(session: Session):
     if config is None or not config.host or not config.encrypted_private_key:
         raise BadRequestError(t("wireguard.gatewayNotConfigured"))
     private_key = gateway_config_repo.get_decrypted_private_key(config)
-    client = gateway_service._make_client(  # noqa: SLF001
+    client = gateway_service.make_client(
         config.host,
         config.ssh_port,
         config.ssh_user,
@@ -250,7 +250,7 @@ def _run_locked(client, script: str, error_message: str) -> str:
     command = (
         f"flock -w 15 {shlex.quote(_GATEWAY_LOCK)} sh -eu -c {shlex.quote(script)}"
     )
-    return gateway_service._exec_checked(  # noqa: SLF001
+    return gateway_service.exec_checked(
         client, command, error_message
     )
 
@@ -547,7 +547,7 @@ def _gateway_state_id(session: Session) -> str:
         ]
     )
     try:
-        state_id = gateway_service._exec_checked(  # noqa: SLF001
+        state_id = gateway_service.exec_checked(
             client,
             command,
             t("wireguard.inspectStateFailed"),
