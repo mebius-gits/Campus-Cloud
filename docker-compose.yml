@@ -189,8 +189,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - skylab
 
@@ -202,10 +200,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # 不帶 --reload：這份 compose 就是部署用的，映像裡沒有掛原始碼 volume，
+    # reload 只會多一個檔案監看行程；本機開發改用 `fastapi dev`。
     command:
       - fastapi
       - run
-      - --reload
       - app/main.py
     ports:
       # Localhost only: the public entry point is nginx (:80), which proxies

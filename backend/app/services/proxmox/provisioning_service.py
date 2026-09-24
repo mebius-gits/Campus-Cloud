@@ -4,6 +4,7 @@ import time
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import quote
 
 from sqlmodel import Session, select
@@ -35,9 +36,31 @@ from app.utils.hostname import to_punycode_hostname
 
 logger = logging.getLogger(__name__)
 
+TASK_ADMIN_CREATE_VM = "vm.admin_create"
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def run_admin_create_vm_task(
+    task_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """worker 端 handler：管理員直接建 VM（``/vm/create``）。
+
+    自己開 session（worker 沒有 request session）；回傳的 vmid 會由
+    registry 寫進 TaskRecord.resource_vmid。
+    """
+    from app.core.db import engine  # noqa: PLC0415 — 避免 import cycle
+
+    vm_data = VMCreateRequest.model_validate(payload["vm_data"])
+    user_id = uuid.UUID(str(payload["user_id"]))
+    logger.info(
+        "Admin create-VM task %s started for hostname=%s", task_id, vm_data.hostname
+    )
+    with Session(engine) as session:
+        response = create_vm(session=session, vm_data=vm_data, user_id=user_id)
+    return {"vmid": response.vmid, "upid": response.upid}
 
 
 def should_start_now(db_request) -> bool:

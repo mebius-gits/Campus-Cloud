@@ -394,14 +394,14 @@ def test_class_jobs_are_approved_as_one_decision(monkeypatch):
         lambda **_kwargs: jobs,
     )
 
-    class FakeThread:
-        def __init__(self, *, args, **_kwargs):
-            self.job_id = args[0]
+    def fake_enqueue(**kwargs):
+        # 核准後改交給 arq worker；每個 job 各一筆入列
+        assert kwargs["task_type"] == batch_provision_service.TASK_RUN_BATCH_JOB
+        started.append(uuid.UUID(kwargs["payload"]["job_id"]))
+        return SimpleNamespace(id=uuid.uuid4())
 
-        def start(self):
-            started.append(self.job_id)
+    monkeypatch.setattr(batch_provision_service, "enqueue_task_sync", fake_enqueue)
 
-    monkeypatch.setattr(batch_provision_service.threading, "Thread", FakeThread)
 
     reviewed = batch_provision_service.review_batch_jobs(
         session=object(),

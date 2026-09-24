@@ -78,6 +78,10 @@ class BackgroundTaskRunner:
         """
         self._loop = loop or asyncio.get_running_loop()
 
+    def bound_loop(self) -> asyncio.AbstractEventLoop | None:
+        """lifespan 綁定的主 event loop；尚未 bind 時為 None。"""
+        return self._loop
+
     # ──────────────────────────────────────────────────────────────────
     # submit
     # ──────────────────────────────────────────────────────────────────

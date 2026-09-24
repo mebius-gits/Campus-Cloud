@@ -635,11 +635,36 @@ def reconcile_once() -> None:
         _reconcile_state.last_gateway_state_id = state_id
 
 
+def reconcile_tick() -> bool:
+    """一輪 reconcile：先搶 leader 鎖，拿到才跑。回傳本輪是否為 leader。
+
+    多副本時 replay／標記 inactive 只能由一個行程做，否則會對 Gateway 重複
+    下 peer 指令；``_reconcile_state`` 是行程內狀態，非 leader 不更新它，
+    換手後新 leader 會整批 replay 一次，屬可接受的收斂成本。
+    """
+    from app.services.scheduling.leader import (  # noqa: PLC0415 — 避免 import cycle
+        WIREGUARD_RECONCILER_LEADER_LOCK_KEY,
+        scheduler_leader_lock,
+    )
+
+    with scheduler_leader_lock(WIREGUARD_RECONCILER_LEADER_LOCK_KEY) as is_leader:
+        if is_leader:
+            reconcile_once()
+        return is_leader
+
+
 async def run_reconciler(stop_event: asyncio.Event) -> None:
     interval = max(10, settings.WIREGUARD_RECONCILE_INTERVAL_SECONDS)
+    was_leader: bool | None = None
     while not stop_event.is_set():
         try:
-            await asyncio.to_thread(reconcile_once)
+            is_leader = await asyncio.to_thread(reconcile_tick)
+            if is_leader != was_leader:
+                logger.info(
+                    "WireGuard reconciler leadership: %s",
+                    "acquired" if is_leader else "held by another worker",
+                )
+                was_leader = is_leader
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -651,4 +676,11 @@ async def run_reconciler(stop_event: asyncio.Event) -> None:
             pass
 
 
-__all__ = ["connect", "disconnect", "reconcile_once", "refresh", "run_reconciler"]
+__all__ = [
+    "connect",
+    "disconnect",
+    "reconcile_once",
+    "reconcile_tick",
+    "refresh",
+    "run_reconciler",
+]

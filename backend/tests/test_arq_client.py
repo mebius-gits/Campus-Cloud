@@ -104,3 +104,82 @@ async def test_enqueue_uses_local_runner_when_redis_disabled(
     assert executed == [
         ("template.convert", str(record.id), {"vmid": 101})
     ]
+
+
+def test_enqueue_task_sync_runs_without_bound_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """沒有 lifespan（CLI／單元測試）時就地開 loop 完成入列。"""
+    record = SimpleNamespace(id=uuid.uuid4())
+    executed: list[tuple[str, str, dict[str, object]]] = []
+
+    monkeypatch.setattr(core_settings, "REDIS_ENABLED", False)
+    monkeypatch.setattr(
+        dispatch.task_record_repo, "create_task_record", lambda **_: record
+    )
+    monkeypatch.setattr(worker, "get_runner", lambda: None)
+
+    async def fake_run(name: str, record_id: str, payload: dict[str, object]) -> None:
+        executed.append((name, record_id, payload))
+
+    def fake_submit(coro: object, **kwargs: object) -> str:
+        coro.close()  # type: ignore[attr-defined]
+        executed.append(("submitted", str(kwargs["task_id"]), {}))
+        return str(kwargs["task_id"])
+
+    monkeypatch.setattr(registry, "run_registered_task_locally", fake_run)
+    monkeypatch.setattr(worker, "submit", fake_submit)
+
+    result = dispatch.enqueue_task_sync(
+        session=object(),  # type: ignore[arg-type]
+        task_type="resource.reset",
+        user_id=uuid.uuid4(),
+        payload={"vmid": 101},
+    )
+
+    assert result is record
+    assert executed == [("submitted", str(record.id), {})]
+
+
+def test_enqueue_task_sync_uses_bound_loop_from_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sync 路由（threadpool）呼叫時，enqueue 要跑在 lifespan 綁定的主 loop 上。"""
+    record = SimpleNamespace(id=uuid.uuid4())
+    seen_loops: list[asyncio.AbstractEventLoop] = []
+
+    monkeypatch.setattr(
+        dispatch.task_record_repo, "create_task_record", lambda **_: record
+    )
+
+    async def fake_dispatch(**_kwargs: object) -> None:
+        seen_loops.append(asyncio.get_running_loop())
+
+    monkeypatch.setattr(dispatch, "_dispatch_record", fake_dispatch)
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(
+            worker, "get_runner", lambda: SimpleNamespace(bound_loop=lambda: loop)
+        )
+        result = await asyncio.to_thread(
+            dispatch.enqueue_task_sync,
+            session=object(),  # type: ignore[arg-type]
+            task_type="resource.reset",
+            user_id=uuid.uuid4(),
+            payload={},
+        )
+        assert result is record
+        assert seen_loops == [loop]
+
+    asyncio.run(main())
+
+
+async def test_enqueue_task_sync_refuses_event_loop_thread() -> None:
+    with pytest.raises(RuntimeError, match="await enqueue_task"):
+        dispatch.enqueue_task_sync(
+            session=object(),  # type: ignore[arg-type]
+            task_type="resource.reset",
+            user_id=uuid.uuid4(),
+            payload={},
+        )

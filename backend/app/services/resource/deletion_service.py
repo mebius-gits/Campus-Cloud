@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -233,11 +234,25 @@ def _execute_deletion(session: Session, req: DeletionRequest) -> None:
         )
         return
     if req.status == DeletionRequestStatus.pending:
-        req.status = DeletionRequestStatus.running
-        req.started_at = _utc_now()
-        session.add(req)
+        # 條件式 UPDATE 認領：API 背景任務與排程 tick 可能同時拿到同一張
+        # pending 單，只有把 pending 翻成 running 的那個能繼續，另一個直接退出，
+        # 不會對同一台機器下兩次刪除。
+        claimed = session.execute(
+            update(DeletionRequest)
+            .where(
+                DeletionRequest.id == req.id,  # type: ignore[arg-type]
+                DeletionRequest.status == DeletionRequestStatus.pending,  # type: ignore[arg-type]
+            )
+            .values(status=DeletionRequestStatus.running, started_at=_utc_now())
+        )
         session.commit()
         session.refresh(req)
+        if claimed.rowcount == 0:
+            logger.info(
+                "Deletion request %s already claimed by another worker; skipping",
+                req.id,
+            )
+            return
     # else: already running → retry path; reuse existing started_at
 
     resource = session.exec(

@@ -4,19 +4,19 @@
 
     arq app.infrastructure.queue.worker.WorkerSettings
 
-注意：所有任務模組必須在這裡 import，@queue_task 裝飾器才會註冊到 registry。
+注意：任務模組清單在 ``modules.TASK_MODULES``，@queue_task 裝飾器靠 import
+副作用註冊到 registry。
 """
 
 from __future__ import annotations
 
-import importlib
 from typing import Any
 
 from app.infrastructure.queue.arq_client import QUEUE_NAME, get_redis_settings
+from app.infrastructure.queue.modules import import_task_modules
 from app.infrastructure.queue.registry import registered_functions
 
-# 任務模組副作用匯入（註冊 @queue_task handler），不直接使用模組物件
-importlib.import_module("app.services.template.tasks")
+import_task_modules()
 
 
 class WorkerSettings:

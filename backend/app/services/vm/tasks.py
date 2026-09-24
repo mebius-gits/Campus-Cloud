@@ -1,0 +1,34 @@
+"""VM 建立相關的隊列任務註冊（worker 端執行）。
+
+handler 只做參數解包與委派；註冊清單見 ``app.infrastructure.queue.modules``。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from typing import Any
+
+from app.infrastructure.queue import queue_task
+from app.services.proxmox import provisioning_service
+from app.services.vm import batch_provision_service
+
+
+@queue_task(provisioning_service.TASK_ADMIN_CREATE_VM, timeout_seconds=3600)
+async def admin_create_vm(
+    task_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """管理員直接建 VM（clone 母範本並登記 Resource）。"""
+    return await asyncio.to_thread(
+        provisioning_service.run_admin_create_vm_task, task_id, payload
+    )
+
+
+@queue_task(batch_provision_service.TASK_RUN_BATCH_JOB, timeout_seconds=6 * 3600)
+async def run_batch_provision_job(
+    task_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """班級／批次佈建：逐一建立 job 內每位成員的機器。"""
+    return await asyncio.to_thread(
+        batch_provision_service.run_batch_job_task, task_id, payload
+    )

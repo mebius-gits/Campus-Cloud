@@ -423,7 +423,13 @@ def _fetch_template_tasks(
     session: Session, *, user: User, since: datetime
 ) -> list[JobItem]:
     is_admin = bool(user.is_superuser or getattr(user, "role", None) == "admin")
-    stmt = select(TaskRecord).where(TaskRecord.created_at >= since)
+    # 只列範本系統的任務：TaskRecord 也承載重置、管理員建 VM、批次佈建等
+    # 隊列任務，但那些各有自己的狀態來源（DeletionRequest、BatchProvisionJob、
+    # 資源列表），這裡的標籤／kind 是為範本設計的，混進來會顯示成錯的種類。
+    stmt = select(TaskRecord).where(
+        TaskRecord.created_at >= since,
+        TaskRecord.task_type.like("template.%"),  # type: ignore[union-attr]
+    )
     if not is_admin:
         stmt = stmt.where(TaskRecord.user_id == user.id)
     stmt = stmt.order_by(TaskRecord.created_at.desc()).limit(_PER_SOURCE_FETCH_LIMIT)
