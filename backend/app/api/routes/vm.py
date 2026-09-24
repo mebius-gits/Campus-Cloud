@@ -2,16 +2,12 @@ import logging
 
 from fastapi import APIRouter
 
-from app.api.deps import AdminUser, ControlVmInfoDep, CurrentUser, SessionDep
+from app.api.deps import ControlVmInfoDep, CurrentUser, SessionDep
 from app.api.websocket.vnc import register_vnc_session_cookie
-from app.core.i18n import t
 from app.core.permissions import Permission, has_permission
 from app.exceptions import BadRequestError, ProxmoxError
-from app.infrastructure.queue import enqueue_task_sync
 from app.repositories import vm_template as vm_template_repo
 from app.schemas import (
-    VMCreateRequest,
-    VMCreateResponse,
     VMTemplateSchema,
     VNCInfoSchema,
 )
@@ -51,26 +47,6 @@ async def get_vm_console(vmid: int, vm_info: ControlVmInfoDep):
     except Exception as e:
         logger.error(f"Failed to get console for VM {vmid}: {e}")
         raise ProxmoxError("Failed to get VM console")
-
-
-@router.post("/create", status_code=202, response_model=VMCreateResponse)
-def create_vm(
-    vm_data: VMCreateRequest, session: SessionDep, current_user: AdminUser
-):
-    """建立 VM（202：clone 由 arq worker 執行，前端以資源列表輪詢進度）。"""
-    record = enqueue_task_sync(
-        session=session,
-        task_type=provisioning_service.TASK_ADMIN_CREATE_VM,
-        user_id=current_user.id,
-        payload={
-            "vm_data": vm_data.model_dump(mode="json"),
-            "user_id": str(current_user.id),
-        },
-    )
-    return VMCreateResponse(
-        task_id=str(record.id),
-        message=t("vm.creating"),
-    )
 
 
 @router.get("/templates", response_model=list[VMTemplateSchema])

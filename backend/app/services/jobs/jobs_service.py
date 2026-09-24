@@ -365,7 +365,6 @@ def _parse_json(text: str | None) -> dict:
 # 非範本的 arq 任務：task_type → Job 種類（其餘 task_type 一律視為範本任務）
 _QUEUE_TASK_KINDS: dict[str, JobKind] = {
     "resource.reset": JobKind.resource_reset,
-    "vm.admin_create": JobKind.vm_create,
     "batch_provision.run": JobKind.batch_provision,
 }
 
@@ -374,9 +373,6 @@ def _queue_task_title(kind: JobKind, payload: dict[str, Any]) -> str:
     if kind == JobKind.resource_reset:
         vmid = payload.get("vmid")
         return f"重置：VMID {vmid}" if vmid else "重置"
-    if kind == JobKind.vm_create:
-        hostname = (payload.get("vm_data") or {}).get("hostname")
-        return f"建立 VM：{hostname}" if hostname else "建立 VM"
     if kind == JobKind.batch_provision:
         job_id = str(payload.get("job_id") or "")
         return f"批次佈建：{job_id[:8]}" if job_id else "批次佈建"
@@ -491,7 +487,6 @@ _FETCHERS = {
     JobKind.deletion: _fetch_deletions,
     JobKind.template: _task_record_fetcher(JobKind.template),
     JobKind.resource_reset: _task_record_fetcher(JobKind.resource_reset),
-    JobKind.vm_create: _task_record_fetcher(JobKind.vm_create),
     JobKind.batch_provision: _task_record_fetcher(JobKind.batch_provision),
 }
 
@@ -742,7 +737,6 @@ _DETAIL_FETCHERS = {
     # 四種 TaskRecord 來源共用同一個 detail：item 的 kind 由 task_type 決定
     JobKind.template: _detail_template_task,
     JobKind.resource_reset: _detail_template_task,
-    JobKind.vm_create: _detail_template_task,
     JobKind.batch_provision: _detail_template_task,
 }
 

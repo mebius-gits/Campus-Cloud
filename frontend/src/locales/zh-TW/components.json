@@ -346,7 +346,6 @@
   "JobRow.kindSpecChange": "規格變更",
   "JobRow.kindTemplate": "範本",
   "JobRow.kindResourceReset": "重置",
-  "JobRow.kindVmCreate": "建立 VM",
   "JobRow.kindBatchProvision": "批次佈建",
   "JobRow.kindVmRequest": "開機申請",
   "JobRow.loading": "載入中…",

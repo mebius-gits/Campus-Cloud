@@ -21,7 +21,6 @@ EXPECTED_TASK_TYPES = {
     "template.update_cancel",
     "template.clone",
     "resource.reset",
-    "vm.admin_create",
     "batch_provision.run",
     "vm_request.provision",
 }

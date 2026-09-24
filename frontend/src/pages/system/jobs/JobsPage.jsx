@@ -23,7 +23,6 @@ function useKindLabels() {
     deletion:      t("JobsPage.kindDeletion"),
     template:      t("JobsPage.kindTemplate"),
     resource_reset:  t("JobsPage.kindResourceReset"),
-    vm_create:       t("JobsPage.kindVmCreate"),
     batch_provision: t("JobsPage.kindBatchProvision"),
   };
 }

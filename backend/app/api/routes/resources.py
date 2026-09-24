@@ -16,7 +16,7 @@ from app.core.security import decrypt_value
 from app.exceptions import NotFoundError, PermissionDeniedError, ProxmoxError
 from app.models import DeletionRequestStatus
 from app.repositories import resource as resource_repo
-from app.schemas import NodeSchema, ResourcePublic, SSHKeyResponse
+from app.schemas import ResourcePublic, SSHKeyResponse
 from app.schemas.deletion_request import DeletionRequestCreated
 from app.schemas.resource import (
     BatchActionRequest,
@@ -32,15 +32,6 @@ from app.services.template import password_policy
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/resources", tags=["resources"])
-
-
-@router.get("/nodes", response_model=list[NodeSchema])
-def list_nodes(current_user: AdminUser):
-    try:
-        return proxmox_service.list_nodes()
-    except Exception as e:
-        logger.error(f"Failed to get nodes: {e}")
-        raise ProxmoxError("Failed to get nodes")
 
 
 @router.get("/", response_model=list[ResourcePublic])

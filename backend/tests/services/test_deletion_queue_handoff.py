@@ -79,36 +79,3 @@ def test_run_delete_task_unpacks_request_id(monkeypatch: pytest.MonkeyPatch) -> 
     assert seen == [request_id]
     assert result == {"request_id": str(request_id), "vmid": 150}
 
-
-class _Session:
-    def __init__(self, req: DeletionRequest) -> None:
-        self.req = req
-        self.committed = 0
-
-    def get(self, _model: Any, _key: Any) -> DeletionRequest:
-        return self.req
-
-    def add(self, _obj: Any) -> None:
-        """測試替身。"""
-
-    def commit(self) -> None:
-        self.committed += 1
-
-    def refresh(self, _obj: Any) -> None:
-        """測試替身。"""
-
-
-def test_cancel_running_request_marks_cancelled_without_runner() -> None:
-    req = _request(DeletionRequestStatus.running)
-    session = _Session(req)
-
-    result = deletion_service.cancel_deletion_request(
-        session=session,  # type: ignore[arg-type]
-        request_id=req.id,
-        user_id=req.user_id,
-        is_admin=False,
-    )
-
-    assert result.status == DeletionRequestStatus.cancelled
-    assert result.error_message == "Cancelled by user while running"
-    assert session.committed == 1

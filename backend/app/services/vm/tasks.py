@@ -10,19 +10,8 @@ import uuid
 from typing import Any
 
 from app.infrastructure.queue import queue_task
-from app.services.proxmox import provisioning_service
 from app.services.scheduling import provision_pool
 from app.services.vm import batch_provision_service
-
-
-@queue_task(provisioning_service.TASK_ADMIN_CREATE_VM, timeout_seconds=3600)
-async def admin_create_vm(
-    task_id: uuid.UUID, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """管理員直接建 VM（clone 母範本並登記 Resource）。"""
-    return await asyncio.to_thread(
-        provisioning_service.run_admin_create_vm_task, task_id, payload
-    )
 
 
 @queue_task(

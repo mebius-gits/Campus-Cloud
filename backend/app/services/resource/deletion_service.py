@@ -15,13 +15,11 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.exceptions import AppError
 from app.infrastructure.queue import enqueue_task_sync
 from app.models import (
     DeletionRequest,
     DeletionRequestStatus,
     Resource,
-    User,
 )
 from app.services.resource import resource_service
 
@@ -96,67 +94,6 @@ def create_deletion_request(
     session.refresh(req)
     logger.info("Queued deletion request %s for vmid=%s", req.id, vmid)
     return req
-
-
-def cancel_deletion_request(
-    *,
-    session: Session,
-    request_id: uuid.UUID,
-    user_id: uuid.UUID,
-    is_admin: bool,
-) -> DeletionRequest:
-    """Cancel a pending or in-flight deletion request.
-
-    - ``pending``: simply mark cancelled.
-    - ``running``: mark the request cancelled. The worker re-reads the row
-      before every attempt (see ``process_one_request``), so cancelling stops
-      further retries and follow-up work; a Proxmox call already in flight
-      runs to completion.
-    - terminal (completed/failed/cancelled): rejected with 409.
-    """
-    req = session.get(DeletionRequest, request_id)
-    if req is None:
-        raise AppError(404, "Deletion request not found")
-    if not is_admin and req.user_id != user_id:
-        raise AppError(403, "Not allowed to cancel this deletion request")
-    if req.status not in (DeletionRequestStatus.pending, DeletionRequestStatus.running):
-        raise AppError(
-            409,
-            f"Cannot cancel deletion request in status={req.status.value}",
-        )
-
-    was_running = req.status == DeletionRequestStatus.running
-    req.status = DeletionRequestStatus.cancelled
-    req.completed_at = _utc_now()
-    if was_running:
-        req.error_message = "Cancelled by user while running"
-    session.add(req)
-    session.commit()
-    session.refresh(req)
-    logger.info("Cancelled deletion request %s (vmid=%s)", req.id, req.vmid)
-    return req
-
-
-def list_for_user(
-    *,
-    session: Session,
-    user_id: uuid.UUID,
-    skip: int = 0,
-    limit: int = 100,
-) -> tuple[list[DeletionRequest], int]:
-    rows = session.exec(
-        select(DeletionRequest)
-        .where(DeletionRequest.user_id == user_id)
-        .order_by(DeletionRequest.created_at.desc())  # type: ignore[union-attr]
-        .offset(skip)
-        .limit(limit)
-    ).all()
-    total = len(
-        session.exec(
-            select(DeletionRequest.id).where(DeletionRequest.user_id == user_id)
-        ).all()
-    )
-    return list(rows), total
 
 
 def list_all(
@@ -463,44 +400,6 @@ def process_one_request(
         )
 
 
-def retry_failed_request(
-    *,
-    session: Session,
-    request_id: uuid.UUID,
-    user_id: uuid.UUID,
-    is_admin: bool,
-) -> DeletionRequest:
-    """Manually re-queue a failed DeletionRequest for another attempt.
-
-    Resets status to ``pending`` and clears ``error_message`` /
-    ``completed_at`` so the standard pipeline (background task or
-    scheduler tick) picks it up again.
-    """
-    req = session.get(DeletionRequest, request_id)
-    if req is None:
-        raise AppError(404, "Deletion request not found")
-    if not is_admin and req.user_id != user_id:
-        raise AppError(403, "Not allowed to retry this deletion request")
-    if req.status != DeletionRequestStatus.failed:
-        raise AppError(
-            409,
-            f"Only failed deletion requests can be retried (current={req.status.value})",
-        )
-    # 失敗單可能擱置很久；重排前確認 vmid 現在還是申請人的機器
-    current = session.exec(select(Resource).where(Resource.vmid == req.vmid)).first()
-    if current is not None and not is_admin and current.user_id != user_id:
-        raise AppError(403, "This VMID no longer belongs to you; cannot retry deletion")
-    req.status = DeletionRequestStatus.pending
-    req.error_message = None
-    req.started_at = None
-    req.completed_at = None
-    session.add(req)
-    session.commit()
-    session.refresh(req)
-    logger.info("Re-queued failed deletion request %s for retry", req.id)
-    return req
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Scheduler tick (safety net — picks up requests dropped by background path)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -565,27 +464,3 @@ def process_pending_deletions(session: Session) -> None:
 # Helpers for jobs/UI
 # ──────────────────────────────────────────────────────────────────────────────
 
-
-def to_public_with_user(
-    *,
-    session: Session,
-    req: DeletionRequest,
-) -> dict:
-    user = session.get(User, req.user_id)
-    return {
-        "id": req.id,
-        "user_id": req.user_id,
-        "vmid": req.vmid,
-        "name": req.name,
-        "node": req.node,
-        "resource_type": req.resource_type,
-        "purge": req.purge,
-        "force": req.force,
-        "status": req.status,
-        "error_message": req.error_message,
-        "created_at": req.created_at,
-        "started_at": req.started_at,
-        "completed_at": req.completed_at,
-        "user_email": user.email if user is not None else None,
-        "user_full_name": user.full_name if user is not None else None,
-    }

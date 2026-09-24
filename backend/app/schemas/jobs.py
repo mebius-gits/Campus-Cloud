@@ -28,7 +28,6 @@ class JobKind(str, enum.Enum):
     template = "template"
     # 以下三種同樣來自 TaskRecord（arq 任務），依 task_type 分類
     resource_reset = "resource_reset"
-    vm_create = "vm_create"
     batch_provision = "batch_provision"
 
 

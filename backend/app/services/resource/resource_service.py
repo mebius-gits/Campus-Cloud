@@ -925,49 +925,6 @@ def list_by_user(
         raise ProxmoxError(f"Failed to get user resources: {e}")
 
 
-def _list_user_deletion_tombstones(
-    *,
-    session: Session,
-    user_id: uuid.UUID,
-    excluded_vmids: set[int] | None = None,
-) -> list[ResourcePublic]:
-    """Build ResourcePublic tombstones for the user's recent self-initiated
-    deletions, so the resources page can render a "已刪除" badge alongside
-    live resources."""
-    from sqlmodel import col, select
-
-    from app.models.deletion_request import (
-        DeletionRequest,
-        DeletionRequestStatus,
-    )
-
-    cutoff = _utc_now() - timedelta(days=DELETED_TOMBSTONE_DAYS)
-    rows = list(
-        session.exec(
-            select(DeletionRequest)
-            .where(
-                DeletionRequest.user_id == user_id,
-                DeletionRequest.status == DeletionRequestStatus.completed,
-                col(DeletionRequest.completed_at) >= cutoff,
-            )
-            .order_by(col(DeletionRequest.completed_at).desc())
-        ).all()
-    )
-    excluded_vmids = excluded_vmids or set()
-    return [
-        ResourcePublic(
-            vmid=req.vmid,
-            name=req.name or f"vm-{req.vmid}",
-            status="deleted",
-            node=req.node or "",
-            type=req.resource_type or "",
-            can_control=False,
-        )
-        for req in rows
-        if req.vmid not in excluded_vmids
-    ]
-
-
 # Proxmox 的 config 原封不動回傳等於把 cloud-init 的 ``cipassword``（雖是
 # hash）、``sshkeys``、``ciuser`` 與 ``ipconfig*`` 的內網位址全都吐給前端，
 # 連唯讀的共享對象也看得到。改成白名單：只放行「顯示規格」需要的欄位，

@@ -126,35 +126,6 @@ def test_run_batch_job_task_runs_queue(monkeypatch: pytest.MonkeyPatch) -> None:
 # ─── 管理員直接建 VM ──────────────────────────────────────────────────────────
 
 
-def test_admin_create_vm_task_rebuilds_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, Any] = {}
-
-    def fake_create_vm(*, session, vm_data, user_id):  # noqa: ARG001
-        seen["vm_data"] = vm_data
-        seen["user_id"] = user_id
-        return SimpleNamespace(vmid=250, upid="UPID:pve1:1")
-
-    monkeypatch.setattr(provisioning_service, "create_vm", fake_create_vm)
-    user_id = uuid.uuid4()
-    payload = {
-        "vm_data": {
-            "hostname": "lab-01",
-            "template_id": 9000,
-            "username": "student",
-            "password": "secret-pass",
-            "environment_type": "generic",
-        },
-        "user_id": str(user_id),
-    }
-
-    result = provisioning_service.run_admin_create_vm_task(uuid.uuid4(), payload)
-
-    assert seen["vm_data"].hostname == "lab-01"
-    assert seen["vm_data"].template_id == 9000
-    assert seen["user_id"] == user_id
-    assert result == {"vmid": 250, "upid": "UPID:pve1:1"}
-
-
 # ─── 刪除請求認領 ─────────────────────────────────────────────────────────────
 
 

@@ -346,7 +346,6 @@
   "JobRow.kindSpecChange": "Spec change",
   "JobRow.kindTemplate": "Template",
   "JobRow.kindResourceReset": "Reset",
-  "JobRow.kindVmCreate": "VM creation",
   "JobRow.kindBatchProvision": "Batch provisioning",
   "JobRow.kindVmRequest": "Boot request",
   "JobRow.loading": "Loading…",

@@ -11,7 +11,6 @@ export const JOB_KIND_LABEL_KEYS = {
   deletion:      "JobRow.kindDeletion",
   template:      "JobRow.kindTemplate",
   resource_reset:  "JobRow.kindResourceReset",
-  vm_create:       "JobRow.kindVmCreate",
   batch_provision: "JobRow.kindBatchProvision",
 };
 

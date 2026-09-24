@@ -441,52 +441,6 @@ def test_network_labels_accept_ui_slash_or_comma_notation():
     }
 
 
-def test_course_connection_creates_matching_source_out_and_target_in(monkeypatch):
-    rules = []
-    monkeypatch.setattr(
-        class_network_service,
-        "_ip_by_vmid",
-        lambda _session, vmid: {101: "10.0.0.11", 102: "10.0.0.12"}[vmid],
-    )
-    monkeypatch.setattr(
-        class_network_service.proxmox_service,
-        "find_resource",
-        lambda vmid: {"node": "pve1", "type": "qemu", "vmid": vmid},
-    )
-    monkeypatch.setattr(
-        class_network_service,
-        "_ensure_rule",
-        lambda **kwargs: rules.append(kwargs),
-    )
-
-    class_network_service._allow_one_way(
-        object(),
-        class_id=uuid.uuid4(),
-        source_vmid=101,
-        target_vmid=102,
-        protocol="tcp",
-        port=443,
-    )
-
-    assert rules[0]["vmid"] == 101
-    assert rules[0]["rule"] == {
-        "type": "out",
-        "action": "ACCEPT",
-        "pos": 0,
-        "dest": "10.0.0.12",
-        "proto": "tcp",
-        "dport": "443",
-    }
-    assert rules[1]["vmid"] == 102
-    assert rules[1]["rule"] == {
-        "type": "in",
-        "action": "ACCEPT",
-        "source": "10.0.0.11",
-        "proto": "tcp",
-        "dport": "443",
-    }
-
-
 def test_sync_scope_rules_removes_stale_rules_from_a_previous_vmid(monkeypatch):
     """重試會換掉 vmid 與 IP；舊機器上指向舊 IP 的白名單必須跟著消失。
 

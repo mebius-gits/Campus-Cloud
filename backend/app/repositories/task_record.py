@@ -34,27 +34,6 @@ def create_task_record(
     return record
 
 
-def get_task_record(
-    *, session: Session, task_id: uuid.UUID
-) -> TaskRecord | None:
-    return session.get(TaskRecord, task_id)
-
-
-def list_task_records_by_user(
-    *,
-    session: Session,
-    user_id: uuid.UUID,
-    limit: int = 50,
-) -> list[TaskRecord]:
-    stmt = (
-        select(TaskRecord)
-        .where(TaskRecord.user_id == user_id)
-        .order_by(TaskRecord.created_at.desc())  # type: ignore[attr-defined]
-        .limit(limit)
-    )
-    return list(session.exec(stmt).all())
-
-
 def get_latest_template_task(
     *,
     session: Session,
