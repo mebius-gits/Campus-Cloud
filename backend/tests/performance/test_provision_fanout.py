@@ -51,13 +51,16 @@ async def runner(
     provision_pool.reset_in_flight()
 
 
-def _submit(request_id: uuid.UUID) -> None:
-    provision_pool.submit_provision(
-        object(),  # type: ignore[arg-type]
-        request_id=request_id,
-        user_id=uuid.uuid4(),
-        concurrency=CONCURRENCY,
-    )
+def _submit_all(ids: list[uuid.UUID]) -> None:
+    # sync 入列必須在 threadpool（模擬 sync 路由），不能在 loop 執行緒上；
+    # 整批在同一條執行緒循序送，等同排程 tick 的行為
+    for request_id in ids:
+        provision_pool.submit_provision(
+            object(),  # type: ignore[arg-type]
+            request_id=request_id,
+            user_id=uuid.uuid4(),
+            concurrency=CONCURRENCY,
+        )
 
 
 async def test_200_requests_fanout_throughput(
@@ -83,8 +86,7 @@ async def test_200_requests_fanout_throughput(
 
     ids = [uuid.uuid4() for _ in range(TOTAL_REQUESTS)]
     start = time.monotonic()
-    # sync 入列必須在 threadpool（模擬 sync 路由），不能在 loop 執行緒上
-    await asyncio.gather(*(asyncio.to_thread(_submit, rid) for rid in ids))
+    await asyncio.to_thread(_submit_all, ids)
 
     deadline = time.monotonic() + 30
     while len(done) < TOTAL_REQUESTS and time.monotonic() < deadline:
@@ -128,7 +130,7 @@ async def test_duplicate_storm_processed_once(
 
     ids = [uuid.uuid4() for _ in range(50)]
     for _tick in range(3):  # 模擬 3 個 scheduler tick 重複掃到同批 request
-        await asyncio.gather(*(asyncio.to_thread(_submit, rid) for rid in ids))
+        await asyncio.to_thread(_submit_all, ids)
         await asyncio.sleep(0.02)
     release.set()
 

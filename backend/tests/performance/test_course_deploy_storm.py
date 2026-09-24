@@ -54,12 +54,15 @@ async def runner(
     provision_pool.reset_in_flight()
 
 
-def _deploy(request_id: uuid.UUID) -> None:
-    vm_request_service.submit_course_provision(
-        object(),  # type: ignore[arg-type]
-        request_id=request_id,
-        user_id=uuid.uuid4(),
-    )
+def _deploy_all(ids: list[uuid.UUID]) -> None:
+    # sync 入列必須在 threadpool（模擬 sync 路由），不能在 loop 執行緒上；
+    # 整批在同一條執行緒循序送，不跟被擋住的假 clone 搶預設 executor 的執行緒
+    for request_id in ids:
+        vm_request_service.submit_course_provision(
+            object(),  # type: ignore[arg-type]
+            request_id=request_id,
+            user_id=uuid.uuid4(),
+        )
 
 
 async def test_100_students_deploy_simultaneously(
@@ -82,8 +85,7 @@ async def test_100_students_deploy_simultaneously(
     )
 
     ids = [uuid.uuid4() for _ in range(TOTAL_STUDENTS)]
-    # sync 入列必須在 threadpool（模擬 sync 路由），不能在 loop 執行緒上
-    await asyncio.gather(*(asyncio.to_thread(_deploy, rid) for rid in ids))
+    await asyncio.to_thread(_deploy_all, ids)
 
     deadline = time.monotonic() + 30
     while len(done) < TOTAL_STUDENTS and time.monotonic() < deadline:
@@ -97,12 +99,25 @@ async def test_double_click_deploy_provisions_once(
     runner: background_tasks.BackgroundTaskRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """同一 request 被重複提交（連點/重試）— job id 去重確保只跑一次。"""
+    """同一 request 被重複提交（連點/重試）— job id 去重確保只跑一次。
+
+    去重只擋「仍在進行中」的任務：假 clone 要等三次連點全部送完才放行，
+    否則慢一點的 CI 機器上第一批已經跑完，第三批會被當成新任務重跑。
+    名額壓到 2：被擋住的假 clone 各占一條 executor 執行緒，CI 的預設
+    executor 只有幾條，開太多會把入列用的執行緒也卡死。
+    """
+    monkeypatch.setattr(
+        vm_request_service.governance_repo,
+        "get_governance_config",
+        lambda **_kw: SimpleNamespace(provision_max_concurrency=2),
+    )
     done: list[uuid.UUID] = []
     lock = threading.Lock()
+    release = threading.Event()
 
     def fake_provision(request_id: uuid.UUID) -> bool:
-        time.sleep(0.05)
+        release.wait(timeout=30)
+        time.sleep(0.01)
         with lock:
             done.append(request_id)
         return True
@@ -115,8 +130,9 @@ async def test_double_click_deploy_provisions_once(
 
     ids = [uuid.uuid4() for _ in range(20)]
     for _burst in range(3):  # 模擬連點三次
-        await asyncio.gather(*(asyncio.to_thread(_deploy, rid) for rid in ids))
+        await asyncio.to_thread(_deploy_all, ids)
         await asyncio.sleep(0.01)
+    release.set()
 
     deadline = time.monotonic() + 30
     while len(done) < len(ids) and time.monotonic() < deadline:
