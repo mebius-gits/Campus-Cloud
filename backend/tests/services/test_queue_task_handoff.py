@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 
 from app.models import DeletionRequest, DeletionRequestStatus
-from app.services.proxmox import provisioning_service
 from app.services.resource import deletion_service, reset_service
 from app.services.vm import batch_provision_service
 
@@ -24,6 +23,12 @@ class _Session:
         """測試替身。"""
 
     def commit(self) -> None:
+        """測試替身。"""
+
+    def exec(self, stmt: Any) -> Any:
+        return SimpleNamespace(all=lambda: [])
+
+    def rollback(self) -> None:
         """測試替身。"""
 
 
@@ -61,6 +66,26 @@ def test_start_reset_enqueues_reset_task(monkeypatch: pytest.MonkeyPatch) -> Non
         "rtype": "lxc",
         "user_id": str(user.id),
     }
+
+
+def test_start_reset_rejects_when_reset_already_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.exceptions import ConflictError
+
+    monkeypatch.setattr(reset_service, "_has_init_snapshot", lambda *_: True)
+    monkeypatch.setattr(reset_service, "_has_active_reset", lambda *_: True)
+    calls = _capture_enqueue(monkeypatch, reset_service)
+
+    with pytest.raises(ConflictError):
+        reset_service.start_reset(
+            _Session(),
+            vmid=101,
+            resource_info={"node": "pve1", "type": "lxc"},
+            user=SimpleNamespace(id=uuid.uuid4()),
+        )
+
+    assert calls == []
 
 
 def test_run_reset_task_unpacks_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,11 +217,11 @@ def test_reap_stale_task_records_marks_lost_tasks_failed() -> None:
 
     now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
     lost_running = TaskRecord(
-        task_type="resource.reset", user_id=uuid.uuid4(), payload="{}",
+        task_type="resource.reset", user_id=uuid.uuid4(), payload={},
         status=TaskRecordStatus.running, started_at=now - timedelta(hours=3),
     )
     lost_queued = TaskRecord(
-        task_type="template.clone", user_id=uuid.uuid4(), payload="{}",
+        task_type="template.clone", user_id=uuid.uuid4(), payload={},
         status=TaskRecordStatus.queued, created_at=now - timedelta(days=2),
     )
 

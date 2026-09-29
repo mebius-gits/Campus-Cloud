@@ -25,7 +25,8 @@ from app.models.user import UserRole
 
 
 def _user(role: UserRole, *, is_superuser: bool = False) -> SimpleNamespace:
-    return SimpleNamespace(role=role, is_superuser=is_superuser)
+    # 真實 User 一定有 id；service 會把它交給用量紀錄（沒有 session 時只記指標）
+    return SimpleNamespace(id=None, role=role, is_superuser=is_superuser)
 
 
 def _request(**overrides: Any) -> ExplainRequest:
@@ -40,7 +41,8 @@ def _request(**overrides: Any) -> ExplainRequest:
 def _use_model(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[dict[str, Any]]:
     seen: list[dict[str, Any]] = []
 
-    async def _capture(payload, *, timeout: float):
+    async def _capture(payload, *, timeout: float, request_id: str | None = None):
+        assert request_id
         seen.append(payload)
         return {"choices": [{"message": {"content": answer}}]}
 
@@ -290,7 +292,8 @@ async def test_model_offline_still_answers_from_the_static_definition(
 async def test_model_failure_falls_back_instead_of_erroring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def _boom(_payload, *, timeout: float):
+    async def _boom(_payload, *, timeout: float, request_id: str | None = None):
+        assert request_id
         raise RuntimeError("vllm is down")
 
     monkeypatch.setattr(

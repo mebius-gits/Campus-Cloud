@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from app.core.permissions import get_user_role, is_admin
 from app.models import User
 from app.models.user import UserRole
 
@@ -83,7 +84,7 @@ _ROUTES: tuple[NavigationRoute, ...] = (
         path="/reverse-proxy",
         title="反向代理",
         summary="把機器上的服務對外公開成網址。",
-        keywords=("反向代理", "reverse proxy", "對外網址", "公開網站", "traefik", "https"),
+        keywords=("反向代理", "reverse proxy", "對外網址", "公開網站", "nginx", "https"),
     ),
     NavigationRoute(
         path="/ai-api",
@@ -272,24 +273,17 @@ _ROUTES: tuple[NavigationRoute, ...] = (
     ),
     NavigationRoute(
         path="/ai-monitoring",
-        title="AI 使用監控",
-        summary="查看全站 AI 用量與成本。",
-        keywords=("ai 監控", "ai 用量", "ai monitoring"),
+        title="AI 用量監控",
+        summary="查看全站 AI 用量與成本（位於「監控與日誌」）。",
+        keywords=("ai 用量監控", "ai 監控", "ai 用量", "使用監控", "ai monitoring"),
         access="admin",
     ),
 )
 
 
 def resolve_user_role(user: User) -> UserRole:
-    if bool(getattr(user, "is_superuser", False)):
-        return UserRole.admin
-    role = getattr(user, "role", UserRole.student)
-    if isinstance(role, UserRole):
-        return role
-    try:
-        return UserRole(str(role))
-    except ValueError:
-        return UserRole.student
+    """助手用來判斷可見範圍的角色；超級使用者一律視為 admin（與 isAdmin 守衛一致）。"""
+    return UserRole.admin if is_admin(user) else get_user_role(user)
 
 
 def can_access(access: RouteAccess, role: UserRole) -> bool:

@@ -23,17 +23,14 @@ import {
   buildProposalDiff,
   buildStudentOverviewRows,
   getRubricDisplayName,
-  getRubricCheckTitle,
   getRubricItemsValue,
   getRubricReviewItemIds,
   getPendingRubricItemIds,
   getStudentOverviewStatus,
   resolveDetectabilityNeedsReview,
   sortStudentOverviewRows,
-  sortTeacherReviewRows,
   getScriptCreationBlocker,
   getSessionMenuPosition,
-  getSelectedRubricSource,
   getScriptCreationDestination,
   getScriptReviewAttemptIssues,
   getTargetReviewSummary,
@@ -266,7 +263,8 @@ describe("ChatPanel", () => {
     expect(html).toContain("正在製作檢查腳本");
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('data-workflow-status="generating"');
-    expect(html).toContain("spinning");
+    // 旋轉圖示走 MIcon 的 spin prop（全站統一的 micon-spin class）
+    expect(html).toContain("micon-spin");
   });
   test("附件逐項核查期間顯示階段文案，不偽造進度百分比", () => {
     const html = renderToStaticMarkup(
@@ -505,10 +503,17 @@ describe("RubricsTab 儲存並製作流程", () => {
 });
 
 describe("CreateCheckDialog", () => {
-  test("新增檢查直接詢問名稱並說明會建立空白檢查表", () => {
-    const html = renderToStaticMarkup(
-      <CreateCheckDialog onClose={() => {}} onSubmit={() => {}} />,
-    );
+  test("新增檢查直接詢問名稱並說明會建立空白檢查表", async () => {
+    /* 對話框 portal 到 body，伺服器端渲染不支援 portal，改在 DOM 裡渲染再讀 body */
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<CreateCheckDialog onClose={() => {}} onSubmit={() => {}} />);
+    });
+    const html = document.body.innerHTML;
+    await act(async () => root.unmount());
+    container.remove();
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
@@ -625,13 +630,40 @@ describe("SaveAndCreateAction", () => {
     expect(html).toContain('data-generation-status="reviewing"');
   });
 
-  test("有待處理提案時停用並顯示原因", () => {
+  test("有待處理提案時外觀停用但仍可聚焦，滑過顯示原因", () => {
     const html = renderToStaticMarkup(
       <SaveAndCreateAction onClick={() => {}} blocker="請先套用目前提案" />,
     );
 
-    expect(html).toContain("disabled");
+    expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('title="請先套用目前提案"');
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""/);
+  });
+
+  test("被擋住時點擊只回報原因、不會開始製作；條件滿足後才真的執行", () => {
+    const onClick = vi.fn();
+    const onBlocked = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const reason = "請先在聊天室請 AI 產生至少一個檢查項目";
+
+    act(() => {
+      root.render(<SaveAndCreateAction onClick={onClick} onBlocked={onBlocked} blocker={reason} />);
+    });
+    act(() => container.querySelector("button").click());
+    expect(onBlocked).toHaveBeenCalledWith(reason);
+    expect(onClick).not.toHaveBeenCalled();
+
+    act(() => {
+      root.render(<SaveAndCreateAction onClick={onClick} onBlocked={onBlocked} />);
+    });
+    act(() => container.querySelector("button").click());
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onBlocked).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+    container.remove();
   });
 });
 
@@ -1198,13 +1230,9 @@ describe("proposalToolCallLines", () => {
 });
 
 describe("uploaded rubric naming", () => {
-  test("匯入檔名移除副檔名，且檢查名稱保留檔名主體並限制長度", () => {
+  test("匯入檔名移除副檔名", () => {
     expect(getRubricDisplayName({ name: "AI檢查表審核系統_Python服務Running狀態檢測_簡短版.docx" }))
       .toBe("AI檢查表審核系統_Python服務Running狀態檢測_簡短版");
-    expect(getRubricCheckTitle({ original_filename: "保存的檢查表.docx" })).toBe("保存的檢查表");
-    expect(getRubricCheckTitle({ display_name: "自訂檢查表", original_filename: "保存的檢查表.docx" })).toBe("自訂檢查表");
-    expect(getRubricCheckTitle({ name: "  " })).toBe("未命名檢查");
-    expect(getRubricCheckTitle({ name: "a".repeat(300) })).toHaveLength(255);
   });
 });
 
@@ -1229,24 +1257,6 @@ describe("SessionTitle", () => {
 
     expect(html).toContain('title="這是一個很長的 AI 檢查 session 名稱"');
     expect(html).toContain(title);
-  });
-});
-
-describe("getSelectedRubricSource", () => {
-  const files = [
-    { id: "file-other", status: "active", display_name: "其他檢查" },
-    { id: "file-selected", status: "active", display_name: "目前檢查" },
-    { id: "file-replaced", status: "replaced", display_name: "已取代來源" },
-  ];
-
-  test("只回傳目前檢查選用的 active 來源", () => {
-    expect(getSelectedRubricSource(files, "file-selected")).toEqual(files[1]);
-    expect(getSelectedRubricSource(files, "file-other")).toEqual(files[0]);
-  });
-
-  test("沒有選用來源或來源已失效時不回傳其他班級來源", () => {
-    expect(getSelectedRubricSource(files, null)).toBeNull();
-    expect(getSelectedRubricSource(files, "file-replaced")).toBeNull();
   });
 });
 
@@ -1356,22 +1366,6 @@ describe("teacher review summary", () => {
   test("沒有結果與執行失敗會清楚分開", () => {
     expect(getTargetReviewSummary(null).kind).toBe("missing");
     expect(getTargetReviewSummary({ status: "failed" }).kind).toBe("failed");
-  });
-
-  test("可依待處理或學號帳號排序", () => {
-    const rows = [
-      {
-        member: { full_name: "Zoe", email: "s10@example.edu", vmid: 310 },
-        target: { vmid: 310, parsed_result: { checks: [{ id: "a", status: "pass" }] } },
-      },
-      {
-        member: { full_name: "Amy", email: "s2@example.edu", vmid: 302 },
-        target: { vmid: 302, parsed_result: { checks: [{ id: "b", status: "unknown" }] } },
-      },
-    ];
-
-    expect(sortTeacherReviewRows(rows, "pending")[0].member.email).toBe("s2@example.edu");
-    expect(sortTeacherReviewRows(rows, "student-number")[0].member.email).toBe("s2@example.edu");
   });
 });
 
@@ -1897,8 +1891,9 @@ describe("teacher review run-once（整組檢查點）", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
-    expect(container.textContent).toContain("一次執行整組檢查點");
-    const confirmButton = [...container.querySelectorAll("button")]
+    /* 對話框 portal 到 body，不在 container 裡 */
+    expect(document.body.textContent).toContain("一次執行整組檢查點");
+    const confirmButton = [...document.body.querySelectorAll("button")]
       .find((button) => button.textContent.includes("確認執行"));
     expect(confirmButton).toBeTruthy();
     await act(async () => {

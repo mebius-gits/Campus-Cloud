@@ -118,6 +118,11 @@
   color: var(--color-text-muted);
 }
 
+/* 申請金鑰對話框：按鈕列左側的提示，把按鈕推到右邊 */
+.footerHint {
+  margin-right: auto;
+}
+
 /* ── Buttons ── */
 %btn-base {
   display: inline-flex;
@@ -260,9 +265,30 @@
   @include text-truncate;
 }
 
+.keyDetailLink {
+  display: block;
+  width: fit-content;
+  max-width: 220px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+
+  &:hover { color: var(--color-primary-dark); }
+  &:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+}
+
 .rowNameDeprecated {
   text-decoration: line-through;
   color: var(--color-text-muted);
+}
+
+.keyDetailLink.rowNameDeprecated {
+  text-decoration: underline line-through;
 }
 
 /* 名稱下方的金鑰值；顯示完整金鑰時允許換行，不把表格撐爆 */
@@ -825,43 +851,91 @@
 
 /* ── 細項呼叫紀錄 ── */
 .usageRecordList {
-  @include flex-column;
-}
-
-.usageRecordRow {
-  @include flex-column;
-  gap: 12px;
-  padding: $spacing-16;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: $radius-12;
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-divider);
-
-  & + & { margin-top: $spacing-8; }
 }
 
-.usageRecordTop {
-  display: flex;
+.usageRecordHeader,
+.usageRecordSummary {
+  display: grid;
+  grid-template-columns:
+    minmax(148px, 1.05fr)
+    minmax(150px, 1.15fr)
+    minmax(176px, 1.25fr)
+    minmax(72px, 0.55fr)
+    minmax(72px, 0.55fr)
+    minmax(92px, 0.7fr)
+    24px;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: $spacing-8;
+  gap: $spacing-16;
 }
 
-.usageRecordHeading {
-  @include flex-column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.usageRecordTime {
-  color: var(--color-text-primary);
-  font-size: $font-size-14;
+.usageRecordHeader {
+  padding: 10px $spacing-16;
+  color: var(--color-text-muted);
+  background: var(--color-hover);
+  border-bottom: 1px solid var(--color-divider);
+  font-size: $font-size-12;
   font-weight: 600;
 }
 
-.usageRecordId {
-  max-width: 100%;
+.usageRecordRow {
+  border-bottom: 1px solid var(--color-divider);
+
+  &:last-child { border-bottom: 0; }
+}
+
+.usageRecordSummary {
+  width: 100%;
+  padding: 13px $spacing-16;
+  border: 0;
+  color: var(--color-text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+
+  &:hover { background: var(--color-hover); }
+
+  &:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+}
+
+.usageRecordRowExpanded .usageRecordSummary {
+  background: var(--color-hover);
+}
+
+.usageRecordCell {
+  @include flex-column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.usageRecordCellLabel {
+  display: none;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.usageRecordPrimary,
+.usageRecordToken {
+  min-width: 0;
+  overflow: hidden;
+  font-size: $font-size-14;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usageRecordMeta {
+  min-width: 0;
   overflow: hidden;
   color: var(--color-text-muted);
   font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -869,26 +943,36 @@
   white-space: nowrap;
 }
 
-.usageRecordType {
-  font-size: $font-size-12;
-  color: var(--color-text-secondary);
+.usageRecordToken {
+  font-variant-numeric: tabular-nums;
 }
 
 .usageRecordModel {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: $font-size-12;
-  color: var(--color-text-primary);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
+}
+
+.usageRecordChevron {
+  justify-self: end;
+  color: var(--color-text-muted);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.usageRecordRowExpanded .usageRecordChevron {
+  transform: rotate(180deg);
+}
+
+.usageRecordExpanded {
+  padding: $spacing-16;
+  border-top: 1px solid var(--color-divider);
+  background: color-mix(in srgb, var(--color-hover) 52%, var(--color-surface));
 }
 
 .usageRecordDetails {
+  margin: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px $spacing-16;
+  gap: $spacing-16 $spacing-24;
 
   @media (max-width: $breakpoint-lg) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   @media (max-width: $breakpoint-sm) { grid-template-columns: 1fr; }
@@ -899,25 +983,26 @@
     min-width: 0;
   }
 
-  span {
+  dt {
     color: var(--color-text-muted);
     font-size: 11px;
   }
 
-  strong {
+  dd {
+    margin: 0;
     min-width: 0;
-    overflow: hidden;
     color: var(--color-text-primary);
     font-size: $font-size-14;
     font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
+}
 
-  small {
-    color: var(--color-text-muted);
-    font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
+.usageRecordId {
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: $font-size-12;
+  line-height: 1.5;
 }
 
 .usageRecordError {
@@ -930,6 +1015,45 @@
   background: color-mix(in srgb, var(--color-danger) 8%, transparent);
   font-size: $font-size-12;
   overflow-wrap: anywhere;
+  margin-top: $spacing-16;
+}
+
+@media (max-width: $breakpoint-lg) {
+  .usageRecordHeader { display: none; }
+
+  .usageRecordSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) 24px;
+    align-items: start;
+    row-gap: 12px;
+  }
+
+  .usageRecordCellLabel { display: block; }
+  .usageRecordDateCell { grid-column: 1; grid-row: 1; }
+  .usageRecordModelCell { grid-column: 2; grid-row: 1; }
+  .usageRecordKeyCell { grid-column: 1; grid-row: 2; }
+  .usageRecordStatusCell { grid-column: 2; grid-row: 2; }
+  .usageRecordInputCell { grid-column: 1; grid-row: 3; }
+  .usageRecordOutputCell { grid-column: 2; grid-row: 3; }
+  .usageRecordChevron { grid-column: 3; grid-row: 1 / span 3; align-self: center; }
+}
+
+@media (max-width: $breakpoint-sm) {
+  .usageRecordSummary {
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 12px;
+  }
+
+  .usageRecordDateCell,
+  .usageRecordModelCell,
+  .usageRecordKeyCell,
+  .usageRecordStatusCell,
+  .usageRecordInputCell,
+  .usageRecordOutputCell {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .usageRecordChevron { grid-column: 2; grid-row: 1 / span 6; }
 }
 
 .usageRecordsMoreRow {
@@ -1010,111 +1134,67 @@
   text-align: center;
 }
 
-/* ── 新增金鑰彈窗 ── */
-.dialogOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  @include flex-center;
-  padding: $spacing-16;
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  animation: fadeIn 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.dialogOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-.dialog {
-  width: min(520px, 100%);
-  max-height: 88vh;
-  overflow-y: auto;
-  @include flex-column;
-  gap: $spacing-16;
-  padding: $spacing-24;
-  @include glass-surface($shadow: var(--shadow-lg));
-  border-radius: $radius-12;
-  animation: slideUp 0.18s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
-
-/* API 快速開始：標題列固定、內容區往下捲；單欄長條，寬度以程式碼一行放得下為準 */
-.quickStartDialog {
-  width: min(960px, 100%);
-  padding: 0;
-  gap: 0;
-  overflow: hidden;
-}
-
-.quickStartHeader {
+/* ── 金鑰詳細視窗（外框是共用 Modal，這裡只排內容） ── */
+.keyDetailList {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: $spacing-24 $spacing-24 $spacing-16;
-  border-bottom: 1px solid var(--color-divider);
+  flex-direction: column;
+  gap: $spacing-16;
+  min-width: 0;
+  margin: 0;
+
+  dt {
+    color: var(--color-text-muted);
+    font-size: $font-size-12;
+  }
+
+  dd {
+    min-width: 0;
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: $font-size-14;
+  }
 }
 
-.quickStartHeading {
-  flex: 1;
+.keyDetailField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
 
-.quickStartBody {
-  min-height: 0;
-  padding: $spacing-24;
-  overflow-y: auto;
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.dialogHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: $spacing-16;
-}
-
-.dialogTitle {
-  margin: 0;
-  font-size: $font-size-18;
-  font-weight: $font-weight-700;
-  color: var(--color-text-primary);
-}
-
-.dialogClose {
-  @include btn-dialog-close;
-  flex-shrink: 0;
-}
-
-.dialogFooter {
+.keyDetailValue {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: $spacing-8;
+  overflow-wrap: anywhere;
+
+  code { font-size: $font-size-14; overflow-wrap: anywhere; }
 }
 
-.dialogActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: $spacing-8;
-  margin-left: auto;
+.keyDetailHint.keyDetailHint {
+  color: var(--color-text-muted);
+  font-size: $font-size-12;
+}
+
+.keyDetailMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-16;
+  padding-top: $spacing-16;
+  border-top: 1px solid var(--color-divider);
+
+  > div { min-width: 0; }
+  dd { margin-top: 4px; overflow-wrap: anywhere; }
+
+  @media (max-width: $breakpoint-sm) {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dialog,
-  .dialogOverlay {
+  .usageRecordSummary,
+  .usageRecordChevron {
     animation: none;
     transition: none;
   }

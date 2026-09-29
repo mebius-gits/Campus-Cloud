@@ -5,13 +5,16 @@ import re
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlmodel import Session, select
 
 from app.domain.placement import advisor as placement_advisor
 from app.domain.placement import policy as placement_policy
 from app.domain.placement import scorer as placement_scorer
+from app.domain.placement.config import settings as placement_settings
 from app.domain.placement.models import (
     PlacementTuning,
     StorageSelection,
@@ -19,9 +22,11 @@ from app.domain.placement.models import (
 )
 from app.domain.placement.schemas import (
     NodeCapacity,
+    NodeSnapshot,
     PlacementDecision,
     PlacementPlan,
     PlacementRequest,
+    ResourceSnapshot,
     ResourceType,
 )
 from app.domain.placement.storage import (
@@ -34,40 +39,128 @@ from app.infrastructure.proxmox import (
     get_nodes_for_connection,
 )
 from app.models import VMRequest
+from app.repositories import proxmox_node as proxmox_node_repo
 from app.repositories import proxmox_storage as proxmox_storage_repo
 from app.services.proxmox import gpu_service, proxmox_service
+from app.utils.timeutil import normalize_datetime
 
 GIB = 1024**3
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class _ClusterCacheEntry:
+    cached_at: float
+    nodes: list[NodeSnapshot]
+    resources: list[ResourceSnapshot]
+
+
+_cluster_cache: _ClusterCacheEntry | None = None
+_cluster_cache_lock = threading.Lock()
+
+
+def gpu_used_slots() -> dict[str, int]:
+    """各節點已被 VM 佔用的 GPU 插槽數；查詢失敗回空 dict（fail-open）。"""
+    try:
+        return gpu_service.get_gpu_used_slots_by_node()
+    except Exception:
+        return {}
+
+
+def load_cluster_state() -> tuple[list[NodeSnapshot], list[ResourceSnapshot]]:
+    """PVE 節點與 guest 現況快照（行程內快取 source_cache_ttl_seconds 秒）。"""
+    cached = _get_cached_cluster_state()
+    if cached is not None:
+        return cached.nodes, cached.resources
+
+    nodes = placement_advisor.parse_node_snapshots(
+        proxmox_service.list_nodes(),
+        gpu_counts=gpu_service.get_gpu_node_counts(),
+        disabled_nodes=proxmox_service.admin_disabled_node_names(),
+    )
+    resources = placement_advisor.parse_resource_snapshots(
+        proxmox_service.list_all_resources()
+    )
+
+    _set_cached_cluster_state(nodes=nodes, resources=resources)
+    return nodes, resources
+
+
+def build_live_node_capacities(
+    *,
+    nodes: list[NodeSnapshot],
+    resources: list[ResourceSnapshot],
+    cpu_overcommit_ratio: float = 1.0,
+    disk_overcommit_ratio: float = 1.0,
+) -> list[NodeCapacity]:
+    """以當下 PVE 的 GPU 佔用計算節點容量（純計算交給 domain advisor）。"""
+    return placement_advisor.build_node_capacities(
+        nodes=nodes,
+        resources=resources,
+        gpu_used=gpu_used_slots(),
+        cpu_overcommit_ratio=cpu_overcommit_ratio,
+        disk_overcommit_ratio=disk_overcommit_ratio,
+    )
+
+
+def _get_cached_cluster_state() -> _ClusterCacheEntry | None:
+    with _cluster_cache_lock:
+        if _cluster_cache is None:
+            return None
+        age = time.monotonic() - _cluster_cache.cached_at
+        if age > placement_settings.source_cache_ttl_seconds:
+            return None
+        return _cluster_cache
+
+
+def _set_cached_cluster_state(
+    *,
+    nodes: list[NodeSnapshot],
+    resources: list[ResourceSnapshot],
+) -> None:
+    if placement_settings.source_cache_ttl_seconds <= 0:
+        return
+
+    with _cluster_cache_lock:
+        global _cluster_cache
+        _cluster_cache = _ClusterCacheEntry(
+            cached_at=time.monotonic(),
+            nodes=nodes,
+            resources=resources,
+        )
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)
-
-
-def normalize_datetime(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value
 
 
 def request_window(db_request: VMRequest) -> tuple[datetime | None, datetime | None]:
     return normalize_datetime(db_request.start_at), normalize_datetime(db_request.end_at)
 
 
+def request_disk_gb(
+    *,
+    resource_type: str | None,
+    disk_size: int | None,
+    rootfs_size: int | None,
+) -> int:
+    """申請的磁碟 GB：VM 看 disk_size、LXC 看 rootfs_size，未填時 VM 20／LXC 8。"""
+    is_vm = resource_type == "vm"
+    disk_gb = int(disk_size or 0) if is_vm else int(rootfs_size or 0)
+    if disk_gb <= 0:
+        return 20 if is_vm else 8
+    return disk_gb
+
+
 def request_capacity_tuple(db_request: VMRequest) -> tuple[float, int, int]:
     cpu_cores = float(db_request.cores or 1)
     memory_bytes = int(db_request.memory or 512) * 1024 * 1024
-    disk_gb = (
-        int(db_request.disk_size or 0)
-        if db_request.resource_type == "vm"
-        else int(db_request.rootfs_size or 0)
+    disk_gb = request_disk_gb(
+        resource_type=db_request.resource_type,
+        disk_size=db_request.disk_size,
+        rootfs_size=db_request.rootfs_size,
     )
-    if disk_gb <= 0:
-        disk_gb = 20 if db_request.resource_type == "vm" else 8
     return cpu_cores, memory_bytes, disk_gb * GIB
 
 
@@ -85,7 +178,15 @@ def build_storage_pool_state(
     if not storages:
         return {node_name: [] for node_name in node_names}, False
 
-    shared_registry: dict[str, WorkingStoragePool] = {}
+    # 共享儲存以「連線（叢集）+ storage 名稱」為單位：不同叢集各有一個叫
+    # ceph 的共享儲存時是兩份實體儲存，容量不能合併
+    node_connection = {
+        name: conn_id
+        for name, (conn_id, _conn_name) in proxmox_node_repo.get_node_connection_map(
+            session
+        ).items()
+    }
+    shared_registry: dict[tuple[int | None, str], WorkingStoragePool] = {}
     by_node: dict[str, list[WorkingStoragePool]] = {node_name: [] for node_name in node_names}
     node_set = set(node_names)
 
@@ -94,42 +195,35 @@ def build_storage_pool_state(
         if node_name not in node_set:
             continue
 
+        # 共享儲存在所有節點上是同一個池，扣容量時必須共用同一個物件
         if storage.is_shared:
-            pool = shared_registry.get(storage.storage)
+            key = (node_connection.get(node_name), storage.storage)
+            pool = shared_registry.get(key)
             if pool is None:
-                pool = WorkingStoragePool(
-                    storage=storage.storage,
-                    total_gb=float(storage.total_gb or 0.0),
-                    avail_gb=float(storage.avail_gb or 0.0),
-                    active=bool(storage.active),
-                    enabled=bool(storage.enabled),
-                    can_vm=bool(storage.can_vm),
-                    can_lxc=bool(storage.can_lxc),
-                    is_shared=bool(storage.is_shared),
-                    speed_tier=str(storage.speed_tier or "unknown"),
-                    user_priority=int(storage.user_priority or 5),
-                )
-                shared_registry[storage.storage] = pool
+                pool = _working_pool(storage)
+                shared_registry[key] = pool
             by_node[node_name].append(pool)
             continue
 
-        by_node[node_name].append(
-            WorkingStoragePool(
-                storage=storage.storage,
-                total_gb=float(storage.total_gb or 0.0),
-                avail_gb=float(storage.avail_gb or 0.0),
-                active=bool(storage.active),
-                enabled=bool(storage.enabled),
-                can_vm=bool(storage.can_vm),
-                can_lxc=bool(storage.can_lxc),
-                is_shared=bool(storage.is_shared),
-                speed_tier=str(storage.speed_tier or "unknown"),
-                user_priority=int(storage.user_priority or 5),
-            )
-        )
+        by_node[node_name].append(_working_pool(storage))
 
     has_managed_storage = any(pools for pools in by_node.values())
     return by_node, has_managed_storage
+
+
+def _working_pool(storage: Any) -> WorkingStoragePool:
+    return WorkingStoragePool(
+        storage=storage.storage,
+        total_gb=float(storage.total_gb or 0.0),
+        avail_gb=float(storage.avail_gb or 0.0),
+        active=bool(storage.active),
+        enabled=bool(storage.enabled),
+        can_vm=bool(storage.can_vm),
+        can_lxc=bool(storage.can_lxc),
+        is_shared=bool(storage.is_shared),
+        speed_tier=str(storage.speed_tier or "unknown"),
+        user_priority=int(storage.user_priority or 5),
+    )
 
 
 def provisioned_current_node(request: VMRequest) -> str | None:
@@ -173,12 +267,12 @@ def build_preview_vm_request(
 
 
 def refresh_node_candidate(node: NodeCapacity) -> None:
-    node.guest_pressure_ratio = placement_advisor._guest_pressure_ratio(
+    node.guest_pressure_ratio = placement_advisor.guest_pressure_ratio(
         int(node.running_resources),
         int(node.total_cpu_cores),
     )
     node.guest_overloaded = (
-        node.guest_pressure_ratio >= placement_advisor.settings.guest_pressure_threshold
+        node.guest_pressure_ratio >= placement_settings.guest_pressure_threshold
     )
     node.candidate = (
         node.status == "online"
@@ -462,17 +556,48 @@ def reserve_request_on_capacities(
     refresh_node_candidate_fn(node)
 
 
-def hour_window_iter(start_at: datetime, end_at: datetime) -> list[datetime]:
+def window_checkpoints(
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    reserved_requests: list[VMRequest],
+    normalize_datetime_fn,
+) -> list[datetime]:
+    """時段內需要檢查容量的時間點：start_at 加上「預約組合可能改變」的整點。
+
+    語意等同逐小時掃描（start_at 之後每個整點直到 end_at）：某個整點的容量
+    只取決於當下生效的預約（reserved_start <= t < reserved_end），而生效集合
+    只會在每筆預約開始／結束後的第一個整點改變，其餘整點的結果必然與前一個
+    相同。只評估這些點，成本只跟預約筆數有關、不再跟時段長度成正比 ——
+    逐小時全掃時，一個跨數百年的時段就能把單一 worker 的 CPU／記憶體吃光。
+    """
     if end_at <= start_at:
         return [start_at]
-    cursor = start_at.replace(minute=0, second=0, microsecond=0)
-    if cursor < start_at:
-        cursor += timedelta(hours=1)
-    checkpoints: list[datetime] = []
-    while cursor < end_at:
-        checkpoints.append(cursor)
-        cursor += timedelta(hours=1)
-    return checkpoints or [start_at]
+    hour = timedelta(hours=1)
+    first = start_at.replace(minute=0, second=0, microsecond=0)
+    if first < start_at:
+        first += hour
+    if first >= end_at:
+        return [start_at]
+
+    def first_hour_at_or_after(moment: datetime) -> datetime:
+        if moment <= first:
+            return first
+        steps = -(-(moment - first) // hour)
+        return first + steps * hour
+
+    points = {first}
+    for reserved in reserved_requests:
+        for boundary in (
+            normalize_datetime_fn(getattr(reserved, "start_at", None)),
+            normalize_datetime_fn(getattr(reserved, "end_at", None)),
+        ):
+            if boundary is None:
+                continue
+            candidate = first_hour_at_or_after(boundary)
+            if candidate < end_at:
+                points.add(candidate)
+    return [start_at] + sorted(point for point in points if point != start_at)
 
 
 def apply_reserved_requests_to_capacities(
@@ -546,8 +671,8 @@ def build_plan(
         node_names=[item.node for item in working_nodes],
     )
     _, disk_overcommit_ratio = get_overcommit_ratios_fn(session)
-    required_cpu = placement_advisor._effective_cpu_cores(request, effective_resource_type)
-    required_memory = placement_advisor._effective_memory_bytes(request, effective_resource_type)
+    required_cpu = placement_advisor.effective_cpu_cores(request, effective_resource_type)
+    required_memory = placement_advisor.effective_memory_bytes(request, effective_resource_type)
     required_disk = request.disk_gb * GIB
     node_disk_bytes = node_disk_bytes_for_capacity(
         disk_bytes=required_disk,
@@ -640,7 +765,7 @@ def build_plan(
     ]
     placement_decisions.sort(key=lambda item: (-item.instance_count, item.node))
 
-    warnings = placement_advisor._build_warnings(
+    warnings = placement_advisor.build_warnings(
         node_capacities=node_capacities,
         request=request,
         effective_resource_type=effective_resource_type,
@@ -660,14 +785,14 @@ def build_plan(
         assigned_instances=assigned,
         unassigned_instances=remaining,
         recommended_node=placement_decisions[0].node if placement_decisions else None,
-        summary=placement_advisor._build_summary_text(
+        summary=placement_advisor.build_summary_text(
             request=request,
             placement_decisions=placement_decisions,
             effective_resource_type=effective_resource_type,
             assigned=assigned,
             remaining=remaining,
         ),
-        rationale=placement_advisor._build_rationale(
+        rationale=placement_advisor.build_rationale(
             request=request,
             placement_decisions=placement_decisions,
             effective_resource_type=effective_resource_type,
@@ -782,13 +907,11 @@ def placement_sort_key(
 
 
 def to_placement_request(db_request: VMRequest) -> PlacementRequest:
-    disk_gb = (
-        int(db_request.disk_size or 0)
-        if db_request.resource_type == "vm"
-        else int(db_request.rootfs_size or 0)
+    disk_gb = request_disk_gb(
+        resource_type=db_request.resource_type,
+        disk_size=db_request.disk_size,
+        rootfs_size=db_request.rootfs_size,
     )
-    if disk_gb <= 0:
-        disk_gb = 20 if db_request.resource_type == "vm" else 8
     # LXC 帶 template_id 時走克隆路徑：不帶 ostemplate 約束，改以 template_vmid
     # 表示「必須落在範本所在節點」（linked clone 不能離開它，建機端也會強制
     # 覆寫成範本節點）。不帶這個約束的話，placement 會選出一個之後被覆寫掉的

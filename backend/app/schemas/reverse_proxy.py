@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+import uuid
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +17,20 @@ class ReverseProxyRuleCreate(BaseModel):
 
 class ReverseProxyRuleUpdate(ReverseProxyRuleCreate):
     pass
+
+
+class ReverseProxyRulePublic(BaseModel):
+    """反向代理規則（回應）"""
+
+    id: uuid.UUID
+    vmid: int
+    vm_ip: str
+    domain: str
+    zone_id: str | None = None
+    internal_port: int
+    enable_https: bool
+    dns_provider: str
+    created_at: datetime
 
 
 class ReverseProxyZoneOption(BaseModel):
@@ -49,27 +65,52 @@ class DomainAvailability(BaseModel):
     message: str | None = None
 
 
-class ReverseProxyRuntimeSection(BaseModel):
-    routers: list[dict[str, Any]] = Field(default_factory=list)
-    services: list[dict[str, Any]] = Field(default_factory=list)
-    middlewares: list[dict[str, Any]] = Field(default_factory=list)
+class ReverseProxyHttpServer(BaseModel):
+    """nginx http.conf 裡一個網域區塊（80 轉址與 443 代理合併成一筆）。"""
+
+    name: str
+    vmid: int
+    domain: str
+    upstream: str | None = None
+    https: bool = False
+    certificate: str | None = None
+    # None：不是 HTTPS；False：憑證還沒簽下來，暫用自簽
+    certificate_ready: bool | None = None
+
+
+class ReverseProxyStreamServer(BaseModel):
+    """nginx stream.conf 裡一條 Port 轉發。"""
+
+    name: str
+    vmid: int
+    listen: int
+    protocol: str
+    upstream: str | None = None
+
+
+class ReverseProxyCertificate(BaseModel):
+    name: str
+    expires_at: datetime | None = None
 
 
 class ReverseProxyRuntimeSnapshot(BaseModel):
     runtime_error: str | None = None
-    version: dict[str, Any] | None = None
-    overview: dict[str, Any] | None = None
-    entrypoints: list[dict[str, Any]] = Field(default_factory=list)
-    http: ReverseProxyRuntimeSection = Field(default_factory=ReverseProxyRuntimeSection)
-    tcp: ReverseProxyRuntimeSection = Field(default_factory=ReverseProxyRuntimeSection)
-    udp: ReverseProxyRuntimeSection = Field(default_factory=ReverseProxyRuntimeSection)
+    version: str | None = None
+    active: bool = False
+    config_valid: bool | None = None
+    http_servers: list[ReverseProxyHttpServer] = Field(default_factory=list)
+    stream_servers: list[ReverseProxyStreamServer] = Field(default_factory=list)
+    certificates: list[ReverseProxyCertificate] = Field(default_factory=list)
 
 
 __all__ = [
     "ReverseProxyRuleCreate",
     "ReverseProxyRuleUpdate",
+    "ReverseProxyRulePublic",
     "ReverseProxyZoneOption",
     "ReverseProxySetupContext",
-    "ReverseProxyRuntimeSection",
+    "ReverseProxyHttpServer",
+    "ReverseProxyStreamServer",
+    "ReverseProxyCertificate",
     "ReverseProxyRuntimeSnapshot",
 ]

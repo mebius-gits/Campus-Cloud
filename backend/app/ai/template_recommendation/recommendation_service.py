@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from fastapi import HTTPException
+import httpx
 
+from app.ai.monitoring import usage_metrics
 from app.ai.template_recommendation.config import settings
 from app.ai.template_recommendation.node_service import summarize_device_nodes
 from app.ai.template_recommendation.prompt import (
@@ -19,9 +21,17 @@ from app.ai.template_recommendation.schemas import (
     ExtractedIntent,
     RecommendationRequest,
 )
-from app.ai.utils import apply_thinking_control, safe_int
+from app.ai.utils import (
+    apply_thinking_control,
+    ensure_form_context_within_limits,
+    safe_bool,
+    safe_int,
+)
 from app.core.i18n import t
+from app.exceptions import AppError, UpstreamServiceError
 from app.infrastructure.ai.template_recommendation import client
+
+logger = logging.getLogger(__name__)
 
 MIN_VM_DISK_GB = 20
 MIN_LXC_DISK_GB = 8
@@ -129,10 +139,17 @@ def infer_intent_from_chat(request: ChatRequest) -> ExtractedIntent:
         for message in recent
         if str(message.role).strip().lower() == "user" and str(message.content).strip()
     ]
-    goal_summary = "\n".join(user_texts)[-4000:] or "請依目前表單內容提供完整配置建議"
+    default_goal = "請依目前表單內容提供完整配置建議"
+    goal_summary = "\n".join(user_texts)[-4000:]
+    # RecommendationRequest.goal 要求至少 3 字；「hi」「好的」這種短句要補上預設目標，
+    # 否則在 route 建 RecommendationRequest 時會丟 ValidationError 變成 500
+    if len(goal_summary.strip()) < 3:
+        goal_summary = f"{default_goal}：{goal_summary}" if goal_summary else default_goal
     flags = _extract_user_signal_flags(recent)
     normalized = _normalize_user_text_for_intent(goal_summary)
-    latest_user_text = _normalize_user_text_for_intent(user_texts[-1] if user_texts else "")
+    latest_user_text = _normalize_user_text_for_intent(
+        user_texts[-1] if user_texts else ""
+    )
     negations = ("不需要", "不要", "不用", "不必", "無需", "取消", "no", "without")
 
     def _latest_explicitly_negates(keywords: tuple[str, ...]) -> bool:
@@ -140,7 +157,7 @@ def infer_intent_from_chat(request: ChatRequest) -> ExtractedIntent:
             index = latest_user_text.find(keyword)
             if index < 0:
                 continue
-            prefix = latest_user_text[max(0, index - 12):index].strip()
+            prefix = latest_user_text[max(0, index - 12) : index].strip()
             if any(prefix.endswith(word) for word in negations):
                 return True
         return False
@@ -153,9 +170,29 @@ def infer_intent_from_chat(request: ChatRequest) -> ExtractedIntent:
         flags["needs_database"] = False
     if _latest_explicitly_negates(PUBLIC_WEB_KEYWORDS):
         flags["needs_public_web"] = False
-    role = "teacher" if any(word in normalized for word in ("teacher", "教授", "老師", "教學")) else "student"
-    course_context = "teaching" if role == "teacher" else ("research" if any(word in normalized for word in ("research", "研究", "實驗")) else "coursework")
-    budget_mode = "performance" if any(word in normalized for word in ("performance", "效能", "速度優先")) else ("resource-saving" if any(word in normalized for word in ("省資源", "低成本", "節省")) else "balanced")
+    role = (
+        "teacher"
+        if any(word in normalized for word in ("teacher", "教授", "老師", "教學"))
+        else "student"
+    )
+    course_context = (
+        "teaching"
+        if role == "teacher"
+        else (
+            "research"
+            if any(word in normalized for word in ("research", "研究", "實驗"))
+            else "coursework"
+        )
+    )
+    budget_mode = (
+        "performance"
+        if any(word in normalized for word in ("performance", "效能", "速度優先"))
+        else (
+            "resource-saving"
+            if any(word in normalized for word in ("省資源", "低成本", "節省"))
+            else "balanced"
+        )
+    )
     return ExtractedIntent(
         goal_summary=goal_summary,
         role=role,
@@ -185,7 +222,9 @@ def _gpu_option_label(option: dict[str, Any]) -> str:
 
 
 def _best_gpu_option(options: list[dict[str, Any]]) -> dict[str, Any] | None:
-    available = [option for option in options if int(option.get("available_count") or 0) > 0]
+    available = [
+        option for option in options if int(option.get("available_count") or 0) > 0
+    ]
     if not available:
         return None
     return sorted(
@@ -230,18 +269,48 @@ def _build_submission_reason(
     )
 
 
+# 前端帶來的選項清單不放進 prompt；模型用的是後端即時查到的 resource_options
+_PROMPT_FORM_CONTEXT_EXCLUDE = frozenset(
+    {
+        "gpu_options",
+        "lxc_os_options",
+        "vm_os_options",
+        "resource_options_from_client",
+    }
+)
+
+
+def prompt_form_context(request: RecommendationRequest) -> dict[str, Any] | None:
+    """回傳會塞進 prompt 的表單快照（已排除選項清單）。"""
+    if not request.form_context:
+        return None
+    return request.form_context.model_dump(
+        mode="json", exclude=set(_PROMPT_FORM_CONTEXT_EXCLUDE)
+    )
+
+
+def ensure_recommendation_form_context_within_limits(
+    request: RecommendationRequest,
+) -> None:
+    """表單快照不算在對話字數上限裡，呼叫模型之前另外擋總量（過大一律 400）。
+
+    路由要在記錄 AI 用量的 try 之前呼叫，客戶端錯誤才不會被記成上游失敗。
+    """
+    ensure_form_context_within_limits(
+        json.dumps(prompt_form_context(request) or {}, ensure_ascii=False, default=str)
+    )
+
+
 async def generate_ai_plan(
     request: RecommendationRequest,
     chat_history: list[ChatMessage],
     *,
     resource_options: dict[str, Any] | None = None,
+    request_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     model_name = settings.VLLM_MODEL_NAME
     if not model_name:
-        raise HTTPException(
-            status_code=503,
-            detail=t("templateRec.modelBindingMissing"),
-        )
+        raise AppError(t("templateRec.modelBindingMissing"), 503)
 
     user_context = {
         "goal": request.goal,
@@ -256,20 +325,13 @@ async def generate_ai_plan(
         "needs_database": request.needs_database,
         "requires_gpu": request.requires_gpu,
         "needs_windows": request.needs_windows,
-        "form_context": (
-            request.form_context.model_dump(
-                mode="json",
-                exclude={
-                    "gpu_options",
-                    "lxc_os_options",
-                    "vm_os_options",
-                    "resource_options_from_client",
-                },
-            )
-            if request.form_context
-            else None
-        ),
+        "form_context": prompt_form_context(request),
     }
+    # 第二道防線：路由應已在記錄用量的 try 之前呼叫
+    # ensure_recommendation_form_context_within_limits
+    ensure_form_context_within_limits(
+        json.dumps(user_context["form_context"] or {}, ensure_ascii=False, default=str)
+    )
     resource_options = resource_options or {
         "lxc_os_images": [],
         "vm_operating_systems": [],
@@ -334,22 +396,31 @@ async def generate_ai_plan(
 
     try:
         started_at = perf_counter()
-        data = await client.create_chat_completion(payload)
-        elapsed_seconds = max(perf_counter() - started_at, 0.0)
-        usage = data.get("usage") or {}
-        completion_tokens = int(usage.get("completion_tokens") or 0)
-        metrics = {
-            "prompt_tokens": int(usage.get("prompt_tokens") or 0),
-            "completion_tokens": completion_tokens,
-            "total_tokens": int(usage.get("total_tokens") or 0),
-            "elapsed_seconds": round(elapsed_seconds, 3),
-            "tokens_per_second": round((completion_tokens / elapsed_seconds) if elapsed_seconds > 0 else 0.0, 2),
-        }
-        return json.loads(data["choices"][0]["message"]["content"]), metrics
+        started_at_utc = datetime.now(timezone.utc)
+        data = await client.create_chat_completion(payload, request_id=request_id)
+        metrics = usage_metrics(
+            data,
+            perf_counter() - started_at,
+            request_id=request_id,
+            started_at=started_at_utc,
+        )
+        elapsed_seconds = metrics["elapsed_seconds"]
+        metrics["tokens_per_second"] = (
+            round(metrics["completion_tokens"] / elapsed_seconds, 2)
+            if elapsed_seconds > 0
+            else 0.0
+        )
+        parsed = json.loads(data["choices"][0]["message"]["content"])
+    except httpx.HTTPError:
+        # 交給 route 對應成通用的 upstreamError，不把上游網址等細節回給前端
+        raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=t("templateRec.planningFailed", error=exc)
-        ) from exc
+        logger.warning("AI plan generation failed", exc_info=True)
+        raise UpstreamServiceError(t("aiTemplateRecommendation.upstreamError")) from exc
+    # 模型可能回合法 JSON 但不是物件（例如 []），normalize_ai_result 只吃 dict
+    if not isinstance(parsed, dict):
+        raise UpstreamServiceError(t("aiTemplateRecommendation.upstreamError"))
+    return parsed, metrics
 
 
 def normalize_ai_result(
@@ -368,11 +439,22 @@ def normalize_ai_result(
     vm_operating_systems = list(resource_options.get("vm_operating_systems") or [])
     gpu_options = list(resource_options.get("gpu_options") or [])
     form_context = request.form_context
-    raw_prefill = dict(ai_result.get("form_prefill") or {})
+    # 模型輸出沒有型別保證：null 或型別錯的欄位一律當成沒給
+    prefill_value = ai_result.get("form_prefill")
+    raw_prefill: dict[str, Any] = (
+        dict(prefill_value) if isinstance(prefill_value, dict) else {}
+    )
+    target_value = ai_result.get("application_target")
+    application_target: dict[str, Any] = (
+        target_value if isinstance(target_value, dict) else {}
+    )
+    factors_value = ai_result.get("decision_factors")
+    decision_factors: list[Any] = (
+        factors_value if isinstance(factors_value, list) else []
+    )
 
     resource_type = str(
-        raw_prefill.get("resource_type")
-        or ("vm" if request.needs_windows else "lxc")
+        raw_prefill.get("resource_type") or ("vm" if request.needs_windows else "lxc")
     ).lower()
     if resource_type not in {"lxc", "vm"}:
         resource_type = "vm" if request.needs_windows else "lxc"
@@ -382,7 +464,10 @@ def normalize_ai_result(
         or (form_context.hostname if form_context else "")
         or "ai-generated-host"
     ).lower()
-    hostname = "".join(char if (char.isalnum() or char == "-") else "-" for char in hostname_seed.replace("_", "-")).strip("-")[:63]
+    hostname = "".join(
+        char if (char.isalnum() or char == "-") else "-"
+        for char in hostname_seed.replace("_", "-")
+    ).strip("-")[:63]
     if not hostname:
         hostname = "ai-generated-host"
 
@@ -403,15 +488,26 @@ def normalize_ai_result(
 
     selected_lxc_image = ""
     if resource_type == "lxc" and not selected_lxc_template_id and lxc_os_images:
-        requested_image = str(raw_prefill.get("lxc_os_image") or (form_context.lxc_os_image if form_context else "") or "").strip()
+        requested_image = str(
+            raw_prefill.get("lxc_os_image")
+            or (form_context.lxc_os_image if form_context else "")
+            or ""
+        ).strip()
         selected_lxc_image = next(
-            (item["value"] for item in lxc_os_images if item["value"] == requested_image),
+            (
+                item["value"]
+                for item in lxc_os_images
+                if item["value"] == requested_image
+            ),
             lxc_os_images[0]["value"],
         )
 
     # VM 的候選 = 基礎映像 + 應用範本（後者在伺服器端不會出現在基礎映像清單裡）
     vm_candidates = list(vm_operating_systems) + [
-        {"template_id": int(item.get("template_id") or 0), "label": item.get("name") or ""}
+        {
+            "template_id": int(item.get("template_id") or 0),
+            "label": item.get("name") or "",
+        }
         for item in application_templates
         if str(item.get("resource_type")) != "lxc"
         and int(item.get("template_id") or 0)
@@ -421,9 +517,19 @@ def normalize_ai_result(
     selected_vm_template_id = 0
     selected_vm_os = ""
     if resource_type == "vm" and vm_candidates:
-        requested_vm_template_id = safe_int(raw_prefill.get("vm_template_id") or (form_context.vm_template_id if form_context else 0), 0, minimum=0, extract_digits=True)
+        requested_vm_template_id = safe_int(
+            raw_prefill.get("vm_template_id")
+            or (form_context.vm_template_id if form_context else 0),
+            0,
+            minimum=0,
+            extract_digits=True,
+        )
         selected_vm = next(
-            (item for item in vm_candidates if int(item.get("template_id") or 0) == requested_vm_template_id),
+            (
+                item
+                for item in vm_candidates
+                if int(item.get("template_id") or 0) == requested_vm_template_id
+            ),
             vm_candidates[0],
         )
         selected_vm_template_id = int(selected_vm.get("template_id") or 0)
@@ -441,7 +547,8 @@ def normalize_ai_result(
                 (
                     option
                     for option in gpu_options
-                    if str(option.get("mapping_id") or "").strip() == requested_gpu_mapping_id
+                    if str(option.get("mapping_id") or "").strip()
+                    == requested_gpu_mapping_id
                     and int(option.get("available_count") or 0) > 0
                 ),
                 None,
@@ -473,8 +580,19 @@ def normalize_ai_result(
         selected_gpu_mapping_id = str(selected_gpu.get("mapping_id") or "").strip()
         selected_gpu_label = _gpu_option_label(selected_gpu)
 
-    cores = safe_int(raw_prefill.get("cores") or (form_context.cores if form_context else None), 2, minimum=1, extract_digits=True)
-    memory_mb = safe_int(raw_prefill.get("memory_mb") or (form_context.memory_mb if form_context else None), 2048, minimum=512, extract_digits=True)
+    cores = safe_int(
+        raw_prefill.get("cores") or (form_context.cores if form_context else None),
+        2,
+        minimum=1,
+        extract_digits=True,
+    )
+    memory_mb = safe_int(
+        raw_prefill.get("memory_mb")
+        or (form_context.memory_mb if form_context else None),
+        2048,
+        minimum=512,
+        extract_digits=True,
+    )
     disk_gb = safe_int(
         raw_prefill.get("disk_gb") or (form_context.disk_gb if form_context else None),
         _minimum_disk_gb(resource_type),
@@ -483,9 +601,24 @@ def normalize_ai_result(
     )
     username = ""
     if resource_type == "vm":
-        username = str(raw_prefill.get("username") or (form_context.username if form_context else "") or "student").strip() or "student"
+        username = (
+            str(
+                raw_prefill.get("username")
+                or (form_context.username if form_context else "")
+                or "student"
+            ).strip()
+            or "student"
+        )
 
-    mode = str(raw_prefill.get("mode") or (form_context.mode if form_context else "") or "scheduled").strip().lower()
+    mode = (
+        str(
+            raw_prefill.get("mode")
+            or (form_context.mode if form_context else "")
+            or "scheduled"
+        )
+        .strip()
+        .lower()
+    )
     if mode not in {"immediate", "scheduled"}:
         mode = "scheduled"
 
@@ -508,7 +641,8 @@ def normalize_ai_result(
         schedule_options = list(form_context.schedule_options) if form_context else []
         selected_schedule = next(
             (
-                option for option in schedule_options
+                option
+                for option in schedule_options
                 if option.start_at == requested_start and option.end_at == requested_end
             ),
             schedule_options[0] if schedule_options else None,
@@ -517,15 +651,25 @@ def normalize_ai_result(
             start_at, end_at = selected_schedule.start_at, selected_schedule.end_at
     if mode == "immediate":
         start_at = None
-        if bool(raw_prefill.get("immediate_no_end", form_context.immediate_no_end if form_context else True)):
+        # 模型常回字串 "false"；bool("false") 是 True 會把結束時間吃掉，要用 safe_bool
+        if safe_bool(
+            raw_prefill.get("immediate_no_end"),
+            bool(form_context.immediate_no_end) if form_context else True,
+        ):
             end_at = None
 
     immediate_no_end = mode == "immediate" and end_at is None
-    storage = str(raw_prefill.get("storage") or (form_context.storage if form_context else "") or "local-lvm").strip() or "local-lvm"
+    storage = (
+        str(
+            raw_prefill.get("storage")
+            or (form_context.storage if form_context else "")
+            or "local-lvm"
+        ).strip()
+        or "local-lvm"
+    )
 
     service_name = str(
-        ai_result.get("application_target", {}).get("service_name")
-        or request.goal[:40]
+        application_target.get("service_name") or request.goal[:40]
     ).strip()
 
     form_prefill = {
@@ -566,9 +710,15 @@ def normalize_ai_result(
         },
         "device_profile": summarize_device_nodes(nodes),
         "summary": str(ai_result.get("summary") or "").strip(),
-        "workload_profile": str(ai_result.get("workload_profile") or "ai-planned").strip(),
+        "workload_profile": str(
+            ai_result.get("workload_profile") or "ai-planned"
+        ).strip(),
         "rule_basis": {
-            "reasons": [str(item).strip() for item in list(ai_result.get("decision_factors") or []) if str(item).strip()],
+            "reasons": [
+                str(item).strip()
+                for item in decision_factors
+                if str(item).strip()
+            ],
         },
         "recommended_path": {
             "fit": "ai-generated plan",
@@ -581,7 +731,7 @@ def normalize_ai_result(
                 "service_name": service_name,
                 "execution_environment": resource_type,
                 "environment_reason": str(
-                    ai_result.get("application_target", {}).get("environment_reason")
+                    application_target.get("environment_reason")
                     or (
                         t("recommendation.environmentReason.vm")
                         if resource_type == "vm"

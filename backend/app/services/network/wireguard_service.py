@@ -13,6 +13,7 @@ import binascii
 import ipaddress
 import logging
 import shlex
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -57,6 +58,11 @@ _reconcile_state = _ReconcileState()
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _session_ttl() -> int:
+    """一次連線授權的有效秒數（設定值夾在 1 分鐘到 1 天之間）。"""
+    return max(60, min(settings.WIREGUARD_SESSION_TTL_SECONDS, 86400))
 
 
 def _validate_public_key(value: str) -> str:
@@ -284,7 +290,7 @@ def _sync_gateway_peer(
         )
         for value in sorted(delete_tuples)
     ]
-    ttl = max(60, min(settings.WIREGUARD_SESSION_TTL_SECONDS, 86400))
+    ttl = _session_ttl()
     add_lines = [
         (
             f"nft add element {_NFT_FAMILY} {_NFT_TABLE} {_NFT_SET} "
@@ -373,17 +379,9 @@ def _remove_gateway_peer(*, session: Session, peer: WireGuardPeer) -> None:
     )
 
 
-def _format_endpoint(host: str, port: int) -> str:
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return f"{host}:{port}"
-    return f"[{address}]:{port}" if address.version == 6 else f"{address}:{port}"
-
-
 def _endpoint_host(session: Session) -> str:
     config = gateway_config_repo.get_gateway_config(session)
-    host = settings.WIREGUARD_ENDPOINT_HOST.strip() or (config.host if config else "")
+    host = gateway_service.wireguard_endpoint_host(config)
     if not host:
         raise BadRequestError(t("wireguard.endpointHostNotConfigured"))
     return host
@@ -401,7 +399,9 @@ def _connect_response(
         interface_name="SkyLab",
         interface_address=f"{peer.tunnel_ip}/32",
         gateway_public_key=gateway_public_key,
-        endpoint=_format_endpoint(endpoint_host, settings.WIREGUARD_ENDPOINT_PORT),
+        endpoint=gateway_service.format_endpoint(
+            endpoint_host, settings.WIREGUARD_ENDPOINT_PORT
+        ),
         allowed_ips=[str(_vm_network())],
         persistent_keepalive=settings.WIREGUARD_KEEPALIVE_SECONDS,
         expires_in=ttl,
@@ -431,7 +431,7 @@ def _activate_peer(
     )
 
     now = _now()
-    ttl = max(60, min(settings.WIREGUARD_SESSION_TTL_SECONDS, 86400))
+    ttl = _session_ttl()
     peer.public_key = public_key
     peer.allowed_endpoints = new_endpoints
     peer.active = True
@@ -520,13 +520,7 @@ def disconnect(*, session: Session, user_id: uuid.UUID, device_id: str) -> bool:
     if peer is None or not peer.active:
         return True
     _remove_gateway_peer(session=session, peer=peer)
-    now = _now()
-    peer.active = False
-    peer.allowed_endpoints = []
-    peer.updated_at = now
-    peer.expires_at = now
-    peer.revoked_at = now
-    peer_repo.save(session=session, peer=peer)
+    _mark_peer_inactive(session, peer, _now())
     return True
 
 
@@ -642,7 +636,7 @@ def reconcile_tick() -> bool:
     下 peer 指令；``_reconcile_state`` 是行程內狀態，非 leader 不更新它，
     換手後新 leader 會整批 replay 一次，屬可接受的收斂成本。
     """
-    from app.services.scheduling.leader import (  # noqa: PLC0415 — 避免 import cycle
+    from app.services.scheduling.leader import (
         WIREGUARD_RECONCILER_LEADER_LOCK_KEY,
         scheduler_leader_lock,
     )
@@ -654,9 +648,16 @@ def reconcile_tick() -> bool:
 
 
 async def run_reconciler(stop_event: asyncio.Event) -> None:
+    from app.services.monitoring.heartbeat_service import HeartbeatObserver
+
     interval = max(10, settings.WIREGUARD_RECONCILE_INTERVAL_SECONDS)
+    # reconcile_tick 自己處理 leader 鎖，拿不到鎖時回 False；心跳只在真的
+    # 跑了 reconcile 的那台記一次任務結果
+    observer = HeartbeatObserver("wireguard", interval_seconds=interval)
+    await observer.on_start(["reconcile"])
     was_leader: bool | None = None
     while not stop_event.is_set():
+        started = time.perf_counter()
         try:
             is_leader = await asyncio.to_thread(reconcile_tick)
             if is_leader != was_leader:
@@ -665,10 +666,28 @@ async def run_reconciler(stop_event: asyncio.Event) -> None:
                     "acquired" if is_leader else "held by another worker",
                 )
                 was_leader = is_leader
+            await observer.on_tick(is_leader=bool(is_leader))
+            if is_leader:
+                await observer.on_task(
+                    "reconcile",
+                    ok=True,
+                    duration_seconds=time.perf_counter() - started,
+                    error=None,
+                )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             logger.exception("WireGuard reconciliation tick failed")
+            try:
+                await observer.on_tick(is_leader=True)
+                await observer.on_task(
+                    "reconcile",
+                    ok=False,
+                    duration_seconds=time.perf_counter() - started,
+                    error=exc,
+                )
+            except Exception:
+                logger.warning("WireGuard heartbeat update failed", exc_info=True)
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except TimeoutError:

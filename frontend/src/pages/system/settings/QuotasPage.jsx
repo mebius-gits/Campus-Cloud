@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import styles from "./QuotasPage.module.scss";
 import pageStyles from "./settings.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import PageHeader from "../../../components/PageHeader/PageHeader";
@@ -11,6 +12,7 @@ import { UsersService } from "../../../services/users";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import { useToast } from "../../../hooks/useToast";
 import useDialogPresence from "../../../hooks/useDialogPresence";
+import useOutsideClick from "../../../hooks/useOutsideClick";
 import { formatDateTime } from "../../../utils/formatDate";
 
 /**
@@ -109,13 +111,8 @@ function UserPicker({ users, loading, value, onChange }) {
 
   const selected = users.find((u) => u.id === value) ?? null;
 
-  useEffect(() => {
-    const onClickOutside = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
+  useOutsideClick(wrapRef, null, close);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -222,51 +219,18 @@ function QuotaDialog({ mode, quota, candidates, loadingUsers, defaults, closing 
     }
   };
 
+  /* 外框（遮罩、標題列、Esc、焦點、捲動鎖）交給共用 Modal；儲存中 Esc／點遮罩／× 都不關 */
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onClick={onClose}
-    >
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <span className={styles.modalTitle}>
-          <MIcon name="data_usage" size={18} />
-          {isEdit ? t("QuotasTab.editQuota") : t("QuotasTab.addQuota")}
-        </span>
-
-        {isEdit ? (
-          <div className={styles.field}>
-            <label htmlFor="quota-target">{t("QuotasTab.userLabel")}</label>
-            <input id="quota-target" value={quota.user_email ?? quota.user_id} disabled />
-          </div>
-        ) : (
-          <UserPicker
-            users={candidates}
-            loading={loadingUsers}
-            value={userId}
-            onChange={setUserId}
-          />
-        )}
-
-        <div className={styles.formGrid}>
-          {NUMBER_FIELDS.map((field) => (
-            <LimitField
-              key={field.key}
-              idPrefix="quota"
-              field={field}
-              value={form[field.key]}
-              onChange={(value) => setField(field.key, value)}
-            />
-          ))}
-        </div>
-
-        {!isEdit && (
-          <p className={styles.hint}>
-            {t("QuotasTab.createHint")}
-          </p>
-        )}
-
-        <div className={styles.modalActions}>
-          <button type="button" className={styles.btnGhost} onClick={onClose}>
+    <Modal
+      closing={closing}
+      onClose={onClose}
+      busy={saving}
+      closeButton
+      size="md"
+      title={isEdit ? t("QuotasTab.editQuota") : t("QuotasTab.addQuota")}
+      actions={
+        <>
+          <button type="button" className={styles.btnSecondary} onClick={onClose}>
             {t("QuotasTab.cancel")}
           </button>
           <button
@@ -277,9 +241,41 @@ function QuotaDialog({ mode, quota, candidates, loadingUsers, defaults, closing 
           >
             {saving ? t("QuotasTab.saving") : isEdit ? t("QuotasTab.save") : t("QuotasTab.create")}
           </button>
+        </>
+      }
+    >
+      {isEdit ? (
+        <div className={styles.field}>
+          <label htmlFor="quota-target">{t("QuotasTab.userLabel")}</label>
+          <input id="quota-target" value={quota.user_email ?? quota.user_id} disabled />
         </div>
+      ) : (
+        <UserPicker
+          users={candidates}
+          loading={loadingUsers}
+          value={userId}
+          onChange={setUserId}
+        />
+      )}
+
+      <div className={styles.formGrid}>
+        {NUMBER_FIELDS.map((field) => (
+          <LimitField
+            key={field.key}
+            idPrefix="quota"
+            field={field}
+            value={form[field.key]}
+            onChange={(value) => setField(field.key, value)}
+          />
+        ))}
       </div>
-    </div>
+
+      {!isEdit && (
+        <p className={styles.hint}>
+          {t("QuotasTab.createHint")}
+        </p>
+      )}
+    </Modal>
   );
 }
 
@@ -314,7 +310,6 @@ function GlobalQuotaCard({ config, onSaved }) {
       <header className={styles.cardHeader}>
         <div className={styles.cardHeading}>
           <span className={styles.cardTitle}>
-            <MIcon name="tune" size={18} />
             {t("QuotasTab.globalQuotaTitle")}
           </span>
           <p className={styles.cardSubtitle}>
@@ -347,7 +342,7 @@ function GlobalQuotaCard({ config, onSaved }) {
           {dirty && (
             <button
               type="button"
-              className={styles.btnGhost}
+              className={styles.btnSecondary}
               disabled={saving}
               onClick={() => setForm(baseline)}
             >
@@ -389,7 +384,7 @@ function QuotasSection() {
       setQuotas(list);
       setGlobalQuota(config);
     } catch (e) {
-      toast.error(e?.message ?? t("QuotasTab.toastLoadFailed"));
+      toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
       setQuotas((prev) => prev ?? []);
     }
   }, [toast, t]);
@@ -449,7 +444,6 @@ function QuotasSection() {
         <header className={styles.cardHeader}>
           <div className={styles.cardHeading}>
             <span className={styles.cardTitle}>
-              <MIcon name="manage_accounts" size={18} />
               {t("QuotasTab.overridesTitle")}
             </span>
           </div>
@@ -468,54 +462,54 @@ function QuotasSection() {
         ) : quotas.length === 0 ? (
           <EmptyState icon="data_usage" title={t("QuotasTab.emptyNoOverrides")} />
         ) : (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>{t("QuotasTab.colScope")}</th>
-                <th>{t("QuotasTab.colTarget")}</th>
-                <th>CPU</th>
-                <th>{t("QuotasTab.fieldMemoryMb")}</th>
-                <th>{t("QuotasTab.fieldDiskGb")}</th>
-                <th>{t("QuotasTab.colInstanceCount")}</th>
-                <th className={styles.thRight}>{t("QuotasTab.colActions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quotas.map((q) => (
-                <tr key={q.id}>
-                  <td>
-                    <span className={`${styles.badge} ${styles.badge_user}`}>{t("QuotasTab.personalOverride")}</span>
-                  </td>
-                  <td>{q.user_email ?? "—"}</td>
-                  <td>{fmtLimit(q.max_cpu_cores, t)}</td>
-                  <td>{fmtLimit(q.max_memory_mb, t)}</td>
-                  <td>{fmtLimit(q.max_disk_gb, t)}</td>
-                  <td>{fmtLimit(q.max_instances, t)}</td>
-                  <td className={styles.tdRight}>
-                    <div className={styles.rowActions}>
-                      <button
-                        type="button"
-                        className={styles.btnIcon}
-                        onClick={() => setDialog({ mode: "edit", quota: q })}
-                        title={t("QuotasTab.editQuotaTitle")}
-                      >
-                        <MIcon name="edit" size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.btnIconDanger}
-                        disabled={deleting === q.id}
-                        onClick={() => handleDelete(q)}
-                        title={t("QuotasTab.deleteQuotaTitle")}
-                      >
-                        <MIcon name="delete" size={16} />
-                      </button>
-                    </div>
-                  </td>
+          <div className={styles.tableScroll}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th className={styles.colTarget}>{t("QuotasTab.colTarget")}</th>
+                  <th className={styles.num}>CPU</th>
+                  <th className={styles.num}>{t("QuotasTab.fieldMemoryMb")}</th>
+                  <th className={styles.num}>{t("QuotasTab.fieldDiskGb")}</th>
+                  <th className={styles.num}>{t("QuotasTab.colInstanceCount")}</th>
+                  <th>{t("QuotasTab.colActions")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {quotas.map((q) => (
+                  <tr key={q.id}>
+                    <td>{q.user_email ?? "—"}</td>
+                    <td className={styles.num}>{fmtLimit(q.max_cpu_cores, t)}</td>
+                    <td className={styles.num}>{fmtLimit(q.max_memory_mb, t)}</td>
+                    <td className={styles.num}>{fmtLimit(q.max_disk_gb, t)}</td>
+                    <td className={styles.num}>{fmtLimit(q.max_instances, t)}</td>
+                    <td>
+                      <div className={styles.rowActions}>
+                        <button
+                          type="button"
+                          className={styles.btnIcon}
+                          onClick={() => setDialog({ mode: "edit", quota: q })}
+                          title={t("QuotasTab.editQuotaTitle")}
+                          aria-label={t("QuotasTab.editQuotaTitle")}
+                        >
+                          <MIcon name="edit" size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.btnIconDanger}
+                          disabled={deleting === q.id}
+                          onClick={() => handleDelete(q)}
+                          title={t("QuotasTab.deleteQuotaTitle")}
+                          aria-label={t("QuotasTab.deleteQuotaTitle")}
+                        >
+                          <MIcon name="delete" size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

@@ -16,6 +16,7 @@ from app.core.request_context import (
     _extract_client_ip,
     _extract_user_agent,
     get_request_context,
+    resolve_request_id,
     set_request_context,
 )
 
@@ -105,7 +106,7 @@ def test_default_request_context_has_none_fields() -> None:
 async def test_middleware_passes_through_non_http_scope_unchanged() -> None:
     called: list[str] = []
 
-    async def downstream(scope, receive, send):  # noqa: ANN001
+    async def downstream(scope, receive, send):
         called.append(scope["type"])
 
     mw = RequestContextMiddleware(downstream)
@@ -117,7 +118,7 @@ async def test_middleware_passes_through_non_http_scope_unchanged() -> None:
 async def test_middleware_sets_context_during_http_request() -> None:
     captured: dict[str, str | None] = {}
 
-    async def downstream(scope, receive, send):  # noqa: ANN001
+    async def downstream(scope, receive, send):
         ctx = get_request_context()
         captured["ip"] = ctx.ip_address
         captured["ua"] = ctx.user_agent
@@ -125,7 +126,7 @@ async def test_middleware_sets_context_during_http_request() -> None:
     async def receive():
         return {"type": "http.request"}
 
-    async def send(message):  # noqa: ANN001
+    async def send(message):
         pass
 
     mw = RequestContextMiddleware(downstream)
@@ -147,13 +148,13 @@ async def test_middleware_sets_context_during_http_request() -> None:
 async def test_middleware_resets_context_after_request() -> None:
     """ContextVar token must be reset so requests don't leak across each other."""
 
-    async def downstream(scope, receive, send):  # noqa: ANN001
+    async def downstream(scope, receive, send):
         pass
 
     async def receive():
         return {"type": "http.request"}
 
-    async def send(message):  # noqa: ANN001
+    async def send(message):
         pass
 
     set_request_context(RequestContext())
@@ -168,3 +169,90 @@ async def test_middleware_resets_context_after_request() -> None:
 
     # After the request finishes the ctx should be back to defaults
     assert get_request_context().ip_address is None
+
+
+# ─── Request ID ──────────────────────────────────────────────────────────────
+
+
+def test_resolve_request_id_keeps_valid_upstream_id() -> None:
+    nginx_id = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+    assert resolve_request_id(nginx_id) == nginx_id
+
+
+@pytest.mark.parametrize(
+    "incoming",
+    [None, "", "short", "has space in it", "line\nbreak-0123456789", "x" * 65],
+)
+def test_resolve_request_id_replaces_invalid_values(incoming: str | None) -> None:
+    generated = resolve_request_id(incoming)
+    assert generated != incoming
+    assert len(generated) == 32
+
+
+async def _run_http(
+    headers: list[tuple[bytes, bytes]],
+) -> tuple[str | None, list[tuple[bytes, bytes]]]:
+    seen: dict[str, str | None] = {}
+    sent: list[dict] = []
+
+    async def downstream(scope, receive, send):
+        seen["request_id"] = get_request_context().request_id
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"x-request-id", b"downstream-should-be-replaced")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive():
+        return {"type": "http.request"}
+
+    async def send(message):
+        sent.append(message)
+
+    mw = RequestContextMiddleware(downstream)
+    scope = {"type": "http", "headers": headers, "client": ("127.0.0.1", 1)}
+    await mw(scope, receive, send)  # type: ignore[arg-type]
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    return seen["request_id"], start["headers"]
+
+
+async def test_middleware_propagates_request_id_to_context_and_response() -> None:
+    request_id, headers = await _run_http([(b"x-request-id", b"abcdef0123456789")])
+
+    assert request_id == "abcdef0123456789"
+    assert [v for k, v in headers if k == b"x-request-id"] == [b"abcdef0123456789"]
+
+
+async def test_middleware_generates_request_id_when_missing() -> None:
+    request_id, headers = await _run_http([])
+
+    assert request_id is not None and len(request_id) == 32
+    assert [v for k, v in headers if k == b"x-request-id"] == [request_id.encode()]
+
+
+async def test_middleware_sets_context_for_websocket_without_touching_send() -> None:
+    seen: dict[str, str | None] = {}
+
+    async def downstream(scope, receive, send):
+        ctx = get_request_context()
+        seen["ip"] = ctx.ip_address
+        seen["request_id"] = ctx.request_id
+        seen["send_is_original"] = send is original_send
+
+    async def original_send(message):
+        pass
+
+    mw = RequestContextMiddleware(downstream)
+    scope = {
+        "type": "websocket",
+        "headers": [(b"x-real-ip", b"198.51.100.7")],
+        "client": ("127.0.0.1", 1),
+    }
+    await mw(scope, None, original_send)  # type: ignore[arg-type]
+
+    assert seen["ip"] == "198.51.100.7"
+    assert seen["request_id"]
+    assert seen["send_is_original"] is True

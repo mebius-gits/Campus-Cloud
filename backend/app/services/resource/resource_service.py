@@ -1,18 +1,18 @@
-import json
 import logging
 import math
 import time
 import uuid
 from collections.abc import Iterable
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from sqlmodel import Session, col, select
 
 from app.core.authorizers import can_bypass_resource_ownership
+from app.core.i18n import t
 from app.core.security import decrypt_value
-from app.domain.resource_markers import (  # noqa: F401 — re-export 給既有引用
-    RESOURCE_CONVERTED_TO_TEMPLATE_MARKER,
+from app.domain.resource_markers import (
     RESOURCE_DELETED_BY_USER_MARKER,
     RESOURCE_DELETED_MARKERS,
     RESOURCE_DELETED_ORPHAN_MARKER,
@@ -20,15 +20,17 @@ from app.domain.resource_markers import (  # noqa: F401 — re-export 給既有�
 from app.exceptions import BadRequestError, PermissionDeniedError, ProxmoxError
 from app.models import (
     BatchProvisionJob,
+    Resource,
     TeachingClass,
     TeachingClassMachineNode,
     TeachingClassStatus,
+    TeachingClassStudentMachine,
     User,
     VMTemplate,
+    VMTemplateStatus,
 )
 from app.models.quick_practice import QuickPracticeSessionMachine
 from app.models.vm_request import VMProvisioningStatus, VMRequest, VMRequestStatus
-from app.repositories import audit_log as audit_log_repo
 from app.repositories import batch_provision as batch_provision_repo
 from app.repositories import resource as resource_repo
 from app.repositories import resource_share as share_repo
@@ -48,13 +50,16 @@ from app.services.proxmox import proxmox_service
 from app.services.resource import kind as resource_kind
 from app.services.resource.access import (
     list_owned_teaching_class_ids,
+    list_teaching_class_ids_owned_by,
     require_resource_management,
+    require_resource_use,
 )
 from app.services.scheduling.recurrence import (
     get_schedule_policy,
     is_in_window,
 )
 from app.services.user import audit_service
+from app.utils.hostname import from_punycode_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +71,6 @@ def _utc_now() -> datetime:
 def _enforce_start_window(*, session: Session, vmid: int) -> None:
     resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
     if resource and resource.teaching_class_id:
-        from app.models import TeachingClass, TeachingClassStatus
-
         teaching_class = session.get(TeachingClass, resource.teaching_class_id)
         if teaching_class is None or teaching_class.status != TeachingClassStatus.active:
             raise BadRequestError("This teaching-class resource is no longer active.")
@@ -77,25 +80,46 @@ def _enforce_start_window(*, session: Session, vmid: int) -> None:
         # applies the normal practice-session auto-stop policy below.
         return
 
+    reason, _start_at, _end_at = start_window_state(
+        session=session, vmid=vmid, db_resource=resource,
+    )
+    if reason == "window_not_started":
+        raise BadRequestError(t("resource.start_window_not_started"))
+    if reason == "window_ended":
+        raise BadRequestError(t("resource.start_window_ended"))
+
+
+StartBlockReason = Literal["window_not_started", "window_ended"]
+
+
+def start_window_state(
+    *, session: Session, vmid: int, db_resource: Any | None = None,
+) -> tuple[StartBlockReason | None, datetime | None, datetime | None]:
+    """個人申請機器的核准使用時段：回傳（不能開機的原因, 時段起, 時段迄）。
+
+    開機檢查（_enforce_start_window）與機器資料（ResourcePublic.start_blocked_reason）
+    共用這一份判斷，卡片上「能不能開」才會跟實際按下去的結果一致。
+    課堂機器不受申請時段限制（上課時段只管自動開關機），一律回 (None, None, None)。
+    """
+    if db_resource is None:
+        db_resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
+    if db_resource is not None and getattr(db_resource, "teaching_class_id", None):
+        return None, None, None
     request = vm_request_repo.get_latest_approved_vm_request_by_vmid(
         session=session,
         vmid=vmid,
     )
     if not request or not request.start_at or not request.end_at:
-        return
+        return None, None, None
 
+    start_at = _ensure_utc(request.start_at)
+    end_at = _ensure_utc(request.end_at)
     now = _utc_now()
-    start_at = request.start_at
-    end_at = request.end_at
-    if start_at.tzinfo is None:
-        start_at = start_at.replace(tzinfo=UTC)
-    if end_at.tzinfo is None:
-        end_at = end_at.replace(tzinfo=UTC)
-
     if now < start_at:
-        raise BadRequestError("This resource can only be started when its approved time window begins.")
+        return "window_not_started", start_at, end_at
     if now >= end_at:
-        raise BadRequestError("This resource can no longer be started because its approved time window has ended.")
+        return "window_ended", start_at, end_at
+    return None, start_at, end_at
 
 
 def ensure_lxc_platform_key(*, session: Session, node: str, vmid: int) -> bool:
@@ -117,7 +141,7 @@ def ensure_lxc_platform_key(*, session: Session, node: str, vmid: int) -> bool:
             )
             return False
 
-        from app.services.template.clone_service import (  # noqa: PLC0415
+        from app.services.template.clone_service import (
             inject_lxc_platform_key,
         )
 
@@ -166,7 +190,7 @@ def ensure_lxc_login_password(
         if not encrypted:
             return False
 
-        from app.services.template.clone_service import (  # noqa: PLC0415
+        from app.services.template.clone_service import (
             set_lxc_root_password,
         )
 
@@ -185,21 +209,6 @@ def ensure_lxc_login_password(
             "Login password sync failed for LXC %s", vmid, exc_info=True
         )
         return False
-
-
-def _from_punycode_hostname(hostname: str) -> str:
-    """將 Punycode hostname 解碼回 Unicode 顯示給使用者。"""
-    result_labels = []
-    for label in hostname.split("."):
-        if label.lower().startswith("xn--"):
-            try:
-                decoded = label[4:].encode("ascii").decode("punycode")
-                result_labels.append(decoded)
-            except Exception:
-                result_labels.append(label)
-        else:
-            result_labels.append(label)
-    return ".".join(result_labels)
 
 
 def _ensure_utc(value: datetime | None) -> datetime | None:
@@ -221,6 +230,17 @@ def _normalize_live_resource_status(value: object) -> ResourceStatus:
     return "unknown"
 
 
+def _mark_booting(items: list[ResourcePublic]) -> None:
+    """PVE 說 running 但開機 task 還在跑的機器改標 ``starting``（主控台尚不可用）。"""
+    running = [item for item in items if item.status == "running" and item.vmid]
+    if not running:
+        return
+    booting = proxmox_service.list_booting_vmids(item.node for item in running)
+    for item in running:
+        if item.vmid in booting:
+            item.status = "starting"
+
+
 def _allocation_scope(value: object) -> Literal["personal", "teaching_class"]:
     return "teaching_class" if value == "teaching_class" else "personal"
 
@@ -238,25 +258,21 @@ def _placeholder_resource_status(req) -> ResourceStatus:
     return "provisioning"
 
 
-def practice_request_ids(session: Session) -> set[uuid.UUID]:
-    """快速練習機器對應的申請單 id，用來判斷規格是否已被環境版本鎖定。"""
-    return set(
-        session.exec(select(QuickPracticeSessionMachine.vm_request_id)).all()
-    )
-
-
 def _is_practice_resource(
-    session: Session | None,
+    session: Session,
     db_resource,
     known_ids: set[uuid.UUID] | None,
 ) -> bool:
+    """機器是否為快速練習機器（規格被環境版本鎖定）。
+
+    清單頁傳入預先批次查好的 ``known_ids``（``resource_kind.practice_request_ids``）；
+    單筆查詢傳 None，就只查這一張申請單。
+    """
     request_id = getattr(db_resource, "request_id", None)
     if request_id is None:
         return False
     if known_ids is not None:
         return request_id in known_ids
-    if session is None:
-        return False
     return (
         session.exec(
             select(QuickPracticeSessionMachine.vm_request_id).where(
@@ -293,7 +309,7 @@ def public_urls_by_vmid(
         try:
             session.rollback()
         except Exception:
-            pass
+            pass  # 連線已壞時 rollback 也會失敗；此處只是盡力清理，回空結果即可
         return {}
     urls: dict[int, list[str]] = {}
     for rule in sorted(rules, key=lambda r: (r.vmid, r.internal_port, r.domain)):
@@ -359,10 +375,7 @@ def _teaching_display_names(
                 col(BatchProvisionJob.id).in_(jobs_needed)
             )
         ).all():
-            try:
-                params = json.loads(job.template_params)
-            except (TypeError, ValueError):
-                continue
+            params = batch_provision_repo.job_params(job)
             prefix = params.get("ip_reservation_prefix")
             if isinstance(prefix, str) and ":" in prefix:
                 params_by_job[job.id] = params
@@ -401,7 +414,11 @@ def _teaching_display_names(
             tpl_name_by_id[template.id] = template.name
     if pve_vmids:
         for template in session.exec(
-            select(VMTemplate).where(col(VMTemplate.pve_vmid).in_(pve_vmids))
+            select(VMTemplate).where(
+                col(VMTemplate.pve_vmid).in_(pve_vmids),
+                # 同一 VMID 可能有已刪除的舊範本列（partial unique），只取現役的
+                VMTemplate.status != VMTemplateStatus.deleted,
+            )
         ).all():
             tpl_name_by_pve[template.pve_vmid] = template.name
 
@@ -426,14 +443,14 @@ def _build_resource_public(
     db_resource,
     node: str,
     vm_type: str,
-    session: Session | None = None,
+    session: Session,
     known_practice_ids: set[uuid.UUID] | None = None,
     public_urls: dict[int, list[str]] | None = None,
     display_names: dict[int, str] | None = None,
 ) -> ResourcePublic:
     vmid = resource.get("vmid")
     # 清單頁會先把所有機器的對外網址批次查好傳進來；單筆查詢就現查這一台。
-    if public_urls is None and session is not None and vmid is not None:
+    if public_urls is None and vmid is not None:
         public_urls = public_urls_by_vmid(session, [vmid])
     class_governed = bool(
         db_resource and db_resource.allocation_scope == "teaching_class"
@@ -443,7 +460,7 @@ def _build_resource_public(
     spec_fixed = class_governed or is_practice
     class_available = not class_governed
     teaching_class_name: str | None = None
-    if class_governed and session is not None and db_resource.teaching_class_id:
+    if class_governed and db_resource.teaching_class_id:
         teaching_class = session.get(TeachingClass, db_resource.teaching_class_id)
         class_available = bool(
             teaching_class
@@ -451,14 +468,18 @@ def _build_resource_public(
         )
         teaching_class_name = teaching_class.name if teaching_class else None
     ip_address = proxmox_service.get_ip_address(node, vmid, vm_type)
-    if session is not None:
-        # 線上：寫回快取；離線：回退 DB 快取。DB 出錯時 sync_ip_cache 會 rollback。
-        ip_address = resource_repo.sync_ip_cache(
-            session=session, vmid=vmid, live_ip=ip_address
+    # 線上：寫回快取；離線：回退 DB 快取。DB 出錯時 sync_ip_cache 會 rollback。
+    ip_address = resource_repo.sync_ip_cache(
+        session=session, vmid=vmid, live_ip=ip_address
+    )
+    start_blocked_reason, window_start_at, window_end_at = (None, None, None)
+    if vmid is not None:
+        start_blocked_reason, window_start_at, window_end_at = start_window_state(
+            session=session, vmid=vmid, db_resource=db_resource,
         )
     quick_practice_limited = False
     source_kind: str | None = None
-    if session is not None and db_resource and db_resource.request_id:
+    if db_resource and db_resource.request_id:
         source_request = session.get(VMRequest, db_resource.request_id)
         source_kind = source_request.request_kind if source_request else None
         quick_practice_limited = source_kind == "quick_template"
@@ -472,7 +493,7 @@ def _build_resource_public(
         control_policy=_control_policy(
             db_resource.control_policy if db_resource else None
         ),
-        name=_from_punycode_hostname(resource.get("name", "")),
+        name=from_punycode_hostname(resource.get("name", "")),
         status=_normalize_live_resource_status(resource.get("status")),
         node=node,
         type=vm_type,
@@ -516,6 +537,9 @@ def _build_resource_public(
         ),
         teaching_class_name=teaching_class_name,
         public_urls=list((public_urls or {}).get(vmid, [])) if vmid is not None else [],
+        start_blocked_reason=start_blocked_reason,
+        window_start_at=window_start_at,
+        window_end_at=window_end_at,
     )
 
 
@@ -588,10 +612,12 @@ def get_by_vmid(
         if db_resource is not None
         else {}
     )
-    return _build_resource_public(
+    public = _build_resource_public(
         resource_info, db_resource, vm_node, vm_type, session,
         display_names=display_names,
     )
+    _mark_booting([public])
+    return public
 
 
 def list_all(
@@ -599,7 +625,7 @@ def list_all(
 ) -> list[ResourcePublic]:
     try:
         resources = proxmox_service.list_all_resources()
-        known_practice_ids = practice_request_ids(session)
+        known_practice_ids = resource_kind.practice_request_ids(session)
         public_urls = public_urls_by_vmid(
             session,
             [r.get("vmid") for r in resources if r.get("template") != 1],
@@ -635,19 +661,11 @@ def list_all(
         for public in result:
             if public.vmid in owner_ids and owner_ids[public.vmid] != viewer_id:
                 public.owner_name = names.get(owner_ids[public.vmid])
+        _mark_booting(result)
         return result
     except Exception as e:
         logger.error(f"Failed to get resources: {e}")
         raise ProxmoxError(f"Failed to get resources: {e}")
-
-
-# Marker written onto a VMRequest's resource_warning / provisioning_error /
-# review_comment when the user explicitly deletes the live resource. Used
-# by list_by_user to suppress the now-defunct approved request from being
-# resurrected as a "failed" placeholder, and by the frontend to hide the
-# consumed request from the applications list. 定義在 domain 層，這裡只是
-# re-export 讓既有的 ``resource_service.RESOURCE_*`` 引用不用改。
-_RESOURCE_DELETED_MARKERS = RESOURCE_DELETED_MARKERS
 
 
 def mark_linked_request_consumed(
@@ -683,20 +701,28 @@ def mark_linked_request_consumed(
     return snapshot
 
 
+def _savepoint(session: Session):
+    """刪除流程的 best-effort 清理步驟各自包一層 savepoint：一步失敗只回滾自己，
+    不會用 session.rollback() 把前面已 flush 的 IP 釋放、NAT 清理一起撤銷。
+    （測試用的假 session 沒有 begin_nested 時退回無交易的 context。）"""
+    begin_nested = getattr(session, "begin_nested", None)
+    return begin_nested() if begin_nested is not None else nullcontext()
+
+
 def _cancel_open_spec_change_requests(
     *, session: Session, vmid: int, marker: str
 ) -> None:
     """機器刪除時作廢該 vmid 處理中的規格調整申請；失敗不阻斷刪除。"""
     try:
-        cancelled = spec_request_repo.cancel_open_spec_change_requests_for_vmid(
-            session=session, vmid=vmid, comment=marker, commit=False
-        )
+        with _savepoint(session):
+            cancelled = spec_request_repo.cancel_open_spec_change_requests_for_vmid(
+                session=session, vmid=vmid, comment=marker, commit=False
+            )
         if cancelled:
             logger.info(
                 "Cancelled %s open spec change request(s) for vmid=%s", cancelled, vmid
             )
     except Exception as exc:
-        session.rollback()
         logger.warning(
             "Failed to cancel spec change requests for vmid=%s: %s", vmid, exc
         )
@@ -735,10 +761,6 @@ def _restore_after_failed_delete(
 def list_by_user(
     *, session: Session, user_id: uuid.UUID
 ) -> list[ResourcePublic]:
-    from sqlmodel import select
-
-    from app.models.vm_request import VMRequest
-
     try:
         result: list[ResourcePublic] = []
         shown_vmids: set[int] = set()
@@ -760,10 +782,8 @@ def list_by_user(
                 shared_rows[share.resource_vmid] = shared_db
         # 老師：所帶班級底下學生的機器也列進來（有管理權，標示為「學生機器」）
         taught_rows: dict[int, Any] = {}
-        owned_class_ids = set(
-            session.exec(
-                select(TeachingClass.id).where(TeachingClass.owner_id == user_id)
-            ).all()
+        owned_class_ids = list_teaching_class_ids_owned_by(
+            session=session, user_id=user_id
         )
         if owned_class_ids:
             for taught in resource_repo.get_resources_by_teaching_classes(
@@ -775,7 +795,7 @@ def list_by_user(
             session, [row.user_id for row in taught_rows.values()]
         )
         if user_resources or shared_rows or taught_rows:
-            known_practice_ids = practice_request_ids(session)
+            known_practice_ids = resource_kind.practice_request_ids(session)
             public_urls = public_urls_by_vmid(
                 session, [*owned_vmids, *shared_rows, *taught_rows]
             )
@@ -837,7 +857,7 @@ def list_by_user(
                                 ),
                                 control_policy=_control_policy(db_r.control_policy),
                                 name=(
-                                    _from_punycode_hostname(request.hostname)
+                                    from_punycode_hostname(request.hostname)
                                     if request
                                     else f"vm-{db_r.vmid}"
                                 ),
@@ -873,19 +893,35 @@ def list_by_user(
                 )
             ).all()
         )
+        # 機器轉移後原申請單仍掛在前擁有者名下（user_id、vmid 都不變），
+        # 若不排除，前擁有者會永遠看到一張「建立中」的佔位卡。Resource 列
+        # 已存在且屬於別人 → 這台已經不是他的了；尚無 Resource 列（克隆中）
+        # 才保留佔位。
+        request_vmids = {req.vmid for req in pending_requests if req.vmid}
+        foreign_vmids: set[int] = set()
+        if request_vmids:
+            foreign_vmids = {
+                row.vmid
+                for row in session.exec(
+                    select(Resource).where(col(Resource.vmid).in_(request_vmids))
+                ).all()
+                if row.user_id != user_id
+            }
         for req in pending_requests:
             if req.vmid and req.vmid in shown_vmids:
+                continue
+            if req.vmid and req.vmid in foreign_vmids:
                 continue
             # Approved requests whose live resource was deleted by the user
             # are kept on disk for audit but must NOT resurrect as "failed"
             # placeholders in the resources list.
-            if req.resource_warning in _RESOURCE_DELETED_MARKERS:
+            if req.resource_warning in RESOURCE_DELETED_MARKERS:
                 continue
             result.append(
                 ResourcePublic(
                     vmid=req.vmid,
                     request_id=req.id,
-                    name=_from_punycode_hostname(req.hostname),
+                    name=from_punycode_hostname(req.hostname),
                     status=_placeholder_resource_status(req),
                     node=req.actual_node or req.assigned_node or req.desired_node or "",
                     type=_resource_type_for_request(req.resource_type),
@@ -901,12 +937,14 @@ def list_by_user(
             if req.vmid:
                 shown_vmids.add(req.vmid)
 
+        _mark_booting(result)
+
         # 3. Overlay in-progress deletions. Deletion runs from a background
         # queue (shutdown → wait → destroy), so the VM stays visible in
         # Proxmox as "stopped" for a while after the user hits delete;
         # without this overlay the card would reappear as 已關機.
         if shown_vmids:
-            from app.services.resource import deletion_service  # noqa: PLC0415
+            from app.services.resource import deletion_service
 
             deleting_map = deletion_service.list_active_for_vmids(
                 session=session, vmids=list(shown_vmids)
@@ -1195,64 +1233,11 @@ def delete(
             )
             raise
 
-        # Clean up reverse proxy rules and Cloudflare DNS records for this VM
-        try:
-            from app.services.network import reverse_proxy_service  # noqa: PLC0415
-            reverse_proxy_service.remove_reverse_proxy_rules_for_vmid(session, vmid)
-        except Exception as exc:
-            logger.warning("Failed to clean up reverse proxy rules for VM %s: %s", vmid, exc)
-
-        # NAT 規則的 vmid 外鍵會連帶刪除 DB 紀錄，但不會重寫 Gateway 上的
-        # haproxy 設定；不明確清一次，轉發會留在原地指向已釋放的 IP。
-        try:
-            from app.services.network import nat_service  # noqa: PLC0415
-            nat_service.remove_nat_rules_for_vmid(session, vmid)
-        except Exception as exc:
-            logger.warning("Failed to clean up NAT rules for VM %s: %s", vmid, exc)
-
-        # Release IP allocation
-        try:
-            from app.services.network import ip_management_service  # noqa: PLC0415
-            ip_management_service.release_ip(session, vmid)
-        except Exception as exc:
-            logger.warning("Failed to release IP for VM %s: %s", vmid, exc)
-
-        # Unlink deleted VMID from historical batch tasks so class job status won't
-        # accidentally match a future resource that reuses the same VMID.
-        try:
-            cleared_count = batch_provision_repo.clear_task_vmid_references(
-                session=session,
-                vmid=vmid,
-                commit=False,
-            )
-            if cleared_count:
-                logger.info(
-                    "Cleared VMID %s from %s batch task(s)",
-                    vmid,
-                    cleared_count,
-                )
-        except Exception as exc:
-            session.rollback()
-            logger.warning(
-                "Failed to clear batch task VMID references for VM %s: %s",
-                vmid,
-                exc,
-            )
-
-        # 規格調整申請也要跟著作廢：VMID 會被新機器回收，留著會核准／套用到
-        # 別人的機器上。resource_vmid 的 SET NULL 只擋審核，這裡把狀態收掉。
-        _cancel_open_spec_change_requests(
-            session=session, vmid=vmid, marker=RESOURCE_DELETED_BY_USER_MARKER
-        )
-
-        if teaching_class_id is not None:
-            _mark_class_machine_reclaimed(session=session, vmid=vmid)
-
-        # Remove from database (resource record + all associated audit logs)
-        resource_repo.delete_resource(session=session, vmid=vmid)
-        audit_log_repo.delete_audit_logs_by_vmid(session=session, vmid=vmid)
-        _mark_class_reclaimed_if_empty(
-            session=session, teaching_class_id=teaching_class_id
+        _cleanup_after_resource_removed(
+            session=session,
+            vmid=vmid,
+            teaching_class_id=teaching_class_id,
+            marker=RESOURCE_DELETED_BY_USER_MARKER,
         )
 
         # The linked approval record was already marked consumed (and
@@ -1297,39 +1282,12 @@ def delete_orphan_db_record(
         tracked_resource.teaching_class_id if tracked_resource else None
     )
 
-    try:
-        from app.services.network import reverse_proxy_service  # noqa: PLC0415
-        reverse_proxy_service.remove_reverse_proxy_rules_for_vmid(session, vmid)
-    except Exception as exc:
-        logger.warning("Orphan cleanup: failed to remove reverse proxy rules for vmid=%s: %s", vmid, exc)
-
-    try:
-        from app.services.network import nat_service  # noqa: PLC0415
-        nat_service.remove_nat_rules_for_vmid(session, vmid)
-    except Exception as exc:
-        logger.warning("Orphan cleanup: failed to remove NAT rules for vmid=%s: %s", vmid, exc)
-
-    try:
-        from app.services.network import ip_management_service  # noqa: PLC0415
-        ip_management_service.release_ip(session, vmid)
-    except Exception as exc:
-        logger.warning("Orphan cleanup: failed to release IP for vmid=%s: %s", vmid, exc)
-
-    try:
-        batch_provision_repo.clear_task_vmid_references(session=session, vmid=vmid, commit=False)
-    except Exception as exc:
-        session.rollback()
-        logger.warning("Orphan cleanup: failed to clear batch task refs for vmid=%s: %s", vmid, exc)
-
-    if teaching_class_id is not None:
-        _mark_class_machine_reclaimed(session=session, vmid=vmid)
-    _cancel_open_spec_change_requests(
-        session=session, vmid=vmid, marker=RESOURCE_DELETED_ORPHAN_MARKER
-    )
-    resource_repo.delete_resource(session=session, vmid=vmid)
-    audit_log_repo.delete_audit_logs_by_vmid(session=session, vmid=vmid)
-    _mark_class_reclaimed_if_empty(
-        session=session, teaching_class_id=teaching_class_id
+    _cleanup_after_resource_removed(
+        session=session,
+        vmid=vmid,
+        teaching_class_id=teaching_class_id,
+        marker=RESOURCE_DELETED_ORPHAN_MARKER,
+        log_prefix="Orphan cleanup: ",
     )
 
     mark_linked_request_consumed(
@@ -1346,13 +1304,91 @@ def delete_orphan_db_record(
     logger.info("Orphan DB record for vmid=%s cleaned up", vmid)
 
 
+def _cleanup_after_resource_removed(
+    *,
+    session: Session,
+    vmid: int,
+    teaching_class_id: uuid.UUID | None,
+    marker: str,
+    log_prefix: str = "",
+) -> None:
+    """Proxmox 端已經沒有這台機器之後的 DB／網路收尾（刪除與孤兒清理共用）。
+
+    每一步各自吞掉錯誤只記 log，不讓一個收尾失敗擋住其他步驟。
+    申請單標記（mark_linked_request_consumed）與稽核紀錄不在這裡：
+    兩條路徑做這兩件事的時機不同，留給呼叫端。
+    """
+    # Clean up reverse proxy rules and Cloudflare DNS records for this VM
+    try:
+        from app.services.network import reverse_proxy_service
+        reverse_proxy_service.remove_reverse_proxy_rules_for_vmid(session, vmid)
+    except Exception as exc:
+        logger.warning(
+            "%sFailed to clean up reverse proxy rules for VM %s: %s",
+            log_prefix, vmid, exc,
+        )
+
+    # NAT 規則的 vmid 外鍵會連帶刪除 DB 紀錄，但不會重寫 Gateway 上的
+    # nginx 設定；不明確清一次，轉發會留在原地指向已釋放的 IP。
+    try:
+        from app.services.network import nat_service
+        nat_service.remove_nat_rules_for_vmid(session, vmid)
+    except Exception as exc:
+        logger.warning(
+            "%sFailed to clean up NAT rules for VM %s: %s", log_prefix, vmid, exc
+        )
+
+    # Release IP allocation（savepoint：後面的清理步驟失敗時不能把這步一起回滾，
+    # 否則資源刪掉了 IP 卻一直佔著）
+    try:
+        from app.services.network import ip_management_service
+        with _savepoint(session):
+            ip_management_service.release_ip(session, vmid)
+    except Exception as exc:
+        logger.warning("%sFailed to release IP for VM %s: %s", log_prefix, vmid, exc)
+
+    # Unlink deleted VMID from historical batch tasks so class job status won't
+    # accidentally match a future resource that reuses the same VMID.
+    try:
+        with _savepoint(session):
+            cleared_count = batch_provision_repo.clear_task_vmid_references(
+                session=session,
+                vmid=vmid,
+                commit=False,
+            )
+        if cleared_count:
+            logger.info(
+                "Cleared VMID %s from %s batch task(s)", vmid, cleared_count
+            )
+    except Exception as exc:
+        # 只回滾這一步的 savepoint；整個 session.rollback() 會把前面已 flush
+        # 的 NAT 清理與 IP 釋放一起撤銷
+        logger.warning(
+            "%sFailed to clear batch task VMID references for VM %s: %s",
+            log_prefix, vmid, exc,
+        )
+
+    # 規格調整申請也要跟著作廢：VMID 會被新機器回收，留著會核准／套用到
+    # 別人的機器上。resource_vmid 的 SET NULL 只擋審核，這裡把狀態收掉。
+    # 作廢失敗只回滾它自己的 savepoint，不會丟掉已 flush 的其他收尾。
+    _cancel_open_spec_change_requests(session=session, vmid=vmid, marker=marker)
+
+    if teaching_class_id is not None:
+        _mark_class_machine_reclaimed(session=session, vmid=vmid)
+
+    # Remove the resource record; audit_logs.resource_vmid is ON DELETE SET NULL,
+    # so audit history is kept (just unlinked)
+    resource_repo.delete_resource(session=session, vmid=vmid)
+    _mark_class_reclaimed_if_empty(
+        session=session, teaching_class_id=teaching_class_id
+    )
+
+
 def _mark_class_reclaimed_if_empty(
     *, session: Session, teaching_class_id: uuid.UUID | None
 ) -> None:
     if teaching_class_id is None:
         return
-    from app.models import TeachingClass, TeachingClassStatus
-
     teaching_class = session.get(TeachingClass, teaching_class_id)
     if teaching_class is None:
         return
@@ -1371,10 +1407,6 @@ def _mark_class_reclaimed_if_empty(
 
 
 def _mark_class_machine_reclaimed(*, session: Session, vmid: int) -> None:
-    from sqlmodel import select
-
-    from app.models import TeachingClassStudentMachine
-
     mappings = session.exec(
         select(TeachingClassStudentMachine).where(
             TeachingClassStudentMachine.vmid == vmid
@@ -1502,8 +1534,6 @@ def _set_auto_stop_for_user_start(*, session: Session, vmid: int) -> None:
 
     resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
     if resource and resource.teaching_class_id and resource.batch_job_id:
-        from app.models import BatchProvisionJob
-
         job = session.get(BatchProvisionJob, resource.batch_job_id)
         if job and is_in_window(job.next_window_start, job.next_window_end, now):
             resource_repo.set_auto_stop(
@@ -1673,15 +1703,12 @@ def batch_action(
 
     每個 vmid 的授權規則與單機端點完全相同（不要在這裡另寫一份 ``user_id`` 比對：
     課堂機的 ``user_id`` 是學生，只比對 user_id 會讓學生刪掉老師佈建的班級機）：
-    - 電源操作走使用層級 ``check_resource_control_access``（擁有者／管理員／
-      班級老師／被分享者）。
+    - 電源操作走使用層級 ``require_resource_use``（擁有者／管理員／
+      班級老師／被分享者，與單機端點的 ``check_resource_control_access`` 同一份規則）。
     - 刪除走管理層級 ``require_resource_management``，並和單機刪除一樣排進
-      DeletionRequest 佇列（可取消、可稽核），不直接 purge/force。
+      DeletionRequest 佇列（可稽核、進度看 Jobs），不直接 purge/force。
     """
-    from app.api.deps.proxmox import (  # noqa: PLC0415 — 權限規則只維護在 deps 這一份
-        check_resource_control_access,
-    )
-    from app.services.resource import deletion_service  # noqa: PLC0415
+    from app.services.resource import deletion_service
 
     results: list[BatchActionResultItem] = []
 
@@ -1703,7 +1730,7 @@ def batch_action(
                 message = f"Resource {vmid} deletion queued"
 
             else:
-                check_resource_control_access(vmid, user, session)
+                require_resource_use(session=session, user=user, vmid=vmid)
                 control(
                     session=session,
                     vmid=vmid,

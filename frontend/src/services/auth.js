@@ -12,6 +12,7 @@ import {
   LOGIN_REQUEST_TIMEOUT_MS,
   fetchWithTimeout,
 } from "./fetchWithTimeout";
+import { readResponseMessage } from "./responseMessage";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -258,14 +259,7 @@ export const AuthStorage = {
 
 /** 解析錯誤 response 的訊息，統一 throw { status, message } */
 async function throwApiError(res) {
-  let message = `HTTP ${res.status}`;
-  try {
-    const body = await res.json();
-    message = body?.detail ?? body?.message ?? message;
-  } catch {
-    // 若 body 不是 JSON 就用預設訊息
-  }
-  throw { status: res.status, message };
+  throw { status: res.status, message: await readResponseMessage(res) };
 }
 
 /**
@@ -295,6 +289,28 @@ export async function loginLdap(username, password) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
+    },
+    LOGIN_REQUEST_TIMEOUT_MS,
+  );
+  if (!res.ok) await throwApiError(res);
+
+  const tokens = await res.json();
+  if (tokens?.totp_required) return tokens; // 第一階段通過，還要驗證碼
+  AuthStorage.setTokens(tokens);
+  return tokens;
+}
+
+/**
+ * 兩步驟驗證第二階段：以第一階段回傳的挑戰 token + Authenticator 驗證碼換取正式 tokens
+ * @throws {{ status, message }} 驗證碼錯誤／挑戰 token 逾時
+ */
+export async function loginTotp(totpToken, code) {
+  const res = await fetchWithTimeout(
+    `${BASE_URL}/api/v1/login/totp`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ totp_token: totpToken, code }),
     },
     LOGIN_REQUEST_TIMEOUT_MS,
   );

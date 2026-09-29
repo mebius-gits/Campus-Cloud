@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import styles from "./settings.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
+import EmptyState from "../../../components/EmptyState/EmptyState";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import { useToast } from "../../../hooks/useToast";
 import useDialogPresence from "../../../hooks/useDialogPresence";
@@ -93,16 +95,26 @@ function ConnectionForm({ initial, isEdit, saving, closing = false, onSubmit, on
     onSubmit(payload);
   }
 
+  /* 外框（遮罩、標題列、Esc、焦點、捲動鎖）交給共用 Modal；儲存中 Esc／點遮罩／× 都不關 */
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onMouseDown={onCancel}
+    <Modal
+      as="form"
+      onSubmit={handleSubmit}
+      closing={closing}
+      onClose={onCancel}
+      busy={saving}
+      closeButton
+      size="md"
+      title={isEdit ? t("SettingsPage.editConnection") : t("SettingsPage.addConnection")}
+      actions={
+        <>
+          <button type="button" className={styles.btnSecondary} onClick={onCancel}>{t("SettingsPage.cancel")}</button>
+          <button type="submit" className={styles.btnPrimary} disabled={saving}>
+            {saving ? t("SettingsPage.saving") : t("SettingsPage.saveConnection")}
+          </button>
+        </>
+      }
     >
-    <form className={styles.modal} onSubmit={handleSubmit} onMouseDown={(e) => e.stopPropagation()}>
-      <span className={styles.modalTitle}>
-        <MIcon name="device_hub" size={18} />
-        {isEdit ? t("SettingsPage.editConnection") : t("SettingsPage.addConnection")}
-      </span>
       <h3 className={styles.sectionTitle}>{t("SettingsPage.connectionSettingsTitle")}</h3>
       <div className={styles.modalFormGrid}>
         <label className={styles.field}>
@@ -204,14 +216,7 @@ function ConnectionForm({ initial, isEdit, saving, closing = false, onSubmit, on
           <span>{t("SettingsPage.setAsDefaultConnection")}</span>
         </label>
       </div>
-      <div className={styles.modalActions}>
-        <button type="button" className={styles.btnSecondary} onClick={onCancel}>{t("SettingsPage.cancel")}</button>
-        <button type="submit" className={styles.btnPrimary} disabled={saving}>
-          {saving ? t("SettingsPage.saving") : t("SettingsPage.saveConnection")}
-        </button>
-      </div>
-    </form>
-    </div>
+    </Modal>
   );
 }
 
@@ -222,7 +227,8 @@ function ConnectionsSection({ connections, loading, onRefresh }) {
   const [editing, setEditing] = useState(null); // null | "new" | connection 物件
   const editPresence = useDialogPresence(editing);
   const [saving, setSaving] = useState(false);
-  const [busyId, setBusyId] = useState(null);
+  /* { id, action }：記下哪一列在跑哪個動作，執行中的按鈕才能顯示「測試中…／同步中…」 */
+  const [busy, setBusy] = useState(null);
 
   async function handleSubmit(payload) {
     setSaving(true);
@@ -251,20 +257,46 @@ function ConnectionsSection({ connections, loading, onRefresh }) {
       danger: true,
     });
     if (!ok) return;
-    setBusyId(conn.id);
+    setBusy({ id: conn.id, action: "delete" });
     try {
       await ProxmoxConfigService.deleteConnection(conn.id);
       toast.success(t("SettingsPage.toastConnectionDeleted"));
       onRefresh();
     } catch (err) {
-      toast.error(err?.message ?? t("SettingsPage.toastDeleteConnectionFailed"));
+      // 503＝後端連不上該 PVE、無從確認底下是否還有機器：才提供二次確認的強制刪除。
+      // 400（確認到仍有機器）不走這條，照舊顯示錯誤。
+      if (err?.status === 503) {
+        await confirmForceDelete(conn, err);
+      } else {
+        toast.error(err?.message ?? t("SettingsPage.toastDeleteConnectionFailed"));
+      }
     } finally {
-      setBusyId(null);
+      setBusy(null);
+    }
+  }
+
+  async function confirmForceDelete(conn, cause) {
+    const forceOk = await confirm({
+      title: t("SettingsPage.forceDeleteConnectionTitle"),
+      message: t("SettingsPage.forceDeleteConnectionMessage", {
+        name: conn.name,
+        reason: cause.message,
+      }),
+      confirmText: t("SettingsPage.forceDeleteConnectionConfirm"),
+      danger: true,
+    });
+    if (!forceOk) return;
+    try {
+      await ProxmoxConfigService.deleteConnection(conn.id, { force: true });
+      toast.success(t("SettingsPage.toastConnectionDeleted"));
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.message ?? t("SettingsPage.toastDeleteConnectionFailed"));
     }
   }
 
   async function handleTest(conn) {
-    setBusyId(conn.id);
+    setBusy({ id: conn.id, action: "test" });
     try {
       const res = await ProxmoxConfigService.testConnectionById(conn.id);
       if (res.success) toast.success(res.message || t("SettingsPage.toastConnectSuccess"));
@@ -272,12 +304,12 @@ function ConnectionsSection({ connections, loading, onRefresh }) {
     } catch (err) {
       toast.error(err?.message ?? t("SettingsPage.toastConnectTestFailed"));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   async function handleSync(conn) {
-    setBusyId(conn.id);
+    setBusy({ id: conn.id, action: "sync" });
     try {
       const res = await ProxmoxConfigService.syncConnection(conn.id);
       if (res.success) {
@@ -289,65 +321,93 @@ function ConnectionsSection({ connections, loading, onRefresh }) {
     } catch (err) {
       toast.error(err?.message ?? t("SettingsPage.toastSyncFailed"));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
+  /* 頁首在這層渲染：「新增連線」要開的對話框狀態在這裡 */
   return (
-    <div className={styles.panelStack}>
-      <div className={styles.card}>
-        <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>{t("SettingsPage.connectionsListTitle")}</h2>
-          <button type="button" className={styles.btnSecondary} onClick={() => setEditing("new")}>
-            <MIcon name="add" size={16} />
-            {t("SettingsPage.addConnection")}
-          </button>
-        </div>
+    <>
+      <PageHeader
+        title={t("SettingsPage.pveConnectionsTitle")}
+        subtitle={(
+          <>
+            {t("SettingsPage.nodeMetricsHintPrefix")}{" "}
+            <Link to="/monitoring" className={styles.inlineLink}>{t("SettingsPage.nodeMetricsHintLink")}</Link>
+            {" "}{t("SettingsPage.nodeMetricsHintSuffix")}
+          </>
+        )}
+      >
+        <button type="button" className={styles.btnPrimary} onClick={() => setEditing("new")}>
+          <MIcon name="add" size={16} />
+          {t("SettingsPage.addConnection")}
+        </button>
+      </PageHeader>
+
+      <div className={styles.content}>
         {loading ? (
           <LoadingState text={t("SettingsPage.loadingConnections")} />
         ) : connections.length === 0 ? (
-          <p className={styles.cardDesc}>
-            {t("SettingsPage.noConnectionsYet")}
-          </p>
+          <EmptyState icon="device_hub" title={t("SettingsPage.noConnectionsYet")} />
         ) : (
+          /* 清單形式同使用者管理：每列一張玻璃列卡，寬螢幕攤成一行（狀態、節點數各一欄） */
           <div className={styles.list}>
-            {connections.map((conn) => (
-              <div key={conn.id} className={styles.nodeRow}>
-                <div className={styles.rowMain}>
-                  <span className={styles.rowName}>
-                    {conn.name}
-                    {conn.is_default && <span className={`${styles.badge} ${styles.badge_info}`}>{t("SettingsPage.default")}</span>}
-                    {!conn.enabled && <span className={`${styles.badge} ${styles.badge_danger}`}>{t("SettingsPage.disabled")}</span>}
+            {connections.map((conn) => {
+              const rowBusy = busy?.id === conn.id ? busy.action : null;
+              return (
+                <div key={conn.id} className={styles.listRow}>
+                  <span className={styles.listAvatar} aria-hidden="true">
+                    <MIcon name="device_hub" size={20} />
                   </span>
-                  <span className={styles.rowMeta}>
-                    {conn.host}:{conn.port} · {conn.user} · {t("SettingsPage.nodeCount", { count: conn.node_count })}
-                  </span>
+                  <div className={styles.rowMain}>
+                    <span className={styles.rowName}>
+                      {conn.name}
+                      {conn.is_default && <span className={`${styles.badge} ${styles.badge_info}`}>{t("SettingsPage.default")}</span>}
+                    </span>
+                    <span className={styles.rowMeta}>{conn.host}:{conn.port} · {conn.user}</span>
+                  </div>
+                  <div className={styles.listTags}>
+                    <span className={`${styles.badge} ${styles.listStatus} ${conn.enabled ? styles.badge_success : styles.badge_muted}`}>
+                      {conn.enabled ? t("SettingsPage.enabled") : t("SettingsPage.disabled")}
+                    </span>
+                    <span className={`${styles.listExtra} ${styles.listCount}`}>{t("SettingsPage.nodeCount", { count: conn.node_count })}</span>
+                  </div>
+                  {/* 常用的測試／同步留文字鈕；編輯／刪除改圖示鈕（同網域管理 DNS 紀錄列），刪除用危險色 */}
+                  <div className={styles.rowActions}>
+                    <button type="button" className={styles.btnSecondary} disabled={Boolean(rowBusy)} onClick={() => handleTest(conn)}>
+                      <MIcon name="wifi_tethering" size={16} />
+                      {rowBusy === "test" ? t("SettingsPage.testing") : t("SettingsPage.test")}
+                    </button>
+                    <button type="button" className={styles.btnSecondary} disabled={Boolean(rowBusy)} onClick={() => handleSync(conn)}>
+                      <MIcon name="sync" size={16} spin={rowBusy === "sync"} />
+                      {rowBusy === "sync" ? t("SettingsPage.syncing") : t("SettingsPage.sync")}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      disabled={Boolean(rowBusy)}
+                      onClick={() => setEditing(conn)}
+                      aria-label={`${t("SettingsPage.edit")} ${conn.name}`}
+                      title={t("SettingsPage.edit")}
+                    >
+                      <MIcon name="edit" size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtnDanger}
+                      disabled={Boolean(rowBusy)}
+                      onClick={() => handleDelete(conn)}
+                      aria-label={`${t("SettingsPage.delete")} ${conn.name}`}
+                      title={t("SettingsPage.delete")}
+                    >
+                      <MIcon name="delete" size={16} />
+                    </button>
+                  </div>
                 </div>
-                <button type="button" className={styles.btnSecondary} disabled={busyId === conn.id} onClick={() => handleTest(conn)}>
-                  <MIcon name="wifi_tethering" size={16} />
-                  {t("SettingsPage.test")}
-                </button>
-                <button type="button" className={styles.btnSecondary} disabled={busyId === conn.id} onClick={() => handleSync(conn)}>
-                  <MIcon name="sync" size={16} />
-                  {t("SettingsPage.sync")}
-                </button>
-                <button type="button" className={styles.btnSecondary} disabled={busyId === conn.id} onClick={() => setEditing(conn)}>
-                  <MIcon name="edit" size={16} />
-                  {t("SettingsPage.edit")}
-                </button>
-                <button type="button" className={styles.btnSecondary} disabled={busyId === conn.id} onClick={() => handleDelete(conn)}>
-                  <MIcon name="delete" size={16} />
-                  {t("SettingsPage.delete")}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
-        <p className={styles.cardHint}>
-          {t("SettingsPage.nodeMetricsHintPrefix")}{" "}
-          <Link to="/monitoring" className={styles.inlineLink}>{t("SettingsPage.nodeMetricsHintLink")}</Link>
-          {" "}{t("SettingsPage.nodeMetricsHintSuffix")}
-        </p>
       </div>
 
       {editPresence.open && (
@@ -363,7 +423,7 @@ function ConnectionsSection({ connections, loading, onRefresh }) {
           onCancel={() => setEditing(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -388,10 +448,7 @@ export default function PveConnectionsPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t("SettingsPage.pveConnectionsTitle")} />
-      <div className={styles.content}>
-        <ConnectionsSection connections={connections} loading={loading} onRefresh={fetchConnections} />
-      </div>
+      <ConnectionsSection connections={connections} loading={loading} onRefresh={fetchConnections} />
     </div>
   );
 }

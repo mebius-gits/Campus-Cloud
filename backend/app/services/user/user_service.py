@@ -16,15 +16,16 @@ from app.models import (
     AIAPICredential,
     AIAPIRequest,
     AIAPIUsage,
-    AITemplateCallLog,
     AlertEvent,
     AuditLog,
     DeletionRequest,
+    FirewallLayout,
     MiningIncident,
     ResourceQuota,
     SpecChangeRequest,
     TeachingClass,
     User,
+    UserRole,
     VMRequest,
 )
 from app.repositories import resource as resource_repo
@@ -118,10 +119,6 @@ def _prepare_user_delete(*, session: Session, user: User) -> None:
         ai_request.reviewer_id = None
         session.add(ai_request)
 
-    for call_log in session.exec(
-        select(AITemplateCallLog).where(AITemplateCallLog.user_id == user.id)
-    ).all():
-        session.delete(call_log)
     for quota in session.exec(
         select(ResourceQuota).where(ResourceQuota.user_id == user.id)
     ).all():
@@ -130,6 +127,13 @@ def _prepare_user_delete(*, session: Session, user: User) -> None:
         select(DeletionRequest).where(DeletionRequest.user_id == user.id)
     ).all():
         session.delete(deletion_request)
+    # 防火牆拓樸的節點位置是每位使用者的個人版面設定，在這裡明確整批清掉；
+    # 其中 Internet（gateway）節點的 vmid 為 NULL，不會被 resources 的
+    # CASCADE 帶走。
+    for layout in session.exec(
+        select(FirewallLayout).where(FirewallLayout.user_id == user.id)
+    ).all():
+        session.delete(layout)
 
     # 告警事件本身與帳號無關，只清掉「誰確認的」
     for alert in session.exec(
@@ -209,6 +213,27 @@ def get_user_by_id(
     return user
 
 
+def _ensure_not_removing_last_admin(
+    *, session: Session, db_user: User, deactivating: bool, role_changed: bool
+) -> None:
+    """拒絕拿掉「最後一位啟用中的管理員」的管理權限，避免平台失去管理者。"""
+    if not (db_user.role == UserRole.admin and db_user.is_active):
+        return
+    if not (deactivating or role_changed):
+        return
+    other_active_admins = session.exec(
+        select(func.count())
+        .select_from(User)
+        .where(
+            User.role == UserRole.admin,
+            User.is_active == True,  # noqa: E712
+            User.id != db_user.id,
+        )
+    ).one()
+    if not other_active_admins:
+        raise BadRequestError(t("user.lastAdminLocked"))
+
+
 def update_user(
     *,
     session: Session,
@@ -222,6 +247,17 @@ def update_user(
     # LDAP 帳號的密碼歸目錄管：設本地密碼登不進去，只會造成困惑（稽核 #9）
     if user_in.password and db_user.auth_source == "ldap":
         raise BadRequestError(t("user.ldapPasswordLocked"))
+    role_changed = user_in.role is not None and user_in.role != db_user.role
+    # 管理員不可變更自己的角色或停用自己（與 delete_user 的 selfDeleteForbidden 對稱），
+    # 否則一個按鍵就能把自己鎖在管理介面外。
+    if db_user.id == current_user_id and (user_in.is_active is False or role_changed):
+        raise PermissionDeniedError(t("user.selfEditLocked"))
+    _ensure_not_removing_last_admin(
+        session=session,
+        db_user=db_user,
+        deactivating=user_in.is_active is False,
+        role_changed=role_changed,
+    )
     if user_in.email:
         existing = user_repo.get_user_by_email(session=session, email=user_in.email)
         if existing and existing.id != user_id:
@@ -296,6 +332,15 @@ def update_me(*, session: Session, user_in: UserUpdateMe, current_user: User) ->
         session.rollback()
         raise
     return current_user
+
+
+def complete_onboarding(*, session: Session, current_user: User) -> User:
+    """標記首次登入引導精靈已完成（略過也算完成）；重複呼叫無副作用。"""
+    if current_user.onboarding_completed:
+        return current_user
+    current_user.onboarding_completed = True
+    session.add(current_user)
+    return _commit_and_refresh(session, current_user)
 
 
 def update_password(

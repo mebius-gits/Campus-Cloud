@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./settings.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import { useToast } from "../../../hooks/useToast";
@@ -24,60 +25,57 @@ function NodeEditDialog({ node, saving, closing = false, onClose, onSave }) {
     onSave(node, form);
   }
 
+  /* 外框（遮罩、標題列、Esc、焦點、捲動鎖）交給共用 Modal；儲存中 Esc／點遮罩／× 都不關 */
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onMouseDown={onClose}
-    >
-      <form
-        className={`${styles.modal} ${styles.modalNarrow}`}
-        onSubmit={submit}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <span className={styles.modalTitle}>
-          <MIcon name="dns" size={18} />
-          {t("SettingsPage.editNodeTitle", { name: node.name })}
-        </span>
-
-        <label className={styles.field}>
-          <span>Host</span>
-          <input
-            value={form.host}
-            onChange={(e) => setForm((p) => ({ ...p, host: e.target.value }))}
-            required
-          />
-        </label>
-        <label className={styles.field}>
-          <span>Port</span>
-          <input
-            type="number"
-            min={1}
-            max={65535}
-            value={form.port}
-            onChange={(e) => setForm((p) => ({ ...p, port: e.target.value }))}
-          />
-          <em className={styles.fieldHint}>{t("SettingsPage.nodeHostHint")}</em>
-        </label>
-        <label className={styles.field}>
-          <span>{t("SettingsPage.nodePriorityLabel")}</span>
-          <input
-            type="number"
-            value={form.priority}
-            onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}
-          />
-          <em className={styles.fieldHint}>{t("SettingsPage.nodePriorityHint")}</em>
-        </label>
-
-        <div className={styles.modalActions}>
+    <Modal
+      as="form"
+      onSubmit={submit}
+      closing={closing}
+      onClose={onClose}
+      busy={saving}
+      closeButton
+      size="sm"
+      title={t("SettingsPage.editNodeTitle", { name: node.name })}
+      actions={
+        <>
           <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={saving}>
             {t("SettingsPage.cancel")}
           </button>
           <button type="submit" className={styles.btnPrimary} disabled={saving}>
             {saving ? t("SettingsPage.saving") : t("SettingsPage.save")}
           </button>
-        </div>
-      </form>
-    </div>
+        </>
+      }
+    >
+      <label className={styles.field}>
+        <span>Host</span>
+        <input
+          value={form.host}
+          onChange={(e) => setForm((p) => ({ ...p, host: e.target.value }))}
+          required
+        />
+      </label>
+      <label className={styles.field}>
+        <span>Port</span>
+        <input
+          type="number"
+          min={1}
+          max={65535}
+          value={form.port}
+          onChange={(e) => setForm((p) => ({ ...p, port: e.target.value }))}
+        />
+        <em className={styles.fieldHint}>{t("SettingsPage.nodeHostHint")}</em>
+      </label>
+      <label className={styles.field}>
+        <span>{t("SettingsPage.nodePriorityLabel")}</span>
+        <input
+          type="number"
+          value={form.priority}
+          onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}
+        />
+        <em className={styles.fieldHint}>{t("SettingsPage.nodePriorityHint")}</em>
+      </label>
+    </Modal>
   );
 }
 
@@ -152,7 +150,11 @@ function NodeList() {
   return (
     <div className={styles.list}>
       {nodes.map((node) => (
-        <div key={node.id ?? node.name} className={styles.nodeRow}>
+        /* 清單列同 PVE 連線：頭像｜名稱｜在線狀態｜啟用｜編輯 */
+        <div key={node.id ?? node.name} className={`${styles.listRow} ${styles.listRowCompact}`}>
+          <span className={styles.listAvatar} aria-hidden="true">
+            <MIcon name="dns" size={20} />
+          </span>
           <div className={styles.rowMain}>
             <span className={styles.rowName}>
               {node.name}
@@ -166,22 +168,32 @@ function NodeList() {
               {node.enabled === false && ` · ${t("SettingsPage.notAcceptingNewVms")}`}
             </span>
           </div>
-          <span className={`${styles.badge} ${node.is_online ? styles.badge_success : styles.badge_danger}`}>
-            {node.is_online ? t("SettingsPage.online") : t("SettingsPage.offline")}
-          </span>
-          <label className={styles.checkRow} title={t("SettingsPage.disableNodeHint")}>
-            <input
-              type="checkbox"
-              checked={node.enabled !== false}
-              disabled={saving || node.id == null}
-              onChange={(e) => toggleEnabled(node, e.target.checked)}
-            />
-            <span>{t("SettingsPage.enable")}</span>
-          </label>
-          <button type="button" className={styles.btnSecondary} onClick={() => setEditTarget(node)} disabled={node.id == null}>
-            <MIcon name="edit" size={16} />
-            {t("SettingsPage.edit")}
-          </button>
+          <div className={styles.listTags}>
+            <span className={`${styles.badge} ${styles.listStatus} ${node.is_online ? styles.badge_success : styles.badge_danger}`}>
+              {node.is_online ? t("SettingsPage.online") : t("SettingsPage.offline")}
+            </span>
+            <label className={`${styles.checkRow} ${styles.listExtra}`} title={t("SettingsPage.disableNodeHint")}>
+              <input
+                type="checkbox"
+                checked={node.enabled !== false}
+                disabled={saving || node.id == null}
+                onChange={(e) => toggleEnabled(node, e.target.checked)}
+              />
+              <span>{t("SettingsPage.enable")}</span>
+            </label>
+          </div>
+          <div className={styles.rowActions}>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => setEditTarget(node)}
+              disabled={node.id == null}
+              aria-label={`${t("SettingsPage.edit")} ${node.name}`}
+              title={t("SettingsPage.edit")}
+            >
+              <MIcon name="edit" size={16} />
+            </button>
+          </div>
         </div>
       ))}
 

@@ -51,4 +51,28 @@ describe("MonitoringService", () => {
     expect(url).toContain("active=true");
     expect(url).toContain("limit=50");
   });
+
+  test("getSystemHealth 呼叫平台健康端點並回傳內容", async () => {
+    const body = { status: "ok", components: [], loops: [], tasks: [] };
+    fetchMock.mockResolvedValueOnce(jsonRes(200, body));
+
+    const result = await MonitoringService.getSystemHealth();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/monitoring/system-health");
+    expect(init?.method ?? "GET").toBe("GET");
+    expect(result).toEqual(body);
+  });
+
+  test("createGrafanaSession 以 POST 呼叫 Grafana session 端點並回傳內容", async () => {
+    const body = { enabled: true, url: "/grafana/" };
+    fetchMock.mockResolvedValueOnce(jsonRes(200, body));
+
+    const result = await MonitoringService.createGrafanaSession();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/v1/monitoring/grafana/session");
+    expect(init?.method).toBe("POST");
+    expect(result).toEqual(body);
+  });
 });

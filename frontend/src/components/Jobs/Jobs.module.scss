@@ -3,15 +3,6 @@
 
 /* ── 共用 ── */
 
-.spin {
-  display: inline-flex;
-  animation: jobs-spin 1.2s linear infinite;
-}
-
-@keyframes jobs-spin {
-  to { transform: rotate(360deg); }
-}
-
 .toneMuted   { color: var(--color-text-muted); }
 .toneInfo    { color: var(--color-info); }
 .toneSuccess { color: var(--color-success); }
@@ -418,76 +409,10 @@
   color: var(--color-text-muted);
 }
 
-/* ── JobDetailDialog ── */
-
-.dialogOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  @include flex-center;
-  padding: $spacing-16;
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  animation: jobs-fade-in 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.dialogOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes jobs-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes jobs-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* Dialog 基準對齊樣式規範：毛玻璃卡，不用實色 surface + 邊框 */
-.dialog {
-  animation: jobs-slide-up 0.18s cubic-bezier(0.25, 0.8, 0.25, 1);
-  width: min(640px, 100%);
-  max-height: 88vh;
-  overflow-y: auto;
-  padding: $spacing-24;
-  @include glass-surface($shadow: var(--shadow-lg));
-  border-radius: $radius-16;
-}
-
-.dialogHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: $spacing-8;
-}
-
-.dialogTitleRow {
-  display: flex;
-  align-items: center;
-  gap: $spacing-8;
-  min-width: 0;
-}
-
-.dialogTitle {
-  font-size: $font-size-16;
-  font-weight: $font-weight-700;
-  color: var(--color-text-primary);
-  @include text-truncate;
-}
-
-.dialogClose {
-  @include btn-dialog-close;
-  flex-shrink: 0;
-}
+/* ── JobDetailDialog：外框（遮罩、標題列、捲動）由共用 Modal 提供，這裡只放內容 ── */
 
 .dialogJobId {
-  margin-top: 2px;
-  font-size: 11px;
+  font-size: $font-size-12;
   color: var(--color-text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   word-break: break-all;
@@ -496,7 +421,6 @@
 .dialogBody {
   @include flex-column;
   gap: $spacing-16;
-  margin-top: $spacing-16;
 }
 
 .dialogStatusRow {
@@ -519,11 +443,12 @@
   color: var(--color-text-muted);
 }
 
+/* 時間與詳細兩個白底區塊同一套：標籤在上、值在下，欄距與內距一致 */
 .dialogTimes {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: $spacing-8;
-  padding: $spacing-8 $spacing-16;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: $spacing-8 $spacing-16;
+  padding: 12px $spacing-16;
   border: 1px solid var(--color-border);
   border-radius: $radius-8;
   background: var(--color-surface);
@@ -536,11 +461,12 @@
   color: var(--color-text-muted);
 }
 
-.dialogMono {
-  font-size: $font-size-12;
+/* 區塊內的值：一般字體（日期、名稱、是／否混排時等寬字反而參差），數字等寬 */
+.dialogValue {
+  font-size: $font-size-14;
   color: var(--color-text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .dialogMessage {
@@ -557,28 +483,44 @@
 
 .dialogExtraGrid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px $spacing-16;
-  padding: $spacing-8 $spacing-16;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px $spacing-16;
+  padding: 12px $spacing-16;
   border: 1px solid var(--color-border);
   border-radius: $radius-8;
   background: var(--color-surface);
 
+  /* 寬度夠時與上方時間區塊同為三欄，兩區塊的欄位左緣對齊 */
   @include respond-to(sm) {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 .dialogExtraItem {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: $font-size-12;
+  @include flex-column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* JSON 物件（範本任務的 payload／result）獨占一整列 */
+.dialogExtraWide {
+  grid-column: 1 / -1;
 }
 
 .dialogExtraKey {
-  flex-shrink: 0;
+  font-size: $font-size-12;
   color: var(--color-text-muted);
+}
+
+.dialogExtraJson {
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+  font-size: $font-size-12;
+  color: var(--color-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .dialogError {

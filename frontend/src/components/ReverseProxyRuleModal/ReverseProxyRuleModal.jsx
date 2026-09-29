@@ -1,43 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./ReverseProxyRuleModal.module.scss";
-import MIcon from "../MIcon";
+import Modal from "../Modal/Modal";
 import { useToast } from "../../hooks/useToast";
 import { ResourcesService } from "../../services/resources";
-
-/* label 是模組層級常數，無法呼叫 hook，改存 labelKey，實際 render 處再 t() */
-export const COMMON_PORTS = [
-  { value: "80", labelKey: "ReverseProxyRuleModal.port80" },
-  { value: "443", labelKey: "ReverseProxyRuleModal.port443" },
-  { value: "3000", labelKey: "ReverseProxyRuleModal.port3000" },
-  { value: "5000", labelKey: "ReverseProxyRuleModal.port5000" },
-  { value: "8000", labelKey: "ReverseProxyRuleModal.port8000" },
-  { value: "8080", labelKey: "ReverseProxyRuleModal.port8080" },
-  { value: "8888", labelKey: "ReverseProxyRuleModal.port8888" },
-];
-
-export function findZoneByDomain(domain, zones = []) {
-  return [...zones]
-    .sort((a, b) => b.name.length - a.name.length)
-    .find((zone) => domain === zone.name || domain.endsWith(`.${zone.name}`));
-}
-
-export function extractHostnamePrefix(domain, zoneName) {
-  if (domain === zoneName) return "";
-  const suffix = `.${zoneName}`;
-  return domain.endsWith(suffix) ? domain.slice(0, -suffix.length) : domain;
-}
+import { COMMON_PORTS, extractHostnamePrefix, findZoneByDomain } from "./domainHelpers";
 
 /**
- * 反向代理規則建立／編輯 Modal（共用元件）。
- * - 全域反向代理頁：不帶 fixedResource，顯示 VM 下拉選單。
- * - 資源詳情頁：帶 fixedResource（{ vmid, name }），鎖定綁定的 VM。
+ * 反向代理規則建立／編輯 Modal（網域管理頁的反向代理分頁使用）。
+ * 開啟時載入使用者可見的機器清單（管理員為全部機器）供下拉選擇綁定的 VM。
  */
 export default function ReverseProxyRuleModal({
   rule,
   setupContext,
   isAdmin = false,
-  fixedResource = null,
   loading,
   onClose,
   onSubmit,
@@ -54,13 +30,9 @@ export default function ReverseProxyRuleModal({
     : null;
 
   const [resources, setResources] = useState([]);
-  const [loadingResources, setLoadingResources] = useState(!fixedResource);
+  const [loadingResources, setLoadingResources] = useState(true);
   const [form, setForm] = useState({
-    vmid: rule
-      ? String(rule.vmid)
-      : fixedResource
-        ? String(fixedResource.vmid)
-        : "",
+    vmid: rule ? String(rule.vmid) : "",
     zoneId: matchedZone?.id ?? zones[0]?.id ?? "",
     hostnamePrefix: rule
       ? matchedZone
@@ -73,23 +45,13 @@ export default function ReverseProxyRuleModal({
     enableHttps: rule?.enable_https ?? true,
   });
 
-  /* Esc 關閉（Dialog 標準行為）；送出中不關，跟取消鈕的行為一致 */
   useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === "Escape" && !loading) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loading, onClose]);
-
-  useEffect(() => {
-    if (fixedResource) return;
     const fetcher = isAdmin ? ResourcesService.listAll() : ResourcesService.list();
     fetcher
       .then((res) => setResources(Array.isArray(res) ? res : res?.data ?? []))
       .catch(() => {})
       .finally(() => setLoadingResources(false));
-  }, [isAdmin, fixedResource]);
+  }, [isAdmin]);
 
   function set(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -128,142 +90,138 @@ export default function ReverseProxyRuleModal({
     });
   }
 
+  /* 外框（遮罩、標題列、Esc、焦點、捲動鎖）交給共用 Modal；送出中 Esc／點遮罩／× 都不關 */
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onMouseDown={onClose}
-    >
-      <form className={styles.modal} onSubmit={submit} onMouseDown={(e) => e.stopPropagation()} data-guide="proxy-rule-form">
-        <div className={styles.modalHeader}>
-          <div>
-            <h2>{rule ? t("ReverseProxyRuleModal.editTitle") : t("ReverseProxyRuleModal.createTitle")}</h2>
-            <p>{t("ReverseProxyRuleModal.headerDescription")}</p>
-          </div>
-          <button type="button" className={styles.dialogClose} onClick={onClose} aria-label={t("ReverseProxyRuleModal.closeAriaLabel")} data-guide="proxy-rule-close">
-            <MIcon name="close" size={18} />
-          </button>
-        </div>
-
-        {setupContext?.default_dns_target_type && setupContext?.default_dns_target_value && (
-          <div className={styles.noticeInfo}>
-            <p>
-              <strong>{t("ReverseProxyRuleModal.autoHandledLabel")}</strong>
-              {t("ReverseProxyRuleModal.autoHandledBody", {
-                type: setupContext.default_dns_target_type,
-                value: setupContext.default_dns_target_value,
-              })}
-            </p>
-          </div>
-        )}
-
-        <div data-guide="proxy-rule-resource">
-        {fixedResource ? (
-          <div className={styles.field}>
-            <span>{t("ReverseProxyRuleModal.boundVm")}</span>
-            <div className={styles.fixedVm}>
-              <MIcon name="dns" size={16} />
-              {fixedResource.name
-                ? `${fixedResource.name}（VM ${fixedResource.vmid}）`
-                : `VM ${fixedResource.vmid}`}
-            </div>
-          </div>
-        ) : (
-          <label className={styles.field}>
-            <span>{t("ReverseProxyRuleModal.selectYourVm")}</span>
-            <select value={form.vmid} onChange={(e) => set("vmid", e.target.value)}>
-              <option value="">{loadingResources ? t("ReverseProxyRuleModal.loadingVmList") : t("ReverseProxyRuleModal.selectAVm")}</option>
-              {resources.map((r) => (
-                <option key={r.vmid} value={String(r.vmid)}>
-                  {r.name}（VM {r.vmid}）
-                </option>
-              ))}
-            </select>
-            {!loadingResources && resources.length === 0 && (
-              <em className={styles.fieldHint}>{t("ReverseProxyRuleModal.noVmHint")}</em>
-            )}
-          </label>
-        )}
-        </div>
-
-        <div className={styles.fieldRow} data-guide="proxy-rule-domain">
-          <label className={styles.field}>
-            <span>{t("ReverseProxyRuleModal.hostnamePrefixLabel")}</span>
-            <input
-              value={form.hostnamePrefix}
-              onChange={(e) => set("hostnamePrefix", e.target.value)}
-              placeholder={t("ReverseProxyRuleModal.hostnamePrefixPlaceholder")}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>{t("ReverseProxyRuleModal.domainSuffixLabel")}</span>
-            <select value={form.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
-              <option value="">{t("ReverseProxyRuleModal.selectDomainSuffix")}</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>{zone.name}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <label className={styles.field} data-guide="proxy-rule-port">
-          <span>{t("ReverseProxyRuleModal.portLabel")}</span>
-          {!form.useCustomPort ? (
-            <select value={form.port} onChange={(e) => set("port", e.target.value)}>
-              {COMMON_PORTS.map((p) => (
-                <option key={p.value} value={p.value}>{t(p.labelKey)}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="number"
-              min={1}
-              max={65535}
-              value={form.customPort}
-              onChange={(e) => set("customPort", e.target.value)}
-              placeholder={t("ReverseProxyRuleModal.customPortPlaceholder")}
-            />
-          )}
-          <button
-            type="button"
-            className={styles.linkBtn}
-            onClick={() => set("useCustomPort", !form.useCustomPort)}
-          >
-            {form.useCustomPort ? t("ReverseProxyRuleModal.backToCommonPorts") : t("ReverseProxyRuleModal.portNotListed")}
-          </button>
-        </label>
-
-        <label className={styles.checkRow}>
-          <input
-            type="checkbox"
-            checked={form.enableHttps}
-            onChange={(e) => set("enableHttps", e.target.checked)}
-          />
-          <span>{t("ReverseProxyRuleModal.enableHttpsLabel")}</span>
-        </label>
-
-        {previewDomain && form.vmid && (
-          <div className={styles.noticeInfo}>
-            <p>
-              <strong>{t("ReverseProxyRuleModal.previewLabel")}</strong>
-              {t("ReverseProxyRuleModal.previewBody", {
-                scheme: form.enableHttps ? "https" : "http",
-                domain: previewDomain,
-                vmid: form.vmid,
-                port: effectivePort,
-              })}
-            </p>
-          </div>
-        )}
-
-        <div className={styles.modalActions} data-guide="proxy-rule-actions">
+    <Modal
+      as="form"
+      onSubmit={submit}
+      closing={closing}
+      onClose={onClose}
+      busy={loading}
+      closeButton
+      size="md"
+      title={rule ? t("ReverseProxyRuleModal.editTitle") : t("ReverseProxyRuleModal.createTitle")}
+      description={t("ReverseProxyRuleModal.headerDescription")}
+      data-guide="proxy-rule-form"
+      closeProps={{ "data-guide": "proxy-rule-close" }}
+      actionsProps={{ "data-guide": "proxy-rule-actions" }}
+      actions={
+        <>
           <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={loading}>
             {t("ReverseProxyRuleModal.cancel")}
           </button>
           <button type="submit" className={styles.btnPrimary} disabled={loading}>
             {loading ? t("ReverseProxyRuleModal.saving") : rule ? t("ReverseProxyRuleModal.saveChanges") : t("ReverseProxyRuleModal.createUrl")}
           </button>
+        </>
+      }
+    >
+      {setupContext?.default_dns_target_type && setupContext?.default_dns_target_value && (
+        <div className={styles.noticeInfo}>
+          <p>
+            <strong>{t("ReverseProxyRuleModal.autoHandledLabel")}</strong>
+            {t("ReverseProxyRuleModal.autoHandledBody", {
+              type: setupContext.default_dns_target_type,
+              value: setupContext.default_dns_target_value,
+            })}
+          </p>
         </div>
-      </form>
-    </div>
+      )}
+
+      <div data-guide="proxy-rule-resource">
+        <label className={styles.field}>
+          <span>{t("ReverseProxyRuleModal.selectYourVm")}</span>
+          <select value={form.vmid} onChange={(e) => set("vmid", e.target.value)}>
+            <option value="">{loadingResources ? t("ReverseProxyRuleModal.loadingVmList") : t("ReverseProxyRuleModal.selectAVm")}</option>
+            {resources.map((r) => (
+              <option key={r.vmid} value={String(r.vmid)}>
+                {r.name}（VM {r.vmid}）
+              </option>
+            ))}
+          </select>
+          {!loadingResources && resources.length === 0 && (
+            <em className={styles.fieldHint}>{t("ReverseProxyRuleModal.noVmHint")}</em>
+          )}
+        </label>
+      </div>
+
+      <div className={styles.fieldRow} data-guide="proxy-rule-domain">
+        <label className={styles.field}>
+          <span>{t("ReverseProxyRuleModal.hostnamePrefixLabel")}</span>
+          <input
+            value={form.hostnamePrefix}
+            onChange={(e) => set("hostnamePrefix", e.target.value)}
+            placeholder={t("ReverseProxyRuleModal.hostnamePrefixPlaceholder")}
+          />
+        </label>
+        <label className={styles.field}>
+          <span>{t("ReverseProxyRuleModal.domainSuffixLabel")}</span>
+          <select value={form.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
+            <option value="">{t("ReverseProxyRuleModal.selectDomainSuffix")}</option>
+            {zones.map((zone) => (
+              <option key={zone.id} value={zone.id}>{zone.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <label className={styles.field} data-guide="proxy-rule-port">
+        <span>{t("ReverseProxyRuleModal.portLabel")}</span>
+        {!form.useCustomPort ? (
+          <select value={form.port} onChange={(e) => set("port", e.target.value)}>
+            {COMMON_PORTS.map((p) => (
+              <option key={p.value} value={p.value}>{t(p.labelKey)}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="number"
+            min={1}
+            max={65535}
+            value={form.customPort}
+            onChange={(e) => set("customPort", e.target.value)}
+            placeholder={t("ReverseProxyRuleModal.customPortPlaceholder")}
+          />
+        )}
+        <button
+          type="button"
+          className={styles.linkBtn}
+          onClick={() =>
+            /* 編輯非常用埠的規則時 port 起始為空字串；切回常用埠要補上下拉實際顯示的值，
+               否則畫面顯示 80、送出卻是 0 */
+            setForm((prev) => ({
+              ...prev,
+              useCustomPort: !prev.useCustomPort,
+              port: prev.port || COMMON_PORTS[0].value,
+            }))
+          }
+        >
+          {form.useCustomPort ? t("ReverseProxyRuleModal.backToCommonPorts") : t("ReverseProxyRuleModal.portNotListed")}
+        </button>
+      </label>
+
+      <label className={styles.checkRow}>
+        <input
+          type="checkbox"
+          checked={form.enableHttps}
+          onChange={(e) => set("enableHttps", e.target.checked)}
+        />
+        <span>{t("ReverseProxyRuleModal.enableHttpsLabel")}</span>
+      </label>
+
+      {previewDomain && form.vmid && (
+        <div className={styles.noticeInfo}>
+          <p>
+            <strong>{t("ReverseProxyRuleModal.previewLabel")}</strong>
+            {t("ReverseProxyRuleModal.previewBody", {
+              scheme: form.enableHttps ? "https" : "http",
+              domain: previewDomain,
+              vmid: form.vmid,
+              port: effectivePort,
+            })}
+          </p>
+        </div>
+      )}
+    </Modal>
   );
 }

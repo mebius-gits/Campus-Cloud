@@ -1,8 +1,7 @@
 """Public schemas for AI Teacher Judge workflows.
 
 Canonical names use the ``TeacherJudge`` prefix so API contracts are easy to
-trace back to this feature. Legacy ``Rubric*`` aliases are kept at the bottom
-for older import paths and generated-client compatibility during migration.
+trace back to this feature.
 """
 
 from __future__ import annotations
@@ -414,15 +413,15 @@ class TeacherJudgeRubricItem(BaseModel):
             "P1/P2/P3 僅為輸入與顯示別名。"
         ),
     )
+    check_steps: list[TeacherJudgeRubricCheckStep] = Field(
+        default_factory=list,
+        description="本階段只產生計劃書；新 Save/Create 使用 typed collector/assertion，不代表已執行。",
+    )
 
     @field_validator("missing_information", mode="before")
     @classmethod
     def _drop_retired_gaps(cls, value: Any) -> Any:
         return sanitize_rubric_missing_information(value)
-    check_steps: list[TeacherJudgeRubricCheckStep] = Field(
-        default_factory=list,
-        description="本階段只產生計劃書；新 Save/Create 使用 typed collector/assertion，不代表已執行。",
-    )
 
 
 class TeacherJudgeRubricAnalysis(BaseModel):
@@ -717,8 +716,7 @@ class TeacherJudgeScriptRunCreateRequest(BaseModel):
     @field_validator("target_vmids")
     @classmethod
     def validate_target_vmids(cls, value: list[int]) -> list[int]:
-        unique_vmids = list(dict.fromkeys(value))
-        return unique_vmids
+        return list(dict.fromkeys(value))
 
     @model_validator(mode="after")
     def validate_target_selector(self) -> TeacherJudgeScriptRunCreateRequest:

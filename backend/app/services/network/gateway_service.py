@@ -1,13 +1,15 @@
-﻿"""Gateway VM 管理服務."""
+﻿"""Gateway 主機管理服務：SSH 連線、nginx／WireGuard 的狀態、設定檔與版本。"""
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 import shlex
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
-from textwrap import dedent
+from typing import Any
 
 from app.core.config import settings
 from app.core.i18n import t
@@ -26,29 +28,28 @@ from app.schemas.gateway import (
     GatewayServiceVersionsResult,
     GatewayWireGuardOverview,
 )
+from app.services.network.nginx_gateway_service import NGINX_CONF_PATH
 
 logger = logging.getLogger(__name__)
 
+# nginx.conf 是 install.sh 寫好的主設定；SkyLab 自動產生的 http.conf／stream.conf
+# 由它 include 進來，不開放在這裡手動編輯（見 nginx_gateway_service）
 SERVICE_CONFIG_PATHS: dict[str, str] = {
-    "haproxy": "/etc/haproxy/haproxy.cfg",
-    "traefik": "/etc/traefik/traefik.yml",
+    "nginx": NGINX_CONF_PATH,
 }
 SERVICE_SYSTEMD_UNITS: dict[str, str] = {
-    "haproxy": "haproxy",
-    "traefik": "traefik",
+    "nginx": "nginx",
     "wireguard": f"wg-quick@{settings.WIREGUARD_INTERFACE}",
 }
 
-TRAEFIK_DYNAMIC_PATH = "/etc/traefik/dynamic/SkyLab.yml"
-TRAEFIK_ENV_PATH = "/etc/traefik/env/SkyLab.env"
-TRAEFIK_SYSTEMD_PATH = "/etc/systemd/system/traefik.service"
 _GENERIC_VERSION_PATTERN = re.compile(r"([0-9]+(?:\.[0-9]+)+(?:[-+~][^\s]+)?)")
-_HAPROXY_VERSION_PATTERN = re.compile(r"HAProxy version\s+([^\s]+)", re.IGNORECASE)
-_TRAEFIK_VERSION_PATTERN = re.compile(r"^Version:\s*([^\s]+)", re.MULTILINE)
 _SERVICE_VERSION_COMMANDS: dict[str, str] = {
-    "haproxy": "haproxy -v 2>/dev/null | head -1",
-    "traefik": "/usr/local/bin/traefik version 2>/dev/null",
+    "nginx": "nginx -v 2>&1",
     "wireguard": "wg --version 2>&1 | head -1",
+}
+# 走 apt 安裝的服務，拿 apt 的 candidate 版本當更新目標
+_APT_PACKAGES: dict[str, str] = {
+    "nginx": "nginx",
 }
 
 
@@ -69,7 +70,7 @@ def reset_host_key(session: object) -> str:
     Gateway VM 重灌或更換機器後 host key 會改變，導致 TOFU 釘選拒絕連線；
     管理員確認變更為預期後呼叫此函式，下次連線會重新記錄新的 host key。
     """
-    from app.repositories import gateway_config as gw_repo  # noqa: PLC0415
+    from app.repositories import gateway_config as gw_repo
 
     config = gw_repo.get_gateway_config(session)  # type: ignore[arg-type]
     if config is None or not config.host:
@@ -100,8 +101,8 @@ def exec_checked(client, command: str, error_message: str) -> str:
     return out
 
 
-def _get_config(session: object) -> object:
-    from app.repositories import gateway_config as gw_repo  # noqa: PLC0415
+def _get_config(session: object) -> Any:
+    from app.repositories import gateway_config as gw_repo
 
     config = gw_repo.get_gateway_config(session)  # type: ignore[arg-type]
     if config is None or not config.host or not config.encrypted_private_key:
@@ -109,113 +110,30 @@ def _get_config(session: object) -> object:
     return config
 
 
-def _get_traefik_acme_email() -> str:
-        return str(settings.EMAILS_FROM_EMAIL or settings.FIRST_SUPERUSER)
+def _get_credentials(session: object) -> tuple[Any, str]:
+    """回傳 (Gateway 設定, 解密後的 SSH 私鑰)；未設定時 raise BadRequestError。"""
+    from app.repositories.gateway_config import get_decrypted_private_key
+
+    config = _get_config(session)
+    return config, get_decrypted_private_key(config)
 
 
-def build_traefik_static_config(*, acme_email: str) -> str:
-        clean_email = acme_email.strip()
-        if not clean_email:
-                raise BadRequestError(t("gateway.traefikAcmeEmailRequired"))
-
-        return dedent(
-                f"""\
-                # Traefik 靜態設定
-                # 此檔案由 SkyLab 自動維護，請勿手動修改
-
-                entryPoints:
-                    web:
-                        address: ":80"
-                        http:
-                            redirections:
-                                entryPoint:
-                                    to: websecure
-                                    scheme: https
-                    websecure:
-                        address: ":443"
-                    traefik:
-                        address: "127.0.0.1:8080"
-
-                api:
-                    dashboard: true
-                    insecure: true
-
-                providers:
-                    file:
-                        directory: /etc/traefik/dynamic
-                        watch: true
-
-                certificatesResolvers:
-                    letsencrypt:
-                        acme:
-                            email: "{clean_email}"
-                            storage: /etc/traefik/acme.json
-                            dnsChallenge:
-                                provider: cloudflare
-                                resolvers:
-                                    - "1.1.1.1:53"
-                                    - "8.8.8.8:53"
-
-                log:
-                    level: INFO
-
-                accessLog: {{}}
-                """
-        )
+@contextmanager
+def _ssh_client(config: Any, private_key_pem: str) -> Iterator[Any]:
+    """用已驗證的設定開 SSH 連線，離開時一定關閉（連線失敗的例外原樣拋出）。"""
+    client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
+    try:
+        yield client
+    finally:
+        client.close()
 
 
-def build_traefik_env_file(cloudflare_api_token: str) -> str:
-        clean_token = cloudflare_api_token.strip()
-        if not clean_token or "\n" in clean_token or "\r" in clean_token:
-                raise BadRequestError(t("gateway.cloudflareApiTokenInvalidFormat"))
-
-        escaped_token = (
-                clean_token.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("$", "\\$")
-        )
-        return dedent(
-                f"""\
-                # SkyLab 自動管理，供 Traefik dnsChallenge 使用
-                CF_DNS_API_TOKEN="{escaped_token}"
-                """
-        )
-
-
-def build_traefik_systemd_unit() -> str:
-        return dedent(
-                f"""\
-                [Unit]
-                Description=Traefik Reverse Proxy
-                Documentation=https://doc.traefik.io/traefik/
-                After=network-online.target
-                Wants=network-online.target
-
-                [Service]
-                Type=simple
-                User=root
-                EnvironmentFile=-{TRAEFIK_ENV_PATH}
-                ExecStart=/usr/local/bin/traefik --configFile=/etc/traefik/traefik.yml
-                Restart=always
-                RestartSec=5
-                LimitNOFILE=1048576
-
-                [Install]
-                WantedBy=multi-user.target
-                """
-        )
-
-
-def _write_remote_file(client, path: str, content: str) -> None:
-        tmp_path = path + ".tmp"
-        sftp = client.open_sftp()
-        try:
-                with sftp.open(tmp_path, "wb") as handle:
-                        handle.write(content.encode("utf-8"))
-        finally:
-                sftp.close()
-
-        exec_checked(client, f"mv {tmp_path} {path}", t("gateway.writeRemoteFileFailed", path=path))
+@contextmanager
+def gateway_client(session: object) -> Iterator[Any]:
+    """讀 Gateway 設定、解密金鑰並開 SSH 連線；未設定時 raise BadRequestError。"""
+    config, private_key_pem = _get_credentials(session)
+    with _ssh_client(config, private_key_pem) as client:
+        yield client
 
 
 def test_connection(
@@ -229,135 +147,65 @@ def test_connection(
         client = make_client(host, ssh_port, ssh_user, private_key_pem)
         _, out, _ = _exec(client, "echo ok")
         if out.strip() == "ok":
-            return True, "連線成功"
-        return False, f"指令回應異常：{out}"
+            return True, t("gateway.connectionOk")
+        return False, t("gateway.unexpectedEchoResponse", output=out)
     except SSHAuthenticationError:
-        return False, "SSH 認證失敗，請確認公鑰已加入 Gateway VM 的 authorized_keys"
+        return False, t("gateway.sshAuthFailed")
     except Exception as exc:
-        return False, f"連線失敗：{exc}"
+        return False, t("gateway.connectionFailed", error=exc)
     finally:
         if client is not None:
             client.close()
 
 
 def read_service_config(session: object, service: str) -> str:
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
 
     path = SERVICE_CONFIG_PATHS.get(service)
     if path is None:
         raise BadRequestError(t("gateway.unknownService", service=service))
 
-    client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-    try:
-        sftp = client.open_sftp()
+    with _ssh_client(config, private_key_pem) as client:
         try:
+            sftp = client.open_sftp()
             try:
-                with sftp.open(path, "r") as handle:
-                    return handle.read().decode()
-            except FileNotFoundError:
-                return ""
-        finally:
-            sftp.close()
-    except Exception as exc:
-        raise ProxmoxError(t("gateway.readServiceConfigFailed", service=service, error=exc))
-    finally:
-        client.close()
+                try:
+                    with sftp.open(path, "r") as handle:
+                        return handle.read().decode()
+                except FileNotFoundError:
+                    return ""
+            finally:
+                sftp.close()
+        except Exception as exc:
+            raise ProxmoxError(
+                t("gateway.readServiceConfigFailed", service=service, error=exc)
+            )
 
 
 def write_service_config(session: object, service: str, content: str) -> None:
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
 
     path = SERVICE_CONFIG_PATHS.get(service)
     if path is None:
         raise BadRequestError(t("gateway.unknownService", service=service))
 
-    client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-    try:
-        _write_remote_file(client, path, content)
-    except ProxmoxError:
-        raise
-    except Exception as exc:
-        raise ProxmoxError(t("gateway.writeServiceConfigFailed", service=service, error=exc))
-    finally:
-        client.close()
+    from app.services.network import nginx_gateway_service as nginx
 
-
-def sync_traefik_dns_challenge(session: object) -> None:
-    from app.repositories import cloudflare_config as cf_repo  # noqa: PLC0415
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    gateway_config = _get_config(session)
-    cloudflare_config = cf_repo.get_cloudflare_config(session)  # type: ignore[arg-type]
-    if cloudflare_config is None or not cloudflare_config.encrypted_api_token:
-        raise BadRequestError(t("gateway.cloudflareApiTokenNotConfigured"))
-
-    private_key_pem = get_decrypted_private_key(gateway_config)  # type: ignore[arg-type]
-    client = make_client(
-        gateway_config.host,
-        gateway_config.ssh_port,
-        gateway_config.ssh_user,
-        private_key_pem,
-    )
-
-    try:
-        exec_checked(
-            client,
-            "mkdir -p /etc/traefik/dynamic /etc/traefik/env && "
-            "touch /etc/traefik/acme.json && chmod 600 /etc/traefik/acme.json",
-            t("gateway.initTraefikDirFailed"),
-        )
-
-        _write_remote_file(
-            client,
-            TRAEFIK_ENV_PATH,
-            build_traefik_env_file(
-                cf_repo.get_decrypted_api_token(cloudflare_config)
-            ),
-        )
-        _write_remote_file(
-            client,
-            SERVICE_CONFIG_PATHS["traefik"],
-            build_traefik_static_config(acme_email=_get_traefik_acme_email()),
-        )
-        _write_remote_file(client, TRAEFIK_SYSTEMD_PATH, build_traefik_systemd_unit())
-
-        exec_checked(
-            client,
-            f"chmod 600 {TRAEFIK_ENV_PATH}",
-            t("gateway.setTraefikEnvPermissionFailed"),
-        )
-        exec_checked(
-            client,
-            "systemctl daemon-reload && systemctl restart traefik",
-            t("gateway.restartTraefikFailed"),
-        )
-    except ProxmoxError:
-        raise
-    except Exception as exc:
-        raise ProxmoxError(t("gateway.applyTraefikDnsChallengeFailed", error=exc))
-    finally:
-        client.close()
+    with _ssh_client(config, private_key_pem) as client:
+        try:
+            # 管理員手動改 nginx.conf 也要先過 nginx -t，壞設定會被還原；
+            # 不自動 reload，讓管理員決定何時套用
+            nginx.write_validated_config(client, path, content, reload=False)
+        except ProxmoxError:
+            raise
+        except Exception as exc:
+            raise ProxmoxError(
+                t("gateway.writeServiceConfigFailed", service=service, error=exc)
+            )
 
 
 def control_service(session: object, service: str, action: str) -> tuple[bool, str]:
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
 
     valid_actions = {"start", "stop", "restart", "reload"}
     if action not in valid_actions:
@@ -365,75 +213,57 @@ def control_service(session: object, service: str, action: str) -> tuple[bool, s
 
     unit = _systemd_unit(service)
 
-    client = None
+    # 連不上 Gateway 或指令出錯都回 (False, 訊息)，不往外拋
     try:
-        client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-        if action == "restart":
-            # Some services hang on restart; do stop+start with a kill fallback
-            _exec(client, f"systemctl stop {unit} 2>&1; sleep 1; "
-                          f"systemctl kill -s SIGKILL {unit} 2>/dev/null; "
-                          f"systemctl start {unit} 2>&1")
-            code, out, err = _exec(client, f"systemctl is-active {unit} 2>&1")
-            if out.strip() == "active":
-                return True, f"{service} restart 完成"
-            return False, f"{service} restart 後狀態: {out.strip()}"
-        else:
+        with _ssh_client(config, private_key_pem) as client:
+            if action == "restart":
+                # Some services hang on restart; do stop+start with a kill fallback
+                _exec(client, f"systemctl stop {unit} 2>&1; sleep 1; "
+                              f"systemctl kill -s SIGKILL {unit} 2>/dev/null; "
+                              f"systemctl start {unit} 2>&1")
+                code, out, err = _exec(client, f"systemctl is-active {unit} 2>&1")
+                if out.strip() == "active":
+                    return True, t("gateway.serviceRestartDone", service=service)
+                return False, t(
+                    "gateway.serviceRestartState", service=service, state=out.strip()
+                )
             code, out, err = _exec(client, f"systemctl {action} {unit} 2>&1")
             output = (out + err).strip()
-            return code == 0, output or f"{service} {action} 完成"
+            return code == 0, output or t(
+                "gateway.serviceActionDone", service=service, action=action
+            )
     except Exception as exc:
         return False, str(exc)
-    finally:
-        if client is not None:
-            client.close()
 
 
 def get_service_logs(session: object, service: str, lines: int = 50) -> tuple[bool, str]:
     """Read recent journalctl logs for a service on the Gateway VM."""
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
 
     unit = _systemd_unit(service)
 
-    client = None
-    try:
-        client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
+    with _ssh_client(config, private_key_pem) as client:
         _, out, err = _exec(client, f"journalctl -u {unit} --no-pager -n {lines} 2>&1")
         return True, (out + err).strip()
-    finally:
-        if client is not None:
-            client.close()
 
 
 def get_service_status(session: object, service: str) -> tuple[bool, str]:
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
 
     unit = _systemd_unit(service)
 
-    client = None
+    # 連不上 Gateway 時回 (False, 訊息)，不往外拋
     try:
-        client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-        code, _, _ = _exec(client, f"systemctl is-active {unit}")
-        _, status_out, _ = _exec(
-            client,
-            f"systemctl show {unit} --no-page "
-            f"-p ActiveState,SubState,MainPID 2>&1 | head -5",
-        )
-        return code == 0, status_out.strip()
+        with _ssh_client(config, private_key_pem) as client:
+            code, _, _ = _exec(client, f"systemctl is-active {unit}")
+            _, status_out, _ = _exec(
+                client,
+                f"systemctl show {unit} --no-page "
+                f"-p ActiveState,SubState,MainPID 2>&1 | head -5",
+            )
+            return code == 0, status_out.strip()
     except Exception as exc:
         return False, str(exc)
-    finally:
-        if client is not None:
-            client.close()
 
 
 def _parse_wireguard_dump(
@@ -486,16 +316,31 @@ def _parse_wireguard_dump(
     }
 
 
-def get_wireguard_overview(session: object) -> GatewayWireGuardOverview:
-    """Return a secret-free WireGuard control-plane and runtime summary."""
-    from app.repositories import wireguard_peer as peer_repo  # noqa: PLC0415
-    from app.repositories.gateway_config import (  # noqa: PLC0415
-        get_decrypted_private_key,
+def wireguard_endpoint_host(config: object | None) -> str:
+    """WireGuard 用戶端要連的主機：``WIREGUARD_ENDPOINT_HOST`` 優先，否則用 Gateway 位址。
+
+    兩者都沒有時回空字串，由呼叫端決定要不要報錯。
+    """
+    return settings.WIREGUARD_ENDPOINT_HOST.strip() or (
+        getattr(config, "host", None) or ""
     )
 
+
+def format_endpoint(host: str, port: int) -> str:
+    """``host:port``；IPv6 位址加中括號（WireGuard Endpoint 的寫法）。"""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return f"{host}:{port}"
+    return f"[{address}]:{port}" if address.version == 6 else f"{address}:{port}"
+
+
+def get_wireguard_overview(session: object) -> GatewayWireGuardOverview:
+    """Return a secret-free WireGuard control-plane and runtime summary."""
+    from app.repositories import wireguard_peer as peer_repo
+
     now = datetime.now(timezone.utc)
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
+    config, private_key_pem = _get_credentials(session)
     interface = settings.WIREGUARD_INTERFACE
     unit = _systemd_unit("wireguard")
     active_sessions = peer_repo.list_active_unexpired(  # type: ignore[arg-type]
@@ -506,30 +351,23 @@ def get_wireguard_overview(session: object) -> GatewayWireGuardOverview:
     )
 
     metrics = _parse_wireguard_dump("")
-    client = None
     try:
-        client = make_client(
-            config.host, config.ssh_port, config.ssh_user, private_key_pem
-        )
-        code, out, _err = _exec(
-            client, f"wg show {shlex.quote(interface)} dump 2>/dev/null"
-        )
-        if code == 0:
-            metrics = _parse_wireguard_dump(out)
+        with _ssh_client(config, private_key_pem) as client:
+            code, out, _err = _exec(
+                client, f"wg show {shlex.quote(interface)} dump 2>/dev/null"
+            )
+            if code == 0:
+                metrics = _parse_wireguard_dump(out)
     except Exception as exc:
         logger.warning("Unable to inspect WireGuard runtime on Gateway VM: %s", exc)
-    finally:
-        if client is not None:
-            client.close()
 
-    endpoint_host = settings.WIREGUARD_ENDPOINT_HOST.strip() or config.host
-    if ":" in endpoint_host and not endpoint_host.startswith("["):
-        endpoint_host = f"[{endpoint_host}]"
     return GatewayWireGuardOverview(
         mode="wireguard",
         interface=interface,
         systemd_unit=unit,
-        endpoint=f"{endpoint_host}:{settings.WIREGUARD_ENDPOINT_PORT}",
+        endpoint=format_endpoint(
+            wireguard_endpoint_host(config), settings.WIREGUARD_ENDPOINT_PORT
+        ),
         client_subnet=settings.WIREGUARD_CLIENT_SUBNET,
         vm_subnet=settings.WIREGUARD_VM_SUBNET,
         session_ttl_seconds=settings.WIREGUARD_SESSION_TTL_SECONDS,
@@ -550,75 +388,51 @@ def _normalize_version(value: str | None) -> str | None:
     return normalized or None
 
 
-def _extract_current_version(service: str, version_output: str) -> str | None:
+def _extract_current_version(version_output: str) -> str | None:
+    # nginx -v 印「nginx version: nginx/1.26.3」、wg 印「wireguard-tools v1.0.20210914 ...」，
+    # 都抓第一組點分版本號就夠
     output = version_output.strip()
     if not output:
         return None
 
-    if service == "haproxy":
-        match = _HAPROXY_VERSION_PATTERN.search(output)
-        return _normalize_version(match.group(1)) if match else None
-
-    if service == "traefik":
-        match = _TRAEFIK_VERSION_PATTERN.search(output)
-        if match:
-            return _normalize_version(match.group(1))
-
     match = _GENERIC_VERSION_PATTERN.search(output)
     return _normalize_version(match.group(1)) if match else None
-
-
-def _load_install_script_targets() -> dict[str, str]:
-    script_path = Path(__file__).resolve().parents[4] / "gateway" / "install.sh"
-    try:
-        content = script_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        logger.warning("無法讀取 Gateway 安裝腳本版本資訊: %s", exc)
-        return {}
-
-    targets: dict[str, str] = {}
-    traefik_match = re.search(r'^TRAEFIK_VERSION="([^"]+)"', content, re.MULTILINE)
-    if traefik_match:
-        targets["traefik"] = traefik_match.group(1)
-    return targets
 
 
 def _build_service_version_info(
     *,
     service: str,
     version_output: str,
-    install_targets: dict[str, str],
     candidate_version: str | None,
 ) -> GatewayServiceVersionInfo:
-    current_version = _extract_current_version(service, version_output)
-    target_version = install_targets.get(service)
-    source = "SkyLab install script"
+    # 兩者都已經過 _normalize_version，不必再正規化一次
+    current_version = _extract_current_version(version_output)
 
-    if service == "haproxy":
+    if service in _APT_PACKAGES:
         target_version = _normalize_version(candidate_version)
         source = "apt candidate"
-    elif target_version is None:
+    else:
+        target_version = None
         source = "detected only"
 
-    normalized_current = _normalize_version(current_version)
-    normalized_target = _normalize_version(target_version)
     update_available = None
-    if normalized_current and normalized_target:
-        update_available = normalized_current != normalized_target
+    if current_version and target_version:
+        update_available = current_version != target_version
 
     return GatewayServiceVersionInfo(
         service=service,
-        current_version=normalized_current,
-        target_version=normalized_target,
+        current_version=current_version,
+        target_version=target_version,
         update_available=update_available,
         source=source,
     )
 
 
-def _get_haproxy_candidate_version(client) -> str | None:
+def _get_apt_candidate_version(client, package: str) -> str | None:
     code, out, err = _exec(
         client,
-        "apt-cache policy haproxy 2>/dev/null | sed -n 's/^  Candidate: //p' | head -1",
+        f"apt-cache policy {shlex.quote(package)} 2>/dev/null "
+        "| sed -n 's/^  Candidate: //p' | head -1",
     )
     if code != 0:
         return None
@@ -629,34 +443,26 @@ def _get_haproxy_candidate_version(client) -> str | None:
 
 
 def get_service_versions(session: object) -> GatewayServiceVersionsResult:
-    from app.repositories.gateway_config import (
-        get_decrypted_private_key,  # noqa: PLC0415
-    )
-
-    config = _get_config(session)
-    private_key_pem = get_decrypted_private_key(config)  # type: ignore[arg-type]
-    install_targets = _load_install_script_targets()
-
-    client = make_client(config.host, config.ssh_port, config.ssh_user, private_key_pem)
-    try:
-        haproxy_candidate_version = _get_haproxy_candidate_version(client)
+    with gateway_client(session) as client:
         items: list[GatewayServiceVersionInfo] = []
         for service, command in _SERVICE_VERSION_COMMANDS.items():
             code, out, err = _exec(client, command)
             version_output = (out or err).strip() or (out + err).strip()
+            package = _APT_PACKAGES.get(service)
             info = _build_service_version_info(
                 service=service,
                 version_output=version_output,
-                install_targets=install_targets,
-                candidate_version=haproxy_candidate_version if service == "haproxy" else None,
+                candidate_version=(
+                    _get_apt_candidate_version(client, package) if package else None
+                ),
             )
             if code != 0 and info.current_version is None:
-                info.detection_error = version_output or f"無法取得 {service} 版本"
+                info.detection_error = version_output or t(
+                    "gateway.versionUnavailable", service=service
+                )
             items.append(info)
 
         return GatewayServiceVersionsResult(
             items=items,
             checked_at=datetime.now(timezone.utc),
         )
-    finally:
-        client.close()

@@ -18,17 +18,15 @@ DB ``SELECT FOR UPDATE SKIP LOCKED``（coordinator 既有）→
 from __future__ import annotations
 
 import asyncio
-import logging
 import uuid
 from typing import Any
 
 from arq.worker import Retry
 from sqlmodel import Session
 
+from app.domain.resource_markers import RESOURCE_DELETED_MARKERS
 from app.infrastructure.queue import enqueue_task_sync
 from app.models import TaskRecord, VMProvisioningStatus
-
-logger = logging.getLogger(__name__)
 
 TASK_PROVISION = "vm_request.provision"
 DEFAULT_PROVISION_CONCURRENCY = 2
@@ -87,7 +85,7 @@ def submit_provision(
 
 async def _execute_provision(request_id: uuid.UUID) -> bool:
     from app.services.scheduling import (
-        coordinator,  # noqa: PLC0415 — 避免 import cycle
+        coordinator,
     )
 
     return await asyncio.to_thread(coordinator.process_single_request_start, request_id)
@@ -95,17 +93,22 @@ async def _execute_provision(request_id: uuid.UUID) -> bool:
 
 def _provisioning_failure(request_id: uuid.UUID) -> str | None:
     """provision 後申請單若停在 failed，回傳錯誤訊息讓 TaskRecord 也標 failed。"""
-    from app.core.db import engine  # noqa: PLC0415 — 避免 import cycle
-    from app.repositories import vm_request as vm_request_repo  # noqa: PLC0415
+    from app.core.db import engine
+    from app.repositories import vm_request as vm_request_repo
 
     with Session(engine) as session:
         request = vm_request_repo.get_vm_request_by_id(
             session=session, request_id=request_id
         )
+        # 已有 vmid 的 failed 是「重試開機又失敗」（見 vm_request_service.retry）；
+        # 使用者刪機標成已消耗的 failed 不算，那不是這次任務的失敗
         if (
             request is not None
-            and request.vmid is None
             and request.provisioning_status == VMProvisioningStatus.failed
+            and (
+                request.vmid is None
+                or request.resource_warning not in RESOURCE_DELETED_MARKERS
+            )
         ):
             return request.provisioning_error or "provisioning failed"
     return None

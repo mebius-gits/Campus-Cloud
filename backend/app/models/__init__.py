@@ -13,9 +13,7 @@ from .ai_api_credential import (
     AIAPICredential,
 )
 from .ai_api_request import AIAPIRequest, AIAPIRequestStatus
-from .ai_api_usage import AIAPIUsage
-from .ai_pve_template import AIPVETemplate
-from .ai_template_call_log import AITemplateCallLog
+from .ai_api_usage import USAGE_SOURCE_API_KEY, USAGE_SOURCE_PLATFORM, AIAPIUsage
 from .alert_event import AlertEvent, AlertMetric, AlertScope
 from .audit_log import AuditAction, AuditLog
 from .base import get_datetime_utc
@@ -39,7 +37,6 @@ from .course import (
 from .course_environment import (
     ClassCapacityReservation,
     CourseEnvironment,
-    CourseEnvironmentAudience,
     CourseEnvironmentEdge,
     CourseEnvironmentFile,
     CourseEnvironmentNode,
@@ -73,6 +70,7 @@ from .spec_change_request import (
     SpecChangeType,
 )
 from .subnet_config import SubnetConfig
+from .system_setup import SystemSetup
 from .task_record import TaskRecord, TaskRecordStatus
 from .teacher_judge_attachment import (
     TeacherJudgeAttachmentStatus,
@@ -100,6 +98,7 @@ from .teacher_judge_session import (
 from .teacher_judge_student_submission import TeacherJudgeStudentSubmission
 from .teacher_judge_template_command import TeacherJudgeTemplateCommand
 from .teaching_class import (
+    INSTRUCTOR_ENROLLMENT_STATUS,
     TeachingClass,
     TeachingClassMachineNode,
     TeachingClassStatus,
@@ -133,8 +132,8 @@ __all__ = [
     "AIAPIRequest",
     "AIAPIRequestStatus",
     "AIAPIUsage",
-    "AIPVETemplate",
-    "AITemplateCallLog",
+    "USAGE_SOURCE_API_KEY",
+    "USAGE_SOURCE_PLATFORM",
     # Resource
     "Resource",
     "ResourceNetwork",
@@ -157,6 +156,8 @@ __all__ = [
     "MiningIncidentStatus",
     # LDAP
     "LdapConfig",
+    # 初始化精靈
+    "SystemSetup",
     # Web Push
     "PushSubscription",
     "WebPushConfig",
@@ -180,7 +181,6 @@ __all__ = [
     # Cloudflare Config
     "CloudflareConfig",
     "CourseEnvironment",
-    "CourseEnvironmentAudience",
     "CourseEnvironmentEdge",
     "CourseEnvironmentFile",
     "CourseEnvironmentPublication",
@@ -229,6 +229,7 @@ __all__ = [
     # Task Record (背景任務)
     "TaskRecord",
     "TaskRecordStatus",
+    "INSTRUCTOR_ENROLLMENT_STATUS",
     "TeachingClass",
     "TeachingClassStatus",
     "TeachingClassMachineNode",

@@ -1,10 +1,12 @@
-"""LDAP/AD 登入業務邏輯：目錄驗證 → 本地帳號對應/建立 → JWT。"""
+"""LDAP/AD 登入業務邏輯：目錄驗證 → 本地帳號對應/建立 → JWT。
+
+也負責管理員端的 LDAP 連線設定更新與 service bind 測試。
+"""
 
 from __future__ import annotations
 
 import logging
 import secrets
-from datetime import timedelta
 from typing import Any
 
 from sqlmodel import Session
@@ -14,27 +16,94 @@ from app.core.config import settings
 from app.core.i18n import t
 from app.exceptions import AppError, AuthenticationError, BadRequestError
 from app.infrastructure import ldap as ldap_client
-from app.models import AuditAction, User, UserRole
+from app.models import AuditAction, LdapConfig, User, UserRole
 from app.repositories import user as user_repo
-from app.repositories.ldap_config import get_ldap_config
-from app.schemas import Token, UserUpdate
-from app.services.user import audit_service
+from app.repositories.ldap_config import get_ldap_config, update_ldap_config
+from app.schemas import Token, TotpChallenge, UserUpdate
+from app.schemas.ldap import LdapConfigUpdate, LdapTestResult
+from app.services.user import audit_service, totp_service
+from app.services.user.tokens import create_token_pair
 
 logger = logging.getLogger(__name__)
 
 
-def _create_token_pair(user: User) -> Token:
-    access_token = security.create_access_token(
-        user.id,
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-        token_version=user.token_version,
+# ── 管理員：LDAP 連線設定 ──────────────────────────────────────────────────
+
+
+def _update_data(config_in: LdapConfigUpdate) -> dict[str, object]:
+    data = config_in.model_dump(exclude_unset=True, exclude={"bind_password"})
+    if config_in.bind_password:
+        data["encrypted_bind_password"] = security.encrypt_value(
+            config_in.bind_password
+        )
+    return data
+
+
+def _reuses_stored_secret_elsewhere(
+    config: LdapConfig, config_in: LdapConfigUpdate
+) -> bool:
+    """改了連線目標（server_uri／bind_dn）卻沒重新輸入 bind 密碼。
+
+    這時若沿用已存的密碼，後端會把解密後的 service 帳號密碼拿去對新的
+    （可能是呼叫者自己架的、未加密的 ldap://）伺服器做 simple bind，等於把
+    GET 端點刻意不回傳的密碼送出去；因此一律要求重新輸入。
+    """
+    if config_in.bind_password or not config.encrypted_bind_password:
+        return False
+    for field in ("server_uri", "bind_dn"):
+        new_value = getattr(config_in, field)
+        if new_value is None:
+            continue
+        if new_value.strip() != (getattr(config, field) or "").strip():
+            return True
+    return False
+
+
+def update_config(
+    session: Session, config_in: LdapConfigUpdate, actor: User
+) -> LdapConfig:
+    """更新 LDAP 設定並寫稽核；改了連線目標卻沒給新密碼時拒絕（400）。"""
+    current = get_ldap_config(session=session)
+    if _reuses_stored_secret_elsewhere(current, config_in):
+        raise BadRequestError(t("ldap.bindPasswordRequiredForNewTarget"))
+    config = update_ldap_config(session=session, data=_update_data(config_in))
+    audit_service.log_action(
+        session=session,
+        user_id=actor.id,
+        action=AuditAction.config_update,
+        details="Updated LDAP config",
     )
-    refresh_token = security.create_refresh_token(
-        user.id,
-        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-        token_version=user.token_version,
-    )
-    return Token(access_token=access_token, refresh_token=refresh_token)
+    return config
+
+
+def test_config(
+    session: Session, config_in: LdapConfigUpdate | None = None
+) -> LdapTestResult:
+    """測試 service bind。可帶欄位覆寫（不落 DB）測試尚未儲存的設定。"""
+    config = get_ldap_config(session=session)
+    if config_in is not None:
+        if _reuses_stored_secret_elsewhere(config, config_in):
+            return LdapTestResult(
+                ok=False, message=t("ldap.bindPasswordRequiredForNewTarget")
+            )
+        # 覆寫測試用複本（不加入 session、不落 DB）
+        test_target = LdapConfig(**config.model_dump())
+        for key, value in _update_data(config_in).items():
+            if hasattr(test_target, key):
+                setattr(test_target, key, value)
+        config = test_target
+    try:
+        ldap_client.test_bind(config)
+    except AppError as exc:
+        return LdapTestResult(ok=False, message=exc.message)
+    return LdapTestResult(ok=True, message="LDAP service bind 成功")
+
+
+# pytest 會把模組層級的 test_* 函式當成測試收集；這支是業務函式，不是測試
+test_config.__test__ = False  # type: ignore[attr-defined]
+
+
+# ── 登入 ─────────────────────────────────────────────────────────────────
 
 
 def _role_from_groups(
@@ -58,11 +127,13 @@ def _sync_role_from_directory(
     """既有 LDAP 帳號每次登入都依目錄群組重算角色。
 
     目錄端把老師移出群組後，本地角色若不跟著降回學生，權限就會永遠留著。
-    只處理 ``auth_source == "ldap"`` 的帳號；``user_repo.update_user`` 會把
-    ``is_superuser=True`` 的帳號拉回 admin，所以手動指定的超級使用者不會被
-    目錄群組降級。
+    只處理 ``auth_source == "ldap"`` 的帳號。有設定 admin 群組時角色完全以目錄
+    為準（移出 admin 群組就降級，撤權才會生效）；沒設定 admin 群組時目錄無法
+    表達「管理員」，已是 admin 的帳號（手動指定）不動。
     """
     if user.auth_source != "ldap":
+        return
+    if user.role == UserRole.admin and not config.admin_group_dn:
         return
     new_role = _role_from_groups(
         info.groups,
@@ -77,22 +148,33 @@ def _sync_role_from_directory(
     )
     session.commit()
     session.refresh(user)
-    if user.role == previous_role:
-        logger.info(
-            "LDAP role sync kept %s as %s (superuser override)",
-            user.email,
-            previous_role.value,
-        )
-    else:
-        logger.info(
-            "LDAP role sync updated %s: %s -> %s",
-            user.email,
-            previous_role.value,
-            user.role.value,
-        )
+    logger.info(
+        "LDAP role sync updated %s: %s -> %s",
+        user.email,
+        previous_role.value,
+        user.role.value,
+    )
 
 
-def login_ldap(*, session: Session, username: str, password: str) -> Token:
+def _looks_like_email(value: str) -> bool:
+    """最低限度的信箱形狀檢查。
+
+    刻意不用 email_validator／EmailStr：它們會拒絕 AD 常見的 ``*.local`` 網域。
+    """
+    local, sep, domain = value.partition("@")
+    return (
+        bool(sep)
+        and bool(local)
+        and bool(domain)
+        and "@" not in domain
+        and len(value) <= 255
+        and not any(c.isspace() for c in value)
+    )
+
+
+def login_ldap(
+    *, session: Session, username: str, password: str
+) -> Token | TotpChallenge:
     config = get_ldap_config(session=session)
     if not config.enabled:
         raise BadRequestError(t("ldapAuth.notEnabled"))
@@ -113,6 +195,11 @@ def login_ldap(*, session: Session, username: str, password: str) -> Token:
     except AppError:
         _fail("server error")
         raise
+
+    if not _looks_like_email(info.email):
+        # 信箱屬性設錯（例如對到 sAMAccountName）時不建立／比對任何本地帳號
+        _fail(f"invalid email attribute {info.email!r}")
+        raise BadRequestError(t("ldapAuth.invalidEmailAttribute"))
 
     user = user_repo.get_user_by_email(session=session, email=info.email)
     if user is None:
@@ -157,13 +244,17 @@ def login_ldap(*, session: Session, username: str, password: str) -> Token:
     # 確定登入會成功才重算角色：被停用的帳號沒必要留下角色異動。
     _sync_role_from_directory(session=session, user=user, config=config, info=info)
 
+    # 已綁定兩步驟驗證：目錄密碼只算第一階段
+    if user.totp_enabled:
+        return totp_service.issue_challenge(user, method="ldap")
+
     audit_service.log_action(
         session=session,
         user_id=user.id,
         action=AuditAction.login_ldap_success,
         details=f"User {user.email} logged in via LDAP ({info.dn})",
     )
-    return _create_token_pair(user)
+    return create_token_pair(user)
 
 
 def get_login_methods(*, session: Session) -> dict[str, bool]:

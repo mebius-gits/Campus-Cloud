@@ -41,7 +41,7 @@ def db():
 
 @pytest.fixture(autouse=True)
 def _task_file_root(monkeypatch, tmp_path):
-    monkeypatch.setattr(routes, "TASK_FILE_ROOT", tmp_path)
+    monkeypatch.setattr(routes.weekly_task_service, "TASK_FILE_ROOT", tmp_path)
     monkeypatch.setattr(routes, "_serialize", lambda _session, item: {"id": str(item.id)})
     return tmp_path
 
@@ -150,3 +150,48 @@ def test_client_cannot_choose_the_storage_key():
         {"id": str(uuid.uuid4()), "storage_key": "../../.env", "filename": "x.pdf"}
     )
     assert not hasattr(file_in, "storage_key")
+
+
+def test_week_target_must_be_a_machine_of_the_class(db: Session) -> None:
+    from app.models import TeachingClassMachineNode
+
+    TeachingClassMachineNode.__table__.create(db.get_bind())  # type: ignore[attr-defined]
+    item = _class(db)
+    _week(db, item, 1, date(2026, 9, 1))
+    db.add(
+        TeachingClassMachineNode(
+            class_id=item.id,
+            node_key="web",
+            source_type="custom",
+            custom_image_ref="local:vztmpl/debian.tar.zst",
+            name="web",
+            role="web",
+            resource_type="lxc",
+            cpu=1,
+            memory_mb=512,
+            disk_gb=8,
+        )
+    )
+    db.commit()
+
+    with pytest.raises(BadRequestError):
+        routes.replace_weeks(
+            item.id,
+            [routes.WeekIn(week_number=1, session_date=date(2026, 9, 1), target_node_key="db")],
+            db,
+            TEACHER,
+        )
+
+    routes.replace_weeks(
+        item.id,
+        [routes.WeekIn(week_number=1, session_date=date(2026, 9, 1), target_node_key=" web ")],
+        db,
+        TEACHER,
+    )
+    week = db.exec(select(TeachingClassWeek).where(TeachingClassWeek.class_id == item.id)).one()
+    assert week.target_node_key == "web"
+
+
+def test_blank_week_target_means_all_machines() -> None:
+    week = routes.WeekIn(week_number=1, session_date=date(2026, 9, 1), target_node_key="  ")
+    assert week.target_node_key is None

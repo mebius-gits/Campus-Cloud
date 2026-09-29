@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.api.routes.course_environments import (
+from app.api.routes.teaching_classes import _generate_weeks
+from app.exceptions import BadRequestError
+from app.models import BatchProvisionJobStatus, TeachingClassWeek
+from app.schemas.course_environment import (
     EnvironmentCreate,
     EnvironmentEdgeIn,
     EnvironmentNodeIn,
 )
-from app.api.routes.teaching_classes import _generate_weeks
-from app.exceptions import BadRequestError
-from app.models import BatchProvisionJobStatus, TeachingClassWeek
 from app.services.teaching import class_capacity_service, class_network_service
 from app.services.teaching.class_provision_service import (
     recurrence_rule as _recurrence,
@@ -95,13 +95,12 @@ class _FakeWeekSession:
 
 def _class_with_weeks(*, weekday, end_date):
     class_id = uuid.uuid4()
-    item = SimpleNamespace(
+    return SimpleNamespace(
         id=class_id,
         start_date=date(2026, 9, 7),  # 週一開學
         end_date=end_date,
         weekday=weekday,
     )
-    return item
 
 
 def test_changing_the_class_weekday_keeps_every_week_topic():
@@ -434,7 +433,7 @@ def test_peer_policy_only_honours_an_explicit_segment_choice():
 
 
 def test_network_labels_accept_ui_slash_or_comma_notation():
-    assert class_network_service._segments("lab-net / backend-net, management") == {
+    assert class_network_service.network_segments("lab-net / backend-net, management") == {
         "lab-net",
         "backend-net",
         "management",
@@ -464,7 +463,7 @@ def test_sync_scope_rules_removes_stale_rules_from_a_previous_vmid(monkeypatch):
     )
     monkeypatch.setattr(
         class_network_service.firewall_service,
-        "get_vm_firewall_rules",
+        "list_vm_firewall_rules_strict",
         lambda _node, vmid, _type: existing.get(vmid, []),
     )
     monkeypatch.setattr(
@@ -484,8 +483,6 @@ def test_sync_scope_rules_removes_stale_rules_from_a_previous_vmid(monkeypatch):
         planned=[
             class_network_service.PlannedRule(
                 vmid=101,
-                node="pve1",
-                resource_type="qemu",
                 comment=f"{prefix}abc12345:101>102:any",
                 rule={"type": "out", "action": "ACCEPT"},
             )
@@ -507,7 +504,7 @@ def test_sync_scope_rules_cleans_machines_that_lost_every_edge(monkeypatch):
     )
     monkeypatch.setattr(
         class_network_service.firewall_service,
-        "get_vm_firewall_rules",
+        "list_vm_firewall_rules_strict",
         lambda _node, _vmid, _type: [{"pos": 3, "comment": f"{prefix}abc12345:101>102:any"}],
     )
     monkeypatch.setattr(

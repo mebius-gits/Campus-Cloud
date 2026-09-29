@@ -39,6 +39,10 @@ MAX_SESSIONS_PER_24_HOURS = 3
 RECLAIM_GRACE = timedelta(minutes=30)
 TOPOLOGY_REPAIR_TIMEOUT = timedelta(minutes=15)
 QUICK_NETWORK_COMMENT_PREFIX = "SkyLab:practice-net:"
+#: 可以拿來開快速練習的課程環境 usage_scope
+QUICK_PRACTICE_SCOPES = ("quick_practice", "both")
+#: reconcile_session 寫進 last_error 的前綴；lifecycle 看到它就直接整組回收
+MACHINE_FAILURE_PREFIX = "機器建立失敗："
 logger = logging.getLogger(__name__)
 
 
@@ -67,26 +71,30 @@ def _environment_for_version(
     return environment
 
 
+def _latest_published_version(
+    session: Session, environment_id: uuid.UUID
+) -> CourseEnvironmentVersion | None:
+    return session.exec(
+        select(CourseEnvironmentVersion)
+        .where(
+            CourseEnvironmentVersion.environment_id == environment_id,
+            CourseEnvironmentVersion.status == CourseEnvironmentVersionStatus.published,
+        )
+        .order_by(col(CourseEnvironmentVersion.version).desc())
+    ).first()
+
+
 def get_published_template(
     session: Session, *, environment_id: uuid.UUID
 ) -> tuple[CourseEnvironment, CourseEnvironmentVersion]:
     """提供為快速練習就代表任何登入者都拿得到。
 
-    開放對象的介面已經移除，``audience`` 與 ``course_environment_audiences``
-    只剩舊資料；再拿它們判斷，停在沒掛班級的 ``class`` 會變成誰都看不到，而
-    且沒有介面能改回來。
+    開放對象（audience 與班級白名單）已整個移除，快速練習不分對象。
     """
     environment = session.get(CourseEnvironment, environment_id)
-    if environment is None or environment.usage_scope not in {"quick_practice", "both"}:
+    if environment is None or environment.usage_scope not in QUICK_PRACTICE_SCOPES:
         raise NotFoundError(t("quick_practice.template_not_found"))
-    version = session.exec(
-        select(CourseEnvironmentVersion)
-        .where(
-            CourseEnvironmentVersion.environment_id == environment.id,
-            CourseEnvironmentVersion.status == CourseEnvironmentVersionStatus.published,
-        )
-        .order_by(col(CourseEnvironmentVersion.version).desc())
-    ).first()
+    version = _latest_published_version(session, environment.id)
     if version is None:
         raise NotFoundError(t("quick_practice.published_version_not_found"))
     return environment, version
@@ -97,19 +105,12 @@ def list_published_templates(
 ) -> list[tuple[CourseEnvironment, CourseEnvironmentVersion]]:
     environments = session.exec(
         select(CourseEnvironment)
-        .where(col(CourseEnvironment.usage_scope).in_(["quick_practice", "both"]))
+        .where(col(CourseEnvironment.usage_scope).in_(QUICK_PRACTICE_SCOPES))
         .order_by(col(CourseEnvironment.updated_at).desc())
     ).all()
     result: list[tuple[CourseEnvironment, CourseEnvironmentVersion]] = []
     for environment in environments:
-        version = session.exec(
-            select(CourseEnvironmentVersion)
-            .where(
-                CourseEnvironmentVersion.environment_id == environment.id,
-                CourseEnvironmentVersion.status == CourseEnvironmentVersionStatus.published,
-            )
-            .order_by(col(CourseEnvironmentVersion.version).desc())
-        ).first()
+        version = _latest_published_version(session, environment.id)
         if version is not None:
             result.append((environment, version))
     return result
@@ -125,14 +126,6 @@ def nodes_for_version(
             .order_by(col(CourseEnvironmentNode.sort_order))
         ).all()
     )
-
-
-def _segments(value: str | None) -> set[str]:
-    return {
-        item.strip()
-        for item in (value or "lab-net").replace("/", ",").split(",")
-        if item.strip()
-    }
 
 
 def _session_machine_rows(
@@ -153,7 +146,7 @@ def _apply_session_topology(
 ) -> list[str]:
     """Materialize one student's published topology as idempotent firewall rules."""
     # Local import avoids a module cycle with the VM scheduling coordinator.
-    from app.services.teaching import class_network_service  # noqa: PLC0415
+    from app.services.teaching import class_network_service
 
     rows = _session_machine_rows(session, practice_id=practice.id)
     machines_by_key = {
@@ -163,7 +156,6 @@ def _apply_session_topology(
         and request.provisioning_status == VMProvisioningStatus.completed
     }
     nodes = nodes_for_version(session, version_id=practice.environment_version_id)
-    nodes_by_key = {node.node_key: node for node in nodes}
     edges = list(
         session.exec(
             select(CourseEnvironmentEdge).where(
@@ -171,51 +163,37 @@ def _apply_session_topology(
             )
         ).all()
     )
-    directions: list[tuple[VMRequest, VMRequest, str, int | None]] = []
     peer_policy = class_network_service.peer_policy_for_version(
         session, practice.environment_version_id
     )
-    if peer_policy != class_network_service.PEER_POLICY_SEGMENT:
-        for edge in edges:
-            source = machines_by_key.get(edge.source_node_key)
-            target = machines_by_key.get(edge.target_node_key)
-            if source is None or target is None:
-                continue
-            directions.append((source, target, edge.protocol, edge.port))
-            if edge.direction == "bidirectional":
-                directions.append((target, source, edge.protocol, edge.port))
-    else:
-        # segment：共用邏輯網段的機器全協定全埠互通（舊行為，與正式班級一致）
-        for source_key, source in machines_by_key.items():
-            source_node = nodes_by_key.get(source_key)
-            if source_node is None:
-                continue
-            for target_key, target in machines_by_key.items():
-                if source_key == target_key:
-                    continue
-                target_node = nodes_by_key.get(target_key)
-                if target_node is None or not (
-                    _segments(source_node.network) & _segments(target_node.network)
-                ):
-                    continue
-                directions.append((source, target, "any", None))
+    vmid_by_key = {
+        key: request.vmid
+        for key, request in machines_by_key.items()
+        if request.vmid is not None
+    }
+    network_by_key = {node.node_key: node.network for node in nodes}
+    # 與正式班級共用同一套展開規則（explicit 連線／segment 同網段互通）
+    directions = class_network_service.topology_directions(
+        peer_policy=peer_policy,
+        edges=edges,
+        vmid_by_key=vmid_by_key,
+        network_by_key=network_by_key,
+    )
 
     errors: list[str] = []
     planned = []
     scope_vmids = {
         request.vmid for request in machines_by_key.values() if request.vmid is not None
     }
-    for source, target, protocol, port in directions:
-        if source.vmid is None or target.vmid is None:
-            continue
+    for source_vmid, target_vmid, protocol, port in directions:
         try:
             planned.extend(
                 class_network_service.plan_one_way(
                     session,
                     scope_id=practice.id,
                     comment_prefix=QUICK_NETWORK_COMMENT_PREFIX,
-                    source_vmid=source.vmid,
-                    target_vmid=target.vmid,
+                    source_vmid=source_vmid,
+                    target_vmid=target_vmid,
                     protocol=protocol,
                     port=port,
                 )
@@ -224,10 +202,10 @@ def _apply_session_topology(
             logger.exception(
                 "Failed to apply quick-practice topology session=%s source=%s target=%s",
                 practice.id,
-                source.vmid,
-                target.vmid,
+                source_vmid,
+                target_vmid,
             )
-            errors.append(f"{source.vmid} → {target.vmid}: topology failed")
+            errors.append(f"{source_vmid} → {target_vmid}: topology failed")
     # 同步而非只建立：重試換過 vmid 的機器會留下指向舊 IP 的白名單
     errors.extend(
         class_network_service.sync_scope_rules(
@@ -238,7 +216,7 @@ def _apply_session_topology(
     )
 
     # 「外網 → 機器」的宣告：每位學生各配一個網址，重複執行會略過已發布的
-    from app.services.teaching import course_publication_service  # noqa: PLC0415
+    from app.services.teaching import course_publication_service
 
     owner = session.get(User, practice.user_id)
     if owner is not None:
@@ -246,11 +224,7 @@ def _apply_session_topology(
             course_publication_service.apply_for_machines(
                 session,
                 version_id=practice.environment_version_id,
-                vmid_by_key={
-                    key: request.vmid
-                    for key, request in machines_by_key.items()
-                    if request.vmid is not None
-                },
+                vmid_by_key=vmid_by_key,
                 owner=owner,
                 scope=f"practice-{practice.id.hex[:8]}",
             )
@@ -284,7 +258,7 @@ def reconcile_session(
     ]
     if failed:
         practice.status = "partial_failed"
-        practice.last_error = "機器建立失敗：" + "、".join(failed)
+        practice.last_error = MACHINE_FAILURE_PREFIX + "、".join(failed)
         session.add(practice)
         return practice
 
@@ -340,26 +314,108 @@ def _resources_for_session(
     )
 
 
+_UNSTARTED_PROVISIONING = {
+    VMProvisioningStatus.idle,
+    VMProvisioningStatus.pending,
+    VMProvisioningStatus.blocked,
+}
+_OPEN_REQUEST_STATUSES = {VMRequestStatus.pending, VMRequestStatus.approved}
+
+
+def _clone_in_flight(request: VMRequest, *, now: datetime) -> bool:
+    """clone 正在 worker 上跑：running 且未超過 stale 門檻。"""
+    from app.services.scheduling import policy as scheduling_policy
+
+    return (
+        request.provisioning_status == VMProvisioningStatus.running
+        and not scheduling_policy.is_provisioning_stale(
+            request.provisioning_started_at, now=now
+        )
+    )
+
+
+def _settle_unstarted_machines(
+    session: Session, *, practice_id: uuid.UUID
+) -> bool:
+    """取消還沒開始 clone 的機器申請單；回傳是否仍有 clone 在進行。
+
+    回收只看得到已經有 Resource 的機器。還在排隊的申請單若維持 approved，
+    排程器之後照樣會 clone，session 卻已標 reclaimed、IP 預留也放掉了，那台
+    機器就沒人回收。沒開始的直接取消（worker 開跑前會檢查 status ==
+    approved）；正在 clone 的（running 且未逾時，或被 worker 鎖住）不能動，
+    交給下一輪 lifecycle 等它建好再排刪除。
+    """
+    now = _utc_now()
+    in_flight = False
+    cancellable: list[uuid.UUID] = []
+    for _machine, request in _session_machine_rows(session, practice_id=practice_id):
+        if request.vmid is not None or request.status not in _OPEN_REQUEST_STATUSES:
+            continue
+        if _clone_in_flight(request, now=now):
+            in_flight = True
+        elif request.provisioning_status in _UNSTARTED_PROVISIONING or (
+            # 逾時的 running 視同沒開始：worker 真的還在跑的話，完成時看到
+            # 非 approved 會自己把機器收掉。
+            request.provisioning_status == VMProvisioningStatus.running
+        ):
+            cancellable.append(request.id)
+    if not cancellable:
+        return in_flight
+
+    # SKIP LOCKED：worker 正拿著鎖準備 clone 的單不等它，視為進行中。
+    locked = session.exec(
+        select(VMRequest)
+        .where(col(VMRequest.id).in_(cancellable))
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    ).all()
+    if len(locked) < len(cancellable):
+        in_flight = True
+    for request in locked:
+        if request.vmid is not None or request.status not in _OPEN_REQUEST_STATUSES:
+            continue
+        if _clone_in_flight(request, now=now):
+            in_flight = True
+            continue
+        request.status = VMRequestStatus.cancelled
+        request.provisioning_status = VMProvisioningStatus.idle
+        request.review_comment = "Cancelled by quick-practice reclaim"
+        session.add(request)
+    session.commit()
+    return in_flight
+
+
+def _mark_reclaimed(session: Session, practice: QuickPracticeSession) -> None:
+    from app.services.network import ip_management_service
+
+    ip_management_service.release_reservations_by_prefix(
+        session,
+        _ip_reservation_prefix(practice.id),
+    )
+    practice.status = "reclaimed"
+    practice.reclaimed_at = _utc_now()
+
+
 def _queue_session_reclaim(
     session: Session, *, practice: QuickPracticeSession
 ) -> int:
     """Queue all remaining resources through the normal idempotent delete path."""
-    from app.services.proxmox import proxmox_service  # noqa: PLC0415
-    from app.services.resource import (  # noqa: PLC0415
+    from app.services.proxmox import proxmox_service
+    from app.services.resource import (
         deletion_service,
         resource_service,
     )
 
+    in_flight = _settle_unstarted_machines(session, practice_id=practice.id)
     resources = _resources_for_session(session, practice_id=practice.id)
     if not resources:
-        from app.services.network import ip_management_service  # noqa: PLC0415
-
-        ip_management_service.release_reservations_by_prefix(
-            session,
-            _ip_reservation_prefix(practice.id),
-        )
-        practice.status = "reclaimed"
-        practice.reclaimed_at = _utc_now()
+        if in_flight:
+            # 還有機器在 clone：保留 IP 預留、停在 reclaiming，
+            # process_lifecycle 每輪會再進來，等它建好就排刪除。
+            practice.status = "reclaiming"
+            practice.reclaim_started_at = practice.reclaim_started_at or _utc_now()
+        else:
+            _mark_reclaimed(session, practice)
         session.add(practice)
         session.commit()
         return 0
@@ -410,15 +466,10 @@ def _queue_session_reclaim(
 
     refreshed = session.get(QuickPracticeSession, practice.id)
     if refreshed is not None:
-        if not _resources_for_session(session, practice_id=practice.id):
-            from app.services.network import ip_management_service  # noqa: PLC0415
-
-            ip_management_service.release_reservations_by_prefix(
-                session,
-                _ip_reservation_prefix(practice.id),
-            )
-            refreshed.status = "reclaimed"
-            refreshed.reclaimed_at = _utc_now()
+        if not in_flight and not _resources_for_session(
+            session, practice_id=practice.id
+        ):
+            _mark_reclaimed(session, refreshed)
         elif errors:
             refreshed.last_error = "；".join(errors)[:2000]
         session.add(refreshed)
@@ -428,7 +479,7 @@ def _queue_session_reclaim(
 
 def process_lifecycle() -> int:
     """Reconcile topology and reclaim expired quick-practice sessions."""
-    from app.core.db import engine  # noqa: PLC0415
+    from app.core.db import engine
 
     now = _utc_now()
     with Session(engine) as session:
@@ -475,7 +526,9 @@ def process_lifecycle() -> int:
                         reconciled is not None
                         and reconciled.status == "partial_failed"
                         and (
-                            (reconciled.last_error or "").startswith("機器建立失敗")
+                            (reconciled.last_error or "").startswith(
+                                MACHINE_FAILURE_PREFIX
+                            )
                             or now
                             >= _ensure_utc(reconciled.created_at)
                             + TOPOLOGY_REPAIR_TIMEOUT
@@ -506,7 +559,7 @@ def process_lifecycle() -> int:
 def _node_disk_gb(session: Session, node: CourseEnvironmentNode) -> int:
     """節點磁碟的實際大小，含來源範本下限；配額與申請單共用同一個值。"""
     # 頂層 import 會與 provisioning_service 互相相依
-    from app.services.proxmox import provisioning_service  # noqa: PLC0415
+    from app.services.proxmox import provisioning_service
 
     return provisioning_service.clone_source_disk_gb(session, node)
 
@@ -700,7 +753,7 @@ def launch(
     # Reserve the entire environment's concrete IPs before creating any
     # machine request. IP shortage therefore rolls back the same launch
     # transaction instead of leaving a partial multi-machine environment.
-    from app.services.network import ip_management_service  # noqa: PLC0415
+    from app.services.network import ip_management_service
 
     ip_management_service.reserve_ips(
         session,
@@ -799,16 +852,9 @@ def serialize_session(session: Session, item: QuickPracticeSession) -> dict:
     if version is None:
         raise NotFoundError(t("quick_practice.version_not_found"))
     environment = _environment_for_version(session, version)
-    rows = list(
-        session.exec(
-            select(QuickPracticeSessionMachine, VMRequest)
-            .join(VMRequest, QuickPracticeSessionMachine.vm_request_id == VMRequest.id)
-            .where(QuickPracticeSessionMachine.session_id == item.id)
-            .order_by(col(QuickPracticeSessionMachine.sort_order))
-        ).all()
-    )
+    rows = _session_machine_rows(session, practice_id=item.id)
     # 對外網址直接讀反向代理紀錄，清單頁不打 Proxmox
-    from app.services.teaching import course_publication_service  # noqa: PLC0415
+    from app.services.teaching import course_publication_service
 
     vmids = [request.vmid for _machine, request in rows if request.vmid is not None]
     public_urls = course_publication_service.public_urls_by_vmid(session, vmids)

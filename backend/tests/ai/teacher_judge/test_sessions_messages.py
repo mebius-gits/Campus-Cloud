@@ -6,45 +6,30 @@ Shared fixtures live in tests.ai.teacher_judge.helpers.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import select
 
-from app.ai.teacher_judge import attachment_service, file_service, session_service
+from app.ai.teacher_judge import attachment_service, session_service
 from app.ai.teacher_judge import service as teacher_judge_service
 from app.ai.teacher_judge.schemas import (
     TeacherJudgeRubricAnalysis,
-    TeacherJudgeRubricCheckStep,
-    TeacherJudgeRubricItem,
-    TeacherJudgeSessionCreateRequest,
     TeacherJudgeSessionMessageCreateRequest,
     TeacherJudgeSessionScriptCreateRequest,
-    TeacherJudgeSessionUpdateRequest,
 )
 from app.api.routes import teacher_judge_sessions
-from app.models.teacher_judge_file import TeacherJudgeFile
-from app.models.teacher_judge_script_artifact import TeacherJudgeScriptArtifact
-from app.models.teacher_judge_script_run import TeacherJudgeScriptRun
 from app.models.teacher_judge_session import (
     TeacherJudgeMessageRole,
     TeacherJudgeMessageType,
     TeacherJudgeSession,
     TeacherJudgeSessionMessage,
-    TeacherJudgeSessionStatus,
 )
 from app.models.teacher_judge_template_command import TeacherJudgeTemplateCommand
 from tests.ai.teacher_judge.helpers import (
     make_session,
     make_teacher_judge_file,
-    patch_teacher_judge_vllm_settings,
-    reply_message,
-    requirement_focus,
-    scripted_vllm,
-    tool_call_message,
 )
 
 
@@ -410,7 +395,7 @@ async def test_session_script_set_compile_failure_is_saved_to_chat(
     db.refresh(item)
     user = SimpleNamespace(id=uuid.uuid4())
 
-    async def failed_artifact_set(**kwargs):
+    def failed_artifact_set(**kwargs):
         raise HTTPException(
             status_code=422,
             detail={

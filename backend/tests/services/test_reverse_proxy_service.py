@@ -46,7 +46,7 @@ def _patch_apply_dependencies(
 ) -> None:
     """把 apply_reverse_proxy_rule 會碰到的外部依賴都換成假的。"""
     monkeypatch.setattr(rp_repo, "is_domain_taken", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(reverse_proxy_service, "_sync_traefik", lambda _session: None)
+    monkeypatch.setattr(reverse_proxy_service, "_sync_nginx", lambda _session: None)
     monkeypatch.setattr(
         reverse_proxy_service,
         "ensure_reverse_proxy_ready",
@@ -80,7 +80,7 @@ def test_apply_reverse_proxy_rule_creates_cloudflare_dns_record(
     monkeypatch.setattr(
         cloudflare_service,
         "upsert_reverse_proxy_dns_record",
-        lambda *, session, zone_id, domain, vmid, existing_zone_id=None, existing_record_id=None: SimpleNamespace(
+        lambda *, session, zone_id, domain, vmid: SimpleNamespace(
             id="dns_123",
             type="CNAME",
             zone_id=zone_id,
@@ -188,7 +188,7 @@ def test_get_reverse_proxy_setup_context_reports_blockers(
     monkeypatch.setattr(
         reverse_proxy_service,
         "_get_cloudflare_ready_state",
-        lambda _session: (False, "Cloudflare 預設 DNS 指向尚未設定", []),
+        lambda _session: (False, "Cloudflare 預設 DNS 指向尚未設定", [], None, None),
     )
 
     context = reverse_proxy_service.get_reverse_proxy_setup_context(session)

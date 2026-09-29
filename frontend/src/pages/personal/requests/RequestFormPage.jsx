@@ -9,13 +9,14 @@ import { VmRequestsService } from "../../../services/vmRequests";
 import { VmRequestAvailabilityService } from "../../../services/vmRequestAvailability";
 import { GpuService } from "../../../services/gpu";
 import { TemplatesService } from "../../../services/templates";
-import { apiGet } from "../../../services/api";
+import { ResourcesService } from "../../../services/resources";
 import AvailabilityPanel from "../../../components/AvailabilityPanel/AvailabilityPanel";
 import MIcon from "../../../components/MIcon";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import PasswordInput from "../../../components/PasswordInput/PasswordInput";
 import { focusInvalidField } from "../../../utils/focusField";
 import { formatShortDateTime } from "../../../utils/formatDate";
+import { canTeachUser } from "../../../utils/roles";
 
 /* Hostname normalization — preserves alphanumeric, replaces others with hyphen */
 function normalizeHostname(value) {
@@ -46,22 +47,30 @@ function FieldGroup({ label, hint, required, error, children, labelRight, name }
   );
 }
 
-function SelectField({ value, onChange, disabled, children, placeholder }) {
-  return (
+function SelectField({ value, onChange, disabled, children, placeholder, loading = false }) {
+  const select = (
     <select
-      className={styles.select}
+      className={`${styles.select} ${loading ? styles.selectLoading : ""}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
     >
       {placeholder && <option value="" disabled>{placeholder}</option>}
       {children}
     </select>
   );
+  if (!loading) return select;
+  /* 原生 option 放不了圖示，轉圈圖示疊在 select 左側 */
+  return (
+    <div className={styles.selectWrap}>
+      {select}
+      <MIcon name="autorenew" size={16} spin className={styles.selectSpinner} />
+    </div>
+  );
 }
 
 /* ── Helpers ── */
-const formatDT = (iso) => formatShortDateTime(iso);
 const OS_DISPLAY_NAMES = {
   ubuntu: "Ubuntu",
   debian: "Debian",
@@ -188,7 +197,7 @@ function focusFirstError(formEl, errs) {
   focusInvalidField(group?.querySelector("input, select, textarea"));
 }
 
-/* ── Validation messages（對齊舊版 zh-TW locales）── */
+/* ── Validation messages ── */
 const MSG = {
   hostnameRequired: "RequestFormPage.msgHostnameRequired",
   hostnameInvalid:  "RequestFormPage.msgHostnameInvalid",
@@ -210,7 +219,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
   const { t } = useTranslation("personal");
   const { user }  = useAuth();
   const toast     = useToast();
-  const isPrivileged = user?.is_superuser || user?.role === "admin" || user?.role === "teacher";
+  const isPrivileged = canTeachUser(user);
   const { setCompactFooter, registerRequestForm, registerSurface, reportRequestSubmission } =
     useContext(LayoutContext);
   useEffect(() => { setCompactFooter(true); return () => setCompactFooter(false); }, [setCompactFooter]);
@@ -226,8 +235,6 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
 
   /* Form state */
   const [resourceType, setResourceType] = useState("lxc");
-  const [advice, setAdvice]                   = useState(null);
-  const [adviceLoading, setAdviceLoading]     = useState(false);
   const [advisorDisabled, setAdvisorDisabled] = useState(false);
   /* 自動模式的統一作業系統選擇；選了 OS 即決定型別（advise 退為提示） */
   const [autoOsChoice, setAutoOsChoice]       = useState("");
@@ -287,7 +294,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
   useEffect(() => {
     if (lxcTemplates.length > 0) return;
     setLxcLoading(true);
-    apiGet("/api/v1/lxc/templates")
+    ResourcesService.listLxcOsImages()
       .then(setLxcTemplates)
       .catch(() => setOsSourceFailed(true))
       .finally(() => setLxcLoading(false));
@@ -296,7 +303,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
   useEffect(() => {
     if (vmTemplates.length > 0) return;
     setVmLoading(true);
-    apiGet("/api/v1/vm/templates")
+    ResourcesService.listVmOsTemplates()
       .then(setVmTemplates)
       .catch(() => setOsSourceFailed(true))
       .finally(() => setVmLoading(false));
@@ -515,17 +522,13 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
     gpuOptionsRequestKey,
   ]);
 
-  /* ── 自動判斷：依申請原因/規格即時呼叫 advise，自動切換建議型別 ── */
+  /* ── 自動判斷：依申請原因/規格即時呼叫 advise，靜默切換建議型別（不顯示提示框） ── */
   useEffect(() => {
     if (advisorDisabled) return undefined;
     const reasonText = form.reason.trim();
-    if (!reasonText && !form.gpu_mapping_id) {
-      setAdvice(null);
-      return undefined;
-    }
+    if (!reasonText && !form.gpu_mapping_id) return undefined;
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
-      setAdviceLoading(true);
       VmRequestsService.advise({
         reason: reasonText || null,
         cores: Number(form.cores) || null,
@@ -534,20 +537,13 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
       })
         .then((res) => {
           if (cancelled) return;
-          setAdvice(res);
-          /* 已選作業系統時型別由 OS 決定，advise 僅作提示 */
+          /* 已選作業系統時型別由 OS 決定，advise 結果不套用 */
           if (!autoOsChoice) setResourceType(res.resource_type);
         })
         .catch((err) => {
           if (cancelled) return;
-          /* 管理員停用 advisor 時後端回 400：隱藏自動選項並退回手動 */
-          if (err?.status === 400) {
-            setAdvisorDisabled(true);
-            setAdvice(null);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setAdviceLoading(false);
+          /* 管理員停用 advisor 時後端回 400：退回手動 */
+          if (err?.status === 400) setAdvisorDisabled(true);
         });
     }, ADVISE_DEBOUNCE_MS);
     return () => {
@@ -825,7 +821,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
 
     setSubmitting(true);
     try {
-      /* GPU re-availability check before submitting (mirrors old frontend logic) */
+      /* 送出前再確認一次選定的 GPU 在申請時段內仍可用 */
       const selectedGpuId = form.gpu_mapping_id?.trim();
       if (resourceType === "vm" && selectedGpuId) {
         const params = {
@@ -993,7 +989,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
         </button>
       </PageHeader>
 
-      {/* ── 主體：表單 + AI 側欄 ── */}
+      {/* ── 主體：表單 + 右側摘要 ── */}
       <div className={styles.formPageBody}>
         <div className={styles.formScroll}>
           <div className={styles.formInner}>
@@ -1031,20 +1027,6 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
             {/* ── 資源設定（型別由作業系統選擇 + 規則引擎自動決定，學生免選 QEMU/LXC） ── */}
             <div className={styles.formSection} data-guide="request-resource-settings">
               <h2 className={styles.sectionTitle}>{t("RequestFormPage.resourceSettingsTitle")}</h2>
-              {!advisorDisabled && (adviceLoading || advice) && (
-                <p className={styles.adviceBox}>
-                  {adviceLoading
-                    ? t("RequestFormPage.adviceLoading")
-                    : (() => {
-                        const typeLabel = (rt) => (rt === "vm" ? t("RequestFormPage.typeVm") : t("RequestFormPage.typeLxcContainer"));
-                        const text = t("RequestFormPage.adviceSuggested", { type: typeLabel(advice.resource_type), reasons: advice.reasons.join("；") });
-                        return osChosen && advice.resource_type !== resourceType
-                          ? t("RequestFormPage.adviceOverriddenByOs", { text, currentType: typeLabel(resourceType) })
-                          : text;
-                      })()}
-                </p>
-              )}
-
               <FieldGroup label={t("RequestFormPage.resourceNameLabel")} required error={errors.hostname} name="hostname">
                 <input
                   className={styles.input}
@@ -1063,7 +1045,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
                 <SelectField
                   value={autoOsChoice}
                   onChange={handleAutoOsSelect}
-                  disabled={vmLoading || lxcLoading || sysTplLoading}
+                  loading={vmLoading || lxcLoading || sysTplLoading}
                   placeholder={(vmLoading || lxcLoading || sysTplLoading) ? t("RequestFormPage.loading") : t("RequestFormPage.selectOs")}
                 >
                   {catalogChoices.length > 0 && (
@@ -1108,7 +1090,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
                 </SelectField>
                 {osSourceFailed && (
                   <p className={styles.fieldError} role="alert">
-                    {t("RequestFormPage.osSourcesLoadFailed")}
+                    {t("Error.generic", { ns: "common" })}
                     {" "}
                     <button type="button" className={styles.linkBtn} onClick={retryOsSources}>
                       {t("RequestFormPage.retry")}
@@ -1267,6 +1249,12 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
 
                 {!canLoadGpu && mode === "scheduled" && (
                   <p className={styles.fieldHint}>{t("RequestFormPage.selectScheduleFirstHint")}</p>
+                )}
+                {gpuLoading && (
+                  <p className={`${styles.fieldHint} ${styles.fieldHintLoading}`} role="status">
+                    <MIcon name="autorenew" size={14} spin />
+                    {t("RequestFormPage.gpuRecalculatingHint")}
+                  </p>
                 )}
                 {!gpuLoading && gpuOptions.length === 0 && (
                   <p className={styles.fieldHint}>{t("RequestFormPage.noGpuAvailableHint")}</p>
@@ -1442,7 +1430,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
               disabled={submitting}
             >
               {submitting
-                ? <><span className={styles.spin}><MIcon name="hourglass_empty" size={16} /></span>{t("RequestFormPage.submitting")}</>
+                ? <><MIcon name="hourglass_empty" size={16} spin />{t("RequestFormPage.submitting")}</>
                 : <><MIcon name="send" size={16} />{t("RequestFormPage.submitRequest")}</>
               }
             </button>
@@ -1450,7 +1438,7 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
           </div>
         </div>
 
-        {/* Desktop 右側面板（摘要 + AI）*/}
+        {/* Desktop 右側面板（申請摘要）*/}
         <div className={styles.rightPanel} data-guide="request-summary">
           <div className={styles.summaryBody}>
               {/* Type / mode chips */}
@@ -1546,18 +1534,18 @@ export default function RequestFormPage({ onBack, className, initialPrefill = nu
                   <span className={styles.summaryValue}>
                     {form.immediate_no_end
                       ? t("RequestFormPage.immediateUnlimited")
-                      : form.end_at ? t("RequestFormPage.untilDate", { date: formatDT(form.end_at) }) : t("RequestFormPage.startsImmediately")}
+                      : form.end_at ? t("RequestFormPage.untilDate", { date: formatShortDateTime(form.end_at) }) : t("RequestFormPage.startsImmediately")}
                   </span>
                 </div>
               ) : form.start_at && form.end_at ? (
                 <>
                   <div className={styles.summaryRow}>
                     <span className={styles.summaryLabel}>{t("RequestFormPage.summaryStart")}</span>
-                    <span className={styles.summaryTimeValue}>{formatDT(form.start_at)}</span>
+                    <span className={styles.summaryTimeValue}>{formatShortDateTime(form.start_at)}</span>
                   </div>
                   <div className={styles.summaryRow}>
                     <span className={styles.summaryLabel}>{t("RequestFormPage.summaryEnd")}</span>
-                    <span className={styles.summaryTimeValue}>{formatDT(form.end_at)}</span>
+                    <span className={styles.summaryTimeValue}>{formatShortDateTime(form.end_at)}</span>
                   </div>
                 </>
               ) : (

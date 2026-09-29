@@ -8,13 +8,15 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from app.api.deps import AdminUser, SessionDep
 from app.core.i18n import t
 from app.exceptions import BadRequestError, ProxmoxError
-from app.models import AuditAction
+from app.models import AuditAction, GatewayConfig
 from app.repositories import gateway_config as gw_repo
 from app.schemas.common import Message
 from app.schemas.gateway import (
     GatewayConfigPublic,
     GatewayConfigUpdate,
     GatewayConnectionTestResult,
+    GatewayInstallOptions,
+    GatewayInstallStatus,
     GatewayServiceVersionsResult,
     GatewayWireGuardOverview,
     ServiceActionResult,
@@ -22,15 +24,15 @@ from app.schemas.gateway import (
     ServiceConfigWrite,
     ServiceStatusResult,
 )
-from app.services.network import gateway_service
+from app.services.network import gateway_install_service, gateway_service
 from app.services.user import audit_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gateway", tags=["gateway"])
 
-_VALID_SERVICES = {"haproxy", "traefik", "wireguard"}
-_CONFIGURABLE_SERVICES = {"haproxy", "traefik"}
+_VALID_SERVICES = {"nginx", "wireguard"}
+_CONFIGURABLE_SERVICES = {"nginx"}
 
 
 def _require_valid_service(service: str) -> None:
@@ -45,6 +47,16 @@ def _require_configurable_service(service: str) -> None:
         raise HTTPException(
             status_code=400, detail=t("gateway.service_config_not_exposed", service=service)
         )
+
+
+def _to_public(config: GatewayConfig) -> GatewayConfigPublic:
+    return GatewayConfigPublic(
+        host=config.host,
+        ssh_port=config.ssh_port,
+        ssh_user=config.ssh_user,
+        public_key=config.public_key,
+        is_configured=bool(config.host and config.encrypted_private_key),
+    )
 
 
 # ─── 連線設定 ──────────────────────────────────────────────────────────────────
@@ -62,13 +74,7 @@ def get_config(session: SessionDep, _: AdminUser):
             public_key="",
             is_configured=False,
         )
-    return GatewayConfigPublic(
-        host=config.host,
-        ssh_port=config.ssh_port,
-        ssh_user=config.ssh_user,
-        public_key=config.public_key,
-        is_configured=bool(config.host and config.encrypted_private_key),
-    )
+    return _to_public(config)
 
 
 @router.put("/config", response_model=GatewayConfigPublic)
@@ -93,13 +99,7 @@ def update_config(
             f"port={data.ssh_port} user={data.ssh_user}"
         ),
     )
-    return GatewayConfigPublic(
-        host=config.host,
-        ssh_port=config.ssh_port,
-        ssh_user=config.ssh_user,
-        public_key=config.public_key,
-        is_configured=bool(config.host and config.encrypted_private_key),
-    )
+    return _to_public(config)
 
 
 @router.post("/generate-keypair", response_model=GatewayConfigPublic)
@@ -117,13 +117,7 @@ def generate_keypair(session: SessionDep, current_user: AdminUser):
         action=AuditAction.gateway_keypair_generate,
         details="Generated new ED25519 SSH keypair for Gateway VM",
     )
-    return GatewayConfigPublic(
-        host=config.host,
-        ssh_port=config.ssh_port,
-        ssh_user=config.ssh_user,
-        public_key=config.public_key,
-        is_configured=bool(config.host and config.encrypted_private_key),
-    )
+    return _to_public(config)
 
 
 @router.post("/test-connection", response_model=GatewayConnectionTestResult)
@@ -163,14 +157,8 @@ def reset_host_key(session: SessionDep, current_user: AdminUser) -> Message:
 @router.get("/install-script")
 def download_install_script(_: AdminUser):
     """下載 Gateway VM 安裝腳本"""
-    import os  # noqa: PLC0415
-
-    script_path = os.path.join(
-        os.path.dirname(__file__),
-        "..", "..", "..", "..", "gateway", "install.sh",
-    )
-    script_path = os.path.abspath(script_path)
-    if not os.path.exists(script_path):
+    script_path = gateway_install_service.install_script_path()
+    if not script_path.is_file():
         raise HTTPException(
             status_code=404, detail=t("gateway.install_script_missing")
         )
@@ -179,6 +167,38 @@ def download_install_script(_: AdminUser):
         media_type="text/x-sh",
         filename="install-gateway.sh",
     )
+
+
+# ─── 一鍵安裝服務 ──────────────────────────────────────────────────────────────
+
+
+@router.get("/install", response_model=GatewayInstallStatus)
+def get_install_status(session: SessionDep, _: AdminUser):
+    """經 SSH 讀取 Gateway 上的安裝狀態、日誌、網卡與已安裝元件"""
+    return gateway_install_service.get_install_status(session=session)
+
+
+@router.post("/install", response_model=GatewayInstallStatus, status_code=202)
+def start_install(
+    options: GatewayInstallOptions,
+    session: SessionDep,
+    current_user: AdminUser,
+):
+    """用已綁定的 SSH 金鑰上傳 install.sh，在 Gateway 背景執行（nginx／certbot／WireGuard）"""
+    result = gateway_install_service.start_install(session=session, options=options)
+    audit_service.log_action(
+        session=session,
+        user_id=current_user.id,
+        action=AuditAction.gateway_service_control,
+        details=(
+            "Started gateway one-click install: "
+            f"ingress={options.ingress_interface} vm={options.vm_interface} "
+            f"snat={options.snat_address} wg_port={options.listen_port} "
+            f"forward={options.forward_port_start}:{options.forward_port_end} "
+            f"monitoring={','.join(options.monitoring_allow_from) or '-'}"
+        ),
+    )
+    return result
 
 
 # ─── 服務設定檔管理 ────────────────────────────────────────────────────────────
@@ -219,27 +239,33 @@ def write_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/traefik/dns-challenge/sync", response_model=Message)
-def sync_traefik_dns_challenge(session: SessionDep, current_user: AdminUser):
-    """套用 Cloudflare DNS Challenge 設定到 Gateway VM 的 Traefik"""
+@router.post("/nginx/certificates/sync", response_model=Message)
+def sync_nginx_certificates(session: SessionDep, current_user: AdminUser):
+    """用 Cloudflare DNS-01 補簽／續期 Let's Encrypt 憑證，再重寫 nginx 設定並 reload
+
+    前端目前沒有按鈕呼叫此端點；規則異動時的 nginx 同步只會補簽缺的憑證，
+    ``certbot renew`` 只有這裡會觸發，因此保留給管理員以 API／CLI 手動續期使用。
+    """
+    from app.services.network import reverse_proxy_service
+
     try:
-        gateway_service.sync_traefik_dns_challenge(session=session)
+        reverse_proxy_service.sync_certificates(session=session)
         audit_service.log_action(
             session=session,
             user_id=current_user.id,
             action=AuditAction.gateway_config_write,
-            details="Synced Traefik dnsChallenge config from Cloudflare settings",
+            details="Synced nginx certificates via certbot (Cloudflare DNS-01)",
         )
-        return Message(message=t("gateway.traefik_dns_synced"))
+        return Message(message=t("gateway.certificates_synced"))
     except BadRequestError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except ProxmoxError as exc:
-        logger.error("Failed to sync Traefik dnsChallenge config: %s", exc)
+        logger.error("Failed to sync nginx certificates: %s", exc)
         raise HTTPException(status_code=502, detail=t("gateway.proxmox_failed"))
     except Exception:
-        logger.exception("Unexpected error syncing Traefik dnsChallenge config")
+        logger.exception("Unexpected error syncing nginx certificates")
         raise HTTPException(
-            status_code=500, detail=t("gateway.traefik_sync_failed")
+            status_code=500, detail=t("gateway.certificate_sync_failed")
         )
 
 

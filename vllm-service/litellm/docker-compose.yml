@@ -1,16 +1,33 @@
 name: campus-litellm
 
-# This Compose project is intentionally independent from the Campus application
-# Compose project.  It uses host networking to reach local vLLM instances that
-# listen only on 127.0.0.1:8103/8104; do not add it to the Campus `skylab`
-# network or expose the vLLM ports.
+# Included by the root Compose for normal deployment; also usable standalone.
+# Run only one project at a time: both publish the same host port 4000.
+# Integrated mode joins the root `skylab` network: backend/worker reach the
+# gateway as http://litellm:4000 and the gateway reaches PostgreSQL directly as
+# db:5432 (never through PgBouncer).  Standalone mode has no `db` service, so
+# DATABASE_URL must then name an externally reachable PostgreSQL host.
 services:
   litellm:
-    image: litellm/litellm:latest
+    image: ${LITELLM_IMAGE:-litellm/litellm:latest}
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - skylab
+    ports:
+      # Host-side access only for health checks, key provisioning and admin
+      # tooling; containers use the service name on the internal network.
+      - "127.0.0.1:${LITELLM_HOST_PORT:-4000}:4000"
+    extra_hosts:
+      # models.json deployment=local engines run on the Docker host.
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - type: bind
+        source: ./config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set in vllm-service/litellm/.env}
       VLLM_UPSTREAM_API_KEY: ${VLLM_UPSTREAM_API_KEY:?set in vllm-service/litellm/.env}
@@ -34,7 +51,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 4
-      start_period: 20s
+      # The first start runs LiteLLM's database migrations before serving.
+      start_period: 120s
     logging:
       driver: local
       options:
@@ -42,3 +60,8 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+
+networks:
+  # Merged with the identically defined root network when included.
+  skylab:
+    driver: bridge

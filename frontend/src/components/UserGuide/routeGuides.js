@@ -9,7 +9,6 @@ const ROUTE_GUIDES = [
   { match: /^\/courses$/, id: "courses", icon: "school", profile: "explore" },
   { match: /^\/courses\/[^/]+$/, id: "course", icon: "menu_book", profile: "learning" },
   { match: /^\/courses\/[^/]+\/weeks\/[^/]+$/, id: "course-week", icon: "event_note", profile: "learning" },
-  { match: /^\/dashboard\/course\/[^/]+$/, id: "student-course", icon: "menu_book", profile: "learning" },
   { match: /^\/quick-create$/, id: "quick-create", icon: "bolt", profile: "explore" },
   { match: /^\/quick-template\/[^/]+$/, id: "quick-practice", icon: "bolt", profile: "configure" },
   { match: /^\/my-resources$/, id: "my-resources", icon: "computer", profile: "resource" },
@@ -27,7 +26,7 @@ const ROUTE_GUIDES = [
   { match: /^\/ai-api$/, id: "ai-api", icon: "psychology", profile: "request" },
   { match: /^\/ai-api-review$/, id: "ai-api-review", icon: "rate_review", profile: "review" },
   { match: /^\/ai-api-keys$/, id: "ai-api-keys", icon: "vpn_key", profile: "resource" },
-  { match: /^\/ai-monitoring$/, id: "ai-monitoring", icon: "monitor_heart", profile: "monitor" },
+  { match: /^\/ai-monitoring$/, id: "ai-monitoring", icon: "query_stats", profile: "monitor" },
 
   { match: /^\/course-cms$/, id: "course-cms", icon: "school", profile: "teaching" },
   { match: /^\/course-template-management$/, id: "course-templates", icon: "view_quilt", profile: "teaching" },
@@ -53,7 +52,8 @@ const ROUTE_GUIDES = [
   { match: /^\/firewall$/, id: "firewall", icon: "security", profile: "workflow" },
   { match: /^\/domain$/, id: "domain", icon: "domain", profile: "configure" },
   { match: /^\/gateway$/, id: "gateway", icon: "dns", profile: "configure" },
-  { match: /^\/reverse-proxy$/, id: "reverse-proxy", icon: "swap_horiz", profile: "workflow" },
+  /* /reverse-proxy、/dashboard/course/:id 只是轉址（見 App.jsx），不會停在那個路徑上；
+     反向代理導覽掛在 /domain?tab=reverse-proxy（UserGuide.getDetailedGuide） */
 ];
 
 export const GENERIC_TOUR_STEPS = [

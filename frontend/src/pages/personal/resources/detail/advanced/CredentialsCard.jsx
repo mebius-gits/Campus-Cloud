@@ -5,23 +5,25 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import styles from "../ResourceDetailPage.module.scss";
 import MIcon from "../../../../../components/MIcon";
+import Modal from "../../../../../components/Modal/Modal";
 import LoadingState from "../../../../../components/LoadingState/LoadingState";
+import ErrorState from "../../../../../components/ErrorState/ErrorState";
+import NotFoundState from "../../../../../components/ErrorState/NotFoundState";
 import useDialogPresence from "../../../../../hooks/useDialogPresence";
 import { useToast } from "../../../../../hooks/useToast";
 import { useConfirm } from "../../../../../components/ConfirmDialog/ConfirmProvider";
 import { ResourcesService } from "../../../../../services/resources";
-import { downloadBlob } from "../../../../../services/api";
+import { downloadBlob, isNotFound } from "../../../../../services/api";
 
 function keyIdentity(key) {
   const parts = String(key).trim().split(/\s+/);
   return parts.slice(0, 2).join(" ");
 }
 
-function PasswordModal({ closing, loading, onClose, onSubmit }) {
+function PasswordModal({ closing, loading, willReboot, onClose, onSubmit }) {
   const { t } = useTranslation("personal");
   const [custom, setCustom] = useState(false);
   const [password, setPassword] = useState("");
@@ -34,41 +36,51 @@ function PasswordModal({ closing, loading, onClose, onSubmit }) {
   }
 
   return (
-    <div className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`} onMouseDown={onClose}>
-      <form className={styles.modal} onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
-        <h2 className={styles.modalTitle}>{t("CredentialsCard.resetPasswordTitle")}</h2>
-        <p className={styles.modalDesc}>{t("CredentialsCard.resetPasswordDesc")}</p>
-        <label className={styles.checkRow}>
-          <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} />
-          <span>{t("CredentialsCard.useCustomPassword")}</span>
-        </label>
-        {custom && (
-          <div className={`${styles.field} ${invalid && password ? styles.fieldInvalid : ""}`}>
-            <label htmlFor="cred-pw">{t("CredentialsCard.newPasswordLabel")}</label>
-            <input id="cred-pw" type="text" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
-            <span className={styles.fieldHint}>{t("CredentialsCard.newPasswordHint")}</span>
-          </div>
-        )}
-        <div className={styles.modalActions}>
+    <Modal
+      as="form"
+      onSubmit={submit}
+      closing={closing}
+      onClose={onClose}
+      busy={loading}
+      title={t("CredentialsCard.resetPasswordTitle")}
+      description={t("CredentialsCard.resetPasswordDesc")}
+      actions={
+        <>
           <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={loading}>
             {t("CredentialsCard.cancel")}
           </button>
           <button type="submit" className={styles.btnPrimary} disabled={loading || invalid}>
             {loading ? t("CredentialsCard.processing") : t("CredentialsCard.resetPassword")}
           </button>
+        </>
+      }
+    >
+      {willReboot && <p className={styles.dialogWarn}>{t("CredentialsCard.rebootWarning")}</p>}
+      <label className={styles.checkRow}>
+        <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} />
+        <span>{t("CredentialsCard.useCustomPassword")}</span>
+      </label>
+      {custom && (
+        <div className={`${styles.field} ${invalid && password ? styles.fieldInvalid : ""}`}>
+          <label htmlFor="cred-pw">{t("CredentialsCard.newPasswordLabel")}</label>
+          <input id="cred-pw" type="text" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+          <span className={styles.fieldHint}>{t("CredentialsCard.newPasswordHint")}</span>
         </div>
-      </form>
-    </div>
+      )}
+    </Modal>
   );
 }
 
-export default function CredentialsCard({ vmid, canManage }) {
+/* 只由 AdvancedSettingsTab 在 can_manage 時掛載，卡片內不再重複判斷權限 */
+export default function CredentialsCard({ vmid, onShowOverview }) {
   const { t } = useTranslation("personal");
   const toast = useToast();
   const confirm = useConfirm();
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  /* 第一次就載入失敗時要換成錯誤狀態（可重試），不能讓轉圈圈一直轉 */
+  const [loadError, setLoadError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const passwordPresence = useDialogPresence(showPassword);
   const [secret, setSecret] = useState(null); // { kind: "password"|"key", value, message }
@@ -78,10 +90,12 @@ export default function CredentialsCard({ vmid, canManage }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setInfo(await ResourcesService.getCredentials(vmid));
     } catch (err) {
-      toast.error(err?.message ?? t("CredentialsCard.loadFailed"));
+      setLoadError(err ?? true);
+      toast.error(err?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       setLoading(false);
     }
@@ -178,6 +192,11 @@ export default function CredentialsCard({ vmid, canManage }) {
 
   const platformIdentity = info?.platform_public_key ? keyIdentity(info.platform_public_key) : null;
   const requiresRunning = info?.requires_running && !info?.running;
+  const overviewLinkKey = info?.has_login_password
+    ? "CredentialsCard.passwordWhere"
+    : info?.platform_public_key
+      ? "CredentialsCard.privateKeyWhere"
+      : null;
 
   return (
     <div className={styles.card}>
@@ -187,8 +206,15 @@ export default function CredentialsCard({ vmid, canManage }) {
             <MIcon name="key" size={18} />
             {t("CredentialsCard.title")}
           </h2>
+          {/* 卡片層級的說明一律放在大標下方（cardDesc），不在內文自成一行 */}
+          {requiresRunning && (
+            <p className={`${styles.cardDesc} ${styles.hintWarn}`}>{t("CredentialsCard.requiresRunning")}</p>
+          )}
+          {info?.resource_type === "qemu" && (
+            <p className={styles.cardDesc}>{t("CredentialsCard.cloudInitNote")}</p>
+          )}
         </div>
-        {canManage && info && (
+        {info && (
           <div className={styles.headerActions}>
             <button type="button" className={styles.btnSecondary} disabled={busy || requiresRunning} onClick={() => setShowPassword(true)}>
               <MIcon name="password" size={16} />
@@ -202,36 +228,30 @@ export default function CredentialsCard({ vmid, canManage }) {
         )}
       </div>
       <div className={styles.cardBody}>
-        {loading || !info ? (
+        {loadError && !info ? (
+          isNotFound(loadError) ? <NotFoundState /> : <ErrorState onRetry={load} />
+        ) : loading || !info ? (
           <LoadingState text={t("CredentialsCard.loading")} />
         ) : (
           <>
-            {requiresRunning && (
-              <p className={`${styles.hintLine} ${styles.hintWarn}`}>
-                <MIcon name="info" size={14} />
-                {t("CredentialsCard.requiresRunning")}
-              </p>
-            )}
-            {info.resource_type === "qemu" && (
-              <p className={styles.hintLine}>
-                <MIcon name="info" size={14} />
-                {t("CredentialsCard.cloudInitNote")}
-              </p>
-            )}
-
             <div className={styles.factGrid}>
               <div className={styles.fact}>
                 <span className={styles.factLabel}>{t("CredentialsCard.usernameLabel")}</span>
-                <span className={`${styles.factValue} ${styles.monoText}`}>
+                <span className={`${styles.factValue} ${styles.credentialValue} ${styles.monoText}`}>
                   {info.username ?? t("CredentialsCard.usernameDefault")}
                 </span>
               </div>
               <div className={styles.fact}>
                 <span className={styles.factLabel}>{t("CredentialsCard.passwordLabel")}</span>
-                <span className={styles.factValue}>
+                <span className={`${styles.factValue} ${styles.credentialValue}`}>
                   {info.has_login_password ? t("CredentialsCard.passwordStored") : t("CredentialsCard.passwordUnknown")}
                 </span>
-                <span className={styles.mutedText}>{t("CredentialsCard.passwordWhere")}</span>
+                {/* 連結只承諾總覽真的查得到的東西：沒保管密碼就只提私鑰，兩者都沒有就不顯示 */}
+                {onShowOverview && overviewLinkKey && (
+                  <button type="button" className={styles.textLink} onClick={onShowOverview}>
+                    {t(overviewLinkKey)}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -266,12 +286,12 @@ export default function CredentialsCard({ vmid, canManage }) {
               </div>
             )}
 
+            {/* 機器停止時讀不到公鑰、也不能新增：整區收起，上方的「請先開機」提示已說明原因 */}
+            {!requiresRunning && (
             <div className={styles.rowStack}>
               <span className={styles.factLabel}>{t("CredentialsCard.authorizedKeysLabel")}</span>
               {info.authorized_keys.length === 0 ? (
-                <p className={styles.mutedText}>
-                  {requiresRunning ? t("CredentialsCard.keysUnavailableStopped") : t("CredentialsCard.noKeys")}
-                </p>
+                <p className={styles.mutedText}>{t("CredentialsCard.noKeys")}</p>
               ) : (
                 <div className={styles.keyList}>
                   {info.authorized_keys.map((key) => {
@@ -283,54 +303,49 @@ export default function CredentialsCard({ vmid, canManage }) {
                         {isPlatform ? (
                           <span className={`${styles.badge} ${styles.badge_info}`}>{t("CredentialsCard.platformKey")}</span>
                         ) : (
-                          canManage && (
-                            <button
-                              type="button"
-                              className={`${styles.rpIconBtn} ${styles.rpIconBtnDanger}`}
-                              disabled={busy || requiresRunning}
-                              title={t("CredentialsCard.removeKey")}
-                              onClick={() => handleRemoveKey(key)}
-                            >
-                              <MIcon name="delete" size={16} />
-                            </button>
-                          )
+                          <button
+                            type="button"
+                            className={`${styles.rpIconBtn} ${styles.rpIconBtnDanger}`}
+                            disabled={busy}
+                            title={t("CredentialsCard.removeKey")}
+                            onClick={() => handleRemoveKey(key)}
+                          >
+                            <MIcon name="delete" size={16} />
+                          </button>
                         )}
                       </div>
                     );
                   })}
                 </div>
               )}
-              {canManage && (
-                <form className={styles.inlineForm} onSubmit={handleAddKey}>
-                  <textarea
-                    rows={2}
-                    value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
-                    placeholder={t("CredentialsCard.addKeyPlaceholder")}
-                    disabled={busy || requiresRunning}
-                  />
-                  <button type="submit" className={styles.btnSecondary} disabled={busy || requiresRunning || !newKey.trim()}>
-                    <MIcon name="add" size={16} />
-                    {t("CredentialsCard.addKey")}
-                  </button>
-                </form>
-              )}
+              <form className={styles.inlineForm} onSubmit={handleAddKey}>
+                <textarea
+                  rows={2}
+                  value={newKey}
+                  onChange={(e) => setNewKey(e.target.value)}
+                  placeholder={t("CredentialsCard.addKeyPlaceholder")}
+                  disabled={busy}
+                />
+                <button type="submit" className={styles.btnSecondary} disabled={busy || !newKey.trim()}>
+                  <MIcon name="add" size={16} />
+                  {t("CredentialsCard.addKey")}
+                </button>
+              </form>
             </div>
+            )}
           </>
         )}
       </div>
 
-      {/* portal 到 body：卡片的 overflow:hidden + backdrop-filter 會把 fixed modal 困在卡片裡 */}
-      {passwordPresence.open &&
-        createPortal(
-          <PasswordModal
-            closing={passwordPresence.closing}
-            loading={busy}
-            onClose={() => setShowPassword(false)}
-            onSubmit={handleResetPassword}
-          />,
-          document.body,
-        )}
+      {passwordPresence.open && (
+        <PasswordModal
+          closing={passwordPresence.closing}
+          loading={busy}
+          willReboot={info?.resource_type === "qemu" && info?.running}
+          onClose={() => setShowPassword(false)}
+          onSubmit={handleResetPassword}
+        />
+      )}
     </div>
   );
 }

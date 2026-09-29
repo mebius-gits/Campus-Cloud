@@ -1,5 +1,5 @@
 {
-  "reverseProxy.runtimeFetchFailed": "Traefik ランタイムの状態を取得できません",
+  "reverseProxy.runtimeFetchFailed": "nginx の実行状態を取得できません",
   "reverseProxy.vmIpUnavailable": "VM の IP を取得できません。VM が起動済みでネットワークアドレスを取得していることを確認してください。",
   "reverseProxy.ruleCreated": "リバースプロキシルールを作成しました",
   "reverseProxy.createFailed": "リバースプロキシルールの作成に失敗しました",
@@ -10,7 +10,7 @@
   "reverseProxy.ruleDeleted": "リバースプロキシルールを削除しました",
   "reverseProxy.proxmoxOperationFailed": "Proxmox の操作に失敗しました",
   "reverseProxy.deleteFailed": "リバースプロキシルールの削除に失敗しました",
-  "reverseProxy.rulesSynced": "リバースプロキシルールを Gateway VM に同期しました",
+  "reverseProxy.rulesSynced": "リバースプロキシとポート転送のルールを Gateway の nginx に同期しました",
   "reverseProxy.syncFailed": "リバースプロキシルールの同期に失敗しました",
   "rubric.unsupportedFormat": "サポートされていない形式 '{suffix}' です。対応形式：{allowed}",
   "rubric.unknownTemplate": "不明な採点環境テンプレートです。",
@@ -20,7 +20,6 @@
   "rubric.noItemsToExport": "エクスポートできる採点項目がありません。",
   "quotas.alreadyExists": "この対象には既にクォータが設定されています。更新をご利用ください。",
   "lxc.creating": "LXC を作成しています。しばらくしてからリソース一覧をご確認ください。",
-  "proxmoxConfig.passwordRequired": "初回設定にはパスワードの入力が必要です",
   "proxmoxConfig.invalidCaCert": "CA 証明書の形式が無効です。正しい PEM 形式の証明書を貼り付けてください。",
   "proxmoxConfig.cannotDeleteDefault": "この接続はデフォルト接続です。削除する前に別の接続をデフォルトに設定してください。",
   "proxmoxConfig.connectionSuccess": "接続に成功しました。検出されたノード：{nodes}",
@@ -32,5 +31,6 @@
   "proxmoxConfig.connectionResourceCheckFailed": "この Proxmox に接続できないため、マシンが残っているかを確認できません。当面は削除できませんので、しばらくしてからもう一度お試しください",
   "users.avatarUnsupportedFormat": "PNG / JPEG / WebP / GIF 画像のみ対応しています",
   "users.avatarTooLarge": "画像サイズは 2MB を超えることはできません",
-  "vm.creating": "VM を作成しています。しばらくしてからリソース一覧をご確認ください。"
+  "vm.creating": "VM を作成しています。しばらくしてからリソース一覧をご確認ください。",
+  "vm.console_booting": "マシンはまだ起動中です。しばらく待ってからコンソールを開いてください。"
 }

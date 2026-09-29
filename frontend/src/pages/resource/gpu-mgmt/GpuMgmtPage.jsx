@@ -198,7 +198,7 @@ export default function GpuMgmtPage() {
       const res = await GpuService.listMappings();
       setRows(flattenMappings(res?.data ?? []));
     } catch (e) {
-      if (!silent) toast.error(e?.message ?? t("GpuMgmtPage.loadFailed"));
+      if (!silent) toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -359,8 +359,9 @@ export default function GpuMgmtPage() {
                           <div className={styles.actions}>
                             <button
                               type="button"
-                              className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                              className={styles.actionBtnDanger}
                               title={t("GpuMgmtPage.removeMappingTitle")}
+                              aria-label={`${t("GpuMgmtPage.removeMappingTitle")} ${n.mapping}`}
                               disabled={deleting}
                               onClick={() => handleDelete(n.id)}
                             >

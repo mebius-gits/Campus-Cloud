@@ -1,8 +1,8 @@
 """建立範本時對同 VMID 舊紀錄的處理（in-memory SQLite，mock PVE 與隊列）。
 
-背景：範本刪除是軟刪除（status=deleted 保留紀錄），而 pve_vmid 有
-unique 約束；PVE 會回收重用 VMID，因此軟刪除紀錄不能永久擋住同
-VMID 重新註冊——應復用該筆紀錄重新開始生命週期。
+背景：範本刪除是軟刪除（status=deleted 保留紀錄），PVE 會回收重用 VMID。
+pve_vmid 只對未刪除的範本唯一（partial unique），同 VMID 重新註冊時另建
+新列；舊列保留原 id，課程版本等歷史引用不會被新範本接手。
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.exceptions import ConflictError, PermissionDeniedError
@@ -24,9 +25,12 @@ from app.services.template import template_service
 
 @pytest.fixture()
 def db() -> Session:
+    # 校驗在 threadpool 執行：in-memory SQLite 必須所有 thread 共用同一條連線，
+    # 否則 worker thread 會拿到一個沒有任何資料表的新資料庫
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -111,11 +115,11 @@ def test_get_template_by_pve_vmid_excludes_deleted_by_default(
 
 
 # ---------------------------------------------------------------------------
-# service：軟刪除紀錄應被復用，活躍紀錄仍要 409
+# service：軟刪除紀錄保留不動、另建新列，活躍紀錄仍要 409
 # ---------------------------------------------------------------------------
 
 
-async def test_create_template_reuses_soft_deleted_record(
+async def test_create_template_keeps_soft_deleted_record(
     db: Session, fake_pve: None
 ) -> None:
     old = seed_template(db, pve_vmid=102, status=VMTemplateStatus.deleted)
@@ -136,9 +140,10 @@ async def test_create_template_reuses_soft_deleted_record(
     rows = db.exec(
         select(VMTemplate).where(VMTemplate.pve_vmid == 102)
     ).all()
-    assert len(rows) == 1  # 復用同一筆，不違反 unique 約束
-    row = rows[0]
-    assert row.id == old.id
+    assert len(rows) == 2  # 舊列保留給歷史引用，partial unique 只約束未刪除列
+    db.refresh(old)
+    assert old.status == VMTemplateStatus.deleted
+    row = next(r for r in rows if r.id != old.id)
     assert row.status == VMTemplateStatus.creating
     assert row.name == "fresh-template"
     assert row.description == "rebuilt"

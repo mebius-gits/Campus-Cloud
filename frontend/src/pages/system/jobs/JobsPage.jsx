@@ -100,7 +100,7 @@ export default function JobsPage() {
       const res = await JobsService.list(params);
       setJobs(res?.items ?? []);
     } catch (e) {
-      if (!silent) toast.error(e?.message ?? t("JobsPage.toastLoadFailed"));
+      if (!silent) toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -117,8 +117,6 @@ export default function JobsPage() {
     completed: jobs.filter((j) => j.status === "completed").length,
     failed: jobs.filter((j) => j.status === "failed").length,
   }), [jobs]);
-
-  const visible = jobs;
 
   return (
     <div className={styles.page}>
@@ -182,7 +180,7 @@ export default function JobsPage() {
       <div className={styles.content}>
         {loading ? (
           <LoadingState fullPage text={t("JobsPage.loading")} />
-        ) : visible.length === 0 ? (
+        ) : jobs.length === 0 ? (
           <EmptyState />
         ) : (
           <div className={styles.tableWrap}>
@@ -195,7 +193,7 @@ export default function JobsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((j) => (
+                {jobs.map((j) => (
                   <tr
                     key={j.id}
                     className={styles.tr}

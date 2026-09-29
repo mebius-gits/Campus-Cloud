@@ -3,8 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import EmptyState from "../../../components/EmptyState/EmptyState";
+import ErrorState from "../../../components/ErrorState/ErrorState";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import MIcon from "../../../components/MIcon";
+import PageHeader from "../../../components/PageHeader/PageHeader";
 import { CoursesService } from "../../../services/courses";
 import styles from "./StudentWeekPage.module.scss";
 
@@ -144,20 +146,23 @@ export default function StudentWeekPage() {
 
   if (!view.week) {
     return <div className={styles.page}>
-      <button type="button" className={styles.backButton} onClick={() => navigate(`/courses/${pathId}`)}><MIcon name="arrow_back" size={18} />{t("StudentWeekPage.back")}</button>
-      <EmptyState icon="event_busy" title={t("StudentWeekPage.notFoundTitle")} description={view.failed ? t("StudentWeekPage.loadFailed") : t("StudentWeekPage.notFoundDesc")} />
+      <button type="button" className={`${styles.backBtn} ${styles.backBtnAlone}`} onClick={() => navigate(`/courses/${pathId}`)}><MIcon name="arrow_back" size={18} />{t("StudentWeekPage.back")}</button>
+      {view.failed
+        ? <ErrorState />
+        : <EmptyState icon="event_busy" title={t("StudentWeekPage.notFoundTitle")} description={t("StudentWeekPage.notFoundDesc")} />}
     </div>;
   }
 
   return <div className={styles.page}>
-    <header className={styles.header} data-guide="course-week-header">
-      <button type="button" className={styles.backButton} onClick={() => navigate(`/courses/${pathId}`)}><MIcon name="arrow_back" size={18} />{t("StudentWeekPage.back")}</button>
-      <div>
-        <p>{view.path?.title ?? view.week.teaching_class_name}</p>
-        <h1>{view.week.title}</h1>
-        <span>{t("StudentWeekPage.weekMeta", { week: view.week.week_number, date: new Intl.DateTimeFormat(i18n.language, { dateStyle: "long" }).format(new Date(`${view.week.session_date}T00:00:00`)) })}</span>
-      </div>
-    </header>
+    <div data-guide="course-week-header">
+      <PageHeader
+        eyebrow={view.path?.title ?? view.week.teaching_class_name}
+        title={view.week.title}
+        subtitle={t("StudentWeekPage.weekMeta", { week: view.week.week_number, date: new Intl.DateTimeFormat(i18n.language, { dateStyle: "long" }).format(new Date(`${view.week.session_date}T00:00:00`)) })}
+      >
+        <button type="button" className={styles.backBtn} onClick={() => navigate(`/courses/${pathId}`)}><MIcon name="arrow_back" size={18} />{t("StudentWeekPage.back")}</button>
+      </PageHeader>
+    </div>
 
     {isGuideDemo && (
       <div className={styles.guideDemoNotice}>

@@ -2,17 +2,48 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./MonitoringPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import { MiningIncidentsService } from "../../../services/miningIncidents";
 import { useToast } from "../../../hooks/useToast";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import useDialogPresence from "../../../hooks/useDialogPresence";
+import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import { formatDateTime } from "../../../utils/formatDate";
 
-/** detected/suspended 視為待處理（紅），其餘中性 */
+/** 待處理＝detected／suspended（與後端 open 定義相同）；banned／dismissed 為已結案 */
+const isOpenIncident = (status) => status === "detected" || status === "suspended";
+
+/** 待處理顯示紅色，已結案中性 */
 function statusBadgeClass(status) {
-  return status === "detected" || status === "suspended" ? "badge_danger" : "badge_muted";
+  return isOpenIncident(status) ? "badge_danger" : "badge_muted";
+}
+
+/**
+ * 誤判解除後要顯示的提示。
+ * 後端恢復 VM／刪存證快照失敗時仍會結案，只把失敗原因附進 review_note，
+ * 所以不能只看 status（永遠是 dismissed）就報成功。
+ * 優先用回應的 warnings 陣列；舊版後端沒有這個欄位時，review_note 與送出的備註不同
+ * 就代表後端附加了失敗原因（沒有失敗時後端會原樣存入送出的備註）。
+ */
+export function dismissOutcome(incident, result, submittedNote) {
+  let warnings;
+  if (Array.isArray(result?.warnings)) {
+    warnings = result.warnings.filter(Boolean);
+  } else {
+    const stored = result?.review_note ?? null;
+    warnings = stored !== (submittedNote ?? null) && stored ? [stored] : [];
+  }
+  if (warnings.length > 0) {
+    return { level: "warning", key: "MiningIncidentsPanel.toastDismissedWithWarnings", message: warnings.join("；") };
+  }
+  return {
+    level: "success",
+    key: incident?.status === "suspended"
+      ? "MiningIncidentsPanel.toastDismissedAndRecovered"
+      : "MiningIncidentsPanel.toastDismissed",
+  };
 }
 
 export default function MiningIncidentsPanel({ onCountChange }) {
@@ -42,16 +73,11 @@ export default function MiningIncidentsPanel({ onCountChange }) {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 30_000);
-    return () => clearInterval(timer);
   }, [load]);
+  useAutoRefresh(load);
 
-  const open = (incidents ?? []).filter(
-    (i) => i.status === "detected" || i.status === "suspended",
-  );
-  const closed = (incidents ?? []).filter(
-    (i) => i.status === "banned" || i.status === "dismissed",
-  );
+  const open = (incidents ?? []).filter((i) => isOpenIncident(i.status));
+  const closed = (incidents ?? []).filter((i) => !isOpenIncident(i.status));
 
   /* 分頁角標顯示「待處理」筆數，載入後回報給監控頁 */
   useEffect(() => {
@@ -90,11 +116,17 @@ export default function MiningIncidentsPanel({ onCountChange }) {
   const handleDismiss = async () => {
     setBusy(true);
     try {
+      const note = dismissNote || null;
       const result = await MiningIncidentsService.dismiss(dismissTarget.id, {
         exempt: dismissExempt,
-        note: dismissNote || null,
+        note,
       });
-      toast.success(result.status === "dismissed" ? t("MiningIncidentsPanel.toastDismissedAndRecovered") : t("MiningIncidentsPanel.toastDismissed"));
+      const outcome = dismissOutcome(dismissTarget, result, note);
+      if (outcome.level === "warning") {
+        toast.warning(t(outcome.key, { message: outcome.message }));
+      } else {
+        toast.success(t(outcome.key));
+      }
       closeDismiss();
       await load();
     } catch (e) {
@@ -126,7 +158,7 @@ export default function MiningIncidentsPanel({ onCountChange }) {
               <th className={styles.th}>{t("MiningIncidentsPanel.colSnapshot")}</th>
               <th className={styles.th}>{t("MiningIncidentsPanel.colStatus")}</th>
               <th className={styles.th}>{t("MiningIncidentsPanel.colDetectedAt")}</th>
-              <th className={`${styles.th} ${styles.thRight}`}>{t("MiningIncidentsPanel.colActions")}</th>
+              <th className={styles.th}>{t("MiningIncidentsPanel.colActions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -153,12 +185,18 @@ export default function MiningIncidentsPanel({ onCountChange }) {
                   <span className={`${styles.badge} ${styles[statusBadgeClass(incident.status)]}`}>
                     {STATUS_LABELS[incident.status] ?? incident.status}
                   </span>
+                  {/* 結案備註含後端附加的失敗原因（例如 VM 恢復失敗要手動開機），重新整理後仍要看得到 */}
+                  {!isOpenIncident(incident.status) && incident.review_note && (
+                    <div className={`${styles.mutedCell} ${styles.reviewNote}`} title={incident.review_note}>
+                      {incident.review_note}
+                    </div>
+                  )}
                 </td>
                 <td className={`${styles.td} ${styles.mutedCell}`}>
                   {formatDateTime(incident.detected_at)}
                 </td>
-                <td className={`${styles.td} ${styles.tdRight}`}>
-                  {(incident.status === "detected" || incident.status === "suspended") && (
+                <td className={`${styles.td} ${styles.tdActions}`}>
+                  {isOpenIncident(incident.status) && (
                     <>
                       <button
                         type="button"
@@ -187,36 +225,16 @@ export default function MiningIncidentsPanel({ onCountChange }) {
         </table>
       )}
 
-      {/* 誤判解除：要勾選豁免與填備註，維持自建對話框；送出中不可關閉 */}
+      {/* 誤判解除：要勾選豁免與填備註，不能用 useConfirm；送出中 Esc／點遮罩都不關 */}
       {dismissDialog.open && (
-        <div
-          className={`${styles.modalOverlay} ${dismissDialog.closing ? styles.modalOverlayOut : ""}`}
-          onClick={() => { if (!busy) closeDismiss(); }}
-        >
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <span className={styles.modalTitle}>{t("MiningIncidentsPanel.dismissTitle")}</span>
-            <p className={styles.modalDesc}>
-              {t("MiningIncidentsPanel.dismissMessage", { vmid: dismissDialog.item.vmid })}
-            </p>
-            <label className={styles.checkLine}>
-              <input
-                type="checkbox"
-                checked={dismissExempt}
-                onChange={(e) => setDismissExempt(e.target.checked)}
-              />
-              {t("MiningIncidentsPanel.exemptLabel")}
-            </label>
-            <div className={styles.field}>
-              <label htmlFor="mining-note">{t("MiningIncidentsPanel.noteLabel")}</label>
-              <textarea
-                id="mining-note"
-                rows={3}
-                placeholder={t("MiningIncidentsPanel.notePlaceholder")}
-                value={dismissNote}
-                onChange={(e) => setDismissNote(e.target.value)}
-              />
-            </div>
-            <div className={styles.modalActions}>
+        <Modal
+          closing={dismissDialog.closing}
+          onClose={closeDismiss}
+          busy={busy}
+          title={t("MiningIncidentsPanel.dismissTitle")}
+          description={t("MiningIncidentsPanel.dismissMessage", { vmid: dismissDialog.item.vmid })}
+          actions={
+            <>
               <button type="button" className={styles.btnSecondary} disabled={busy} onClick={closeDismiss}>
                 {t("MiningIncidentsPanel.cancel")}
               </button>
@@ -228,9 +246,28 @@ export default function MiningIncidentsPanel({ onCountChange }) {
               >
                 {busy ? t("MiningIncidentsPanel.processing") : t("MiningIncidentsPanel.confirmDismiss")}
               </button>
-            </div>
+            </>
+          }
+        >
+          <label className={styles.checkLine}>
+            <input
+              type="checkbox"
+              checked={dismissExempt}
+              onChange={(e) => setDismissExempt(e.target.checked)}
+            />
+            {t("MiningIncidentsPanel.exemptLabel")}
+          </label>
+          <div className={styles.field}>
+            <label htmlFor="mining-note">{t("MiningIncidentsPanel.noteLabel")}</label>
+            <textarea
+              id="mining-note"
+              rows={3}
+              placeholder={t("MiningIncidentsPanel.notePlaceholder")}
+              value={dismissNote}
+              onChange={(e) => setDismissNote(e.target.value)}
+            />
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

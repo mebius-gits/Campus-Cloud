@@ -1,5 +1,5 @@
 {
-  "reverseProxy.runtimeFetchFailed": "無法取得 Traefik runtime 狀態",
+  "reverseProxy.runtimeFetchFailed": "無法取得 nginx 執行狀態",
   "reverseProxy.vmIpUnavailable": "無法取得 VM IP，請確認 VM 已開機且已取得網路位址",
   "reverseProxy.ruleCreated": "反向代理規則已建立",
   "reverseProxy.createFailed": "建立反向代理規則失敗",
@@ -10,7 +10,7 @@
   "reverseProxy.ruleDeleted": "反向代理規則已刪除",
   "reverseProxy.proxmoxOperationFailed": "Proxmox 操作失敗",
   "reverseProxy.deleteFailed": "刪除反向代理規則失敗",
-  "reverseProxy.rulesSynced": "反向代理規則已同步到 Gateway VM",
+  "reverseProxy.rulesSynced": "反向代理與 Port 轉發規則已同步到 Gateway 的 nginx",
   "reverseProxy.syncFailed": "同步反向代理規則失敗",
   "rubric.unsupportedFormat": "不支援的格式 '{suffix}'，目前接受：{allowed}",
   "rubric.unknownTemplate": "未知的評分環境 template。",
@@ -20,7 +20,6 @@
   "rubric.noItemsToExport": "沒有可匯出的評分項目。",
   "quotas.alreadyExists": "此對象已有配額設定，請改用更新",
   "lxc.creating": "LXC 建立中，請稍後於資源列表查看",
-  "proxmoxConfig.passwordRequired": "初次設定必須提供密碼",
   "proxmoxConfig.invalidCaCert": "CA 憑證格式無效，請貼上正確的 PEM 格式內容",
   "proxmoxConfig.cannotDeleteDefault": "此連線為預設連線，請先將其他連線設為預設再刪除",
   "proxmoxConfig.connectionSuccess": "連線成功，偵測到節點：{nodes}",
@@ -32,5 +31,6 @@
   "proxmoxConfig.connectionResourceCheckFailed": "目前連不上這個 PVE，無法確認底下是否還有機器，暫時不允許刪除，請稍後再試",
   "users.avatarUnsupportedFormat": "僅支援 PNG / JPEG / WebP / GIF 圖片",
   "users.avatarTooLarge": "圖片大小不可超過 2MB",
-  "vm.creating": "VM 建立中，請稍後於資源列表查看"
+  "vm.creating": "VM 建立中，請稍後於資源列表查看",
+  "vm.console_booting": "機器仍在開機中，請稍候再開啟控制台"
 }

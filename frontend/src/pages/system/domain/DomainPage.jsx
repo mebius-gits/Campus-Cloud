@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import styles from "./DomainPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import { useToast } from "../../../hooks/useToast";
@@ -13,11 +14,67 @@ import PageHeader from "../../../components/PageHeader/PageHeader";
 import SegmentedControl from "../../../components/SegmentedControl/SegmentedControl";
 import PasswordInput from "../../../components/PasswordInput/PasswordInput";
 import { ReverseProxyPanel } from "../../network/reverse-proxy/ReverseProxyPage";
-import { formatDateTime } from "../../../utils/formatDate";
+import { formatDateTime, formatShortDateTime } from "../../../utils/formatDate";
 
 const TAB_KEYS = ["dns", "reverse-proxy"];
 
-const DNS_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV"];
+/* SRV 需要結構化 data（service/proto/weight/port/target），表單與後端都沒有，所以不提供 */
+export const DNS_TYPES = ["A", "AAAA", "CNAME", "TXT", "MX", "NS"];
+/* Cloudflare 對 MX 要求 priority；後端 schema 範圍 0–65535 */
+const PRIORITY_TYPES = new Set(["MX"]);
+const DEFAULT_MX_PRIORITY = 10;
+
+/** 編輯既有紀錄時，類型不在清單內（例如外部建立的 SRV）也要列出，避免下拉框顯示成別的類型 */
+export function recordTypeOptions(currentType) {
+  return currentType && !DNS_TYPES.includes(currentType) ? [...DNS_TYPES, currentType] : DNS_TYPES;
+}
+
+/**
+ * DNS record 表單 → API body。
+ * - MX 一定帶 priority（Cloudflare 必填）。
+ * - 編輯時一律帶 comment：空字串代表清除備註；新增時空白就不送。
+ */
+export function buildRecordBody(form, isEdit) {
+  const body = {
+    type: form.type,
+    name: form.name.trim(),
+    content: form.content.trim(),
+    ttl: Number(form.ttl) || 1,
+    proxied: form.proxied,
+  };
+  const comment = (form.comment ?? "").trim();
+  if (isEdit || comment) body.comment = comment;
+  if (PRIORITY_TYPES.has(form.type)) {
+    const raw = String(form.priority ?? "").trim();
+    const priority = raw === "" ? NaN : Number(raw);
+    body.priority = Number.isInteger(priority) && priority >= 0 && priority <= 65535 ? priority : DEFAULT_MX_PRIORITY;
+  }
+  return body;
+}
+
+/**
+ * Zone 清單重新載入後的選取：原本選的 zone 還在就換成新物件（沿用同一個 id），
+ * 不在了（例如換了另一個帳號的 Token）就改選第一個，避免畫面停在舊帳號的紀錄。
+ */
+export function pickSelectedZone(prev, items) {
+  const kept = prev ? items.find((z) => z.id === prev.id) : undefined;
+  return kept ?? items[0] ?? null;
+}
+
+/* 兩個 Modal 共用的「取消／儲存」列；儲存鈕是 submit，交給外層 form 處理 */
+function ModalActions({ loading, onClose }) {
+  const { t } = useTranslation("system");
+  return (
+    <>
+      <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={loading}>
+        {t("DomainPage.cancel")}
+      </button>
+      <button type="submit" className={styles.btnPrimary} disabled={loading}>
+        {loading ? t("DomainPage.saving") : t("DomainPage.save")}
+      </button>
+    </>
+  );
+}
 
 /* ── 供應商設定 Modal ───────────────────────────────────── */
 
@@ -29,15 +86,6 @@ function ConfigModal({ config, loading, closing = false, onClose, onSubmit }) {
     default_dns_target_type: config?.default_dns_target_type ?? "",
     default_dns_target_value: config?.default_dns_target_value ?? "",
   });
-
-  /* Esc 關閉（Dialog 標準行為）；儲存中不關，跟取消鈕的 disabled 一致 */
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === "Escape" && !loading) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loading, onClose]);
 
   function set(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -54,82 +102,74 @@ function ConfigModal({ config, loading, closing = false, onClose, onSubmit }) {
     onSubmit(body);
   }
 
+  /* 外框（遮罩、標題列、Esc、焦點、捲動鎖）交給共用 Modal；儲存中 Esc／點遮罩／× 都不關 */
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onMouseDown={onClose}
+    <Modal
+      as="form"
+      onSubmit={submit}
+      closing={closing}
+      onClose={onClose}
+      busy={loading}
+      closeButton
+      size="md"
+      title={t("DomainPage.configModalTitle")}
+      data-guide="domain-config-form"
+      closeProps={{ "data-guide": "domain-modal-close" }}
+      actions={<ModalActions loading={loading} onClose={onClose} />}
     >
-      <form className={styles.modal} onSubmit={submit} onMouseDown={(e) => e.stopPropagation()} data-guide="domain-config-form">
-        <div className={styles.modalHeader}>
-          <h2>{t("DomainPage.configModalTitle")}</h2>
-          <button type="button" className={styles.dialogClose} onClick={onClose} aria-label={t("DomainPage.close")} data-guide="domain-modal-close">
-            <MIcon name="close" size={18} />
-          </button>
-        </div>
+      <label className={styles.field} data-guide="domain-config-credentials">
+        <span>Account ID</span>
+        <input
+          value={form.account_id}
+          onChange={(e) => set("account_id", e.target.value)}
+          placeholder="Cloudflare Account ID"
+        />
+      </label>
 
-        <label className={styles.field} data-guide="domain-config-credentials">
-          <span>Account ID</span>
-          <input
-            value={form.account_id}
-            onChange={(e) => set("account_id", e.target.value)}
-            placeholder="Cloudflare Account ID"
-          />
-        </label>
+      <label className={styles.field}>
+        {/* 「去哪拿 Token」的連結放在欄位旁，需要時就在手邊 */}
+        <span className={styles.labelRow}>
+          <span>API Token{config?.has_api_token ? t("DomainPage.leaveBlankUnchanged") : " *"}</span>
+          <a
+            className={styles.fieldLink}
+            href="https://dash.cloudflare.com/profile/api-tokens"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t("DomainPage.tokenGuideLink")}
+            <MIcon name="open_in_new" size={13} />
+          </a>
+        </span>
+        <PasswordInput
+          value={form.api_token}
+          onChange={(e) => set("api_token", e.target.value)}
+          placeholder={config?.has_api_token ? t("DomainPage.apiTokenSetPlaceholder") : t("DomainPage.apiTokenPastePlaceholder")}
+          required={!config?.has_api_token}
+        />
+      </label>
 
+      <div className={styles.fieldRow}>
         <label className={styles.field}>
-          {/* 「去哪拿 Token」的連結放在欄位旁，需要時就在手邊 */}
-          <span className={styles.labelRow}>
-            <span>API Token{config?.has_api_token ? t("DomainPage.leaveBlankUnchanged") : " *"}</span>
-            <a
-              className={styles.fieldLink}
-              href="https://dash.cloudflare.com/profile/api-tokens"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("DomainPage.tokenGuideLink")}
-              <MIcon name="open_in_new" size={13} />
-            </a>
-          </span>
-          <PasswordInput
-            value={form.api_token}
-            onChange={(e) => set("api_token", e.target.value)}
-            placeholder={config?.has_api_token ? t("DomainPage.apiTokenSetPlaceholder") : t("DomainPage.apiTokenPastePlaceholder")}
-            required={!config?.has_api_token}
+          <span>{t("DomainPage.defaultDnsTargetType")}</span>
+          <select
+            value={form.default_dns_target_type}
+            onChange={(e) => set("default_dns_target_type", e.target.value)}
+          >
+            <option value="">{t("DomainPage.notSet")}</option>
+            <option value="A">{t("DomainPage.dnsTypeA")}</option>
+            <option value="CNAME">{t("DomainPage.dnsTypeCname")}</option>
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>{t("DomainPage.defaultDnsTargetValue")}</span>
+          <input
+            value={form.default_dns_target_value}
+            onChange={(e) => set("default_dns_target_value", e.target.value)}
+            placeholder={t("DomainPage.dnsTargetValuePlaceholder")}
           />
         </label>
-
-        <div className={styles.fieldRow}>
-          <label className={styles.field}>
-            <span>{t("DomainPage.defaultDnsTargetType")}</span>
-            <select
-              value={form.default_dns_target_type}
-              onChange={(e) => set("default_dns_target_type", e.target.value)}
-            >
-              <option value="">{t("DomainPage.notSet")}</option>
-              <option value="A">{t("DomainPage.dnsTypeA")}</option>
-              <option value="CNAME">{t("DomainPage.dnsTypeCname")}</option>
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>{t("DomainPage.defaultDnsTargetValue")}</span>
-            <input
-              value={form.default_dns_target_value}
-              onChange={(e) => set("default_dns_target_value", e.target.value)}
-              placeholder={t("DomainPage.dnsTargetValuePlaceholder")}
-            />
-          </label>
-        </div>
-
-        <div className={styles.modalActions}>
-          <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={loading}>
-            {t("DomainPage.cancel")}
-          </button>
-          <button type="submit" className={styles.btnPrimary} disabled={loading}>
-            {loading ? t("DomainPage.saving") : t("DomainPage.save")}
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -145,6 +185,7 @@ function RecordModal({ record, loading, closing = false, onClose, onSubmit }) {
     ttl: record?.ttl ?? 1,
     proxied: record?.proxied ?? false,
     comment: record?.comment ?? "",
+    priority: record?.priority ?? DEFAULT_MX_PRIORITY,
   });
 
   function set(name, value) {
@@ -153,101 +194,97 @@ function RecordModal({ record, loading, closing = false, onClose, onSubmit }) {
 
   function submit(e) {
     e.preventDefault();
-    const body = {
-      type: form.type,
-      name: form.name.trim(),
-      content: form.content.trim(),
-      ttl: Number(form.ttl) || 1,
-      proxied: form.proxied,
-    };
-    if (form.comment.trim()) body.comment = form.comment.trim();
-    onSubmit(body);
+    onSubmit(buildRecordBody(form, isEdit));
   }
 
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onMouseDown={onClose}
+    <Modal
+      as="form"
+      onSubmit={submit}
+      closing={closing}
+      onClose={onClose}
+      busy={loading}
+      closeButton
+      size="md"
+      title={isEdit ? t("DomainPage.recordModalEditTitle") : t("DomainPage.recordModalCreateTitle")}
+      description={t("DomainPage.ttlHint")}
+      data-guide="domain-record-form"
+      closeProps={{ "data-guide": "domain-modal-close" }}
+      actions={<ModalActions loading={loading} onClose={onClose} />}
     >
-      <form className={styles.modal} onSubmit={submit} onMouseDown={(e) => e.stopPropagation()} data-guide="domain-record-form">
-        <div className={styles.modalHeader}>
-          <div>
-            <h2>{isEdit ? t("DomainPage.recordModalEditTitle") : t("DomainPage.recordModalCreateTitle")}</h2>
-            <p>{t("DomainPage.ttlHint")}</p>
-          </div>
-          <button type="button" className={styles.dialogClose} onClick={onClose} aria-label={t("DomainPage.close")} data-guide="domain-modal-close">
-            <MIcon name="close" size={18} />
-          </button>
-        </div>
-
-        <div className={styles.fieldRow}>
-          <label className={styles.field}>
-            <span>{t("DomainPage.recordType")}</span>
-            <select value={form.type} onChange={(e) => set("type", e.target.value)}>
-              {DNS_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>TTL</span>
-            <input
-              type="number"
-              min={1}
-              value={form.ttl}
-              onChange={(e) => set("ttl", e.target.value)}
-            />
-          </label>
-        </div>
-
+      <div className={styles.fieldRow}>
         <label className={styles.field}>
-          <span>{t("DomainPage.recordName")}</span>
+          <span>{t("DomainPage.recordType")}</span>
+          <select value={form.type} onChange={(e) => set("type", e.target.value)}>
+            {recordTypeOptions(record?.type).map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>TTL</span>
           <input
-            value={form.name}
-            onChange={(e) => set("name", e.target.value)}
-            placeholder={t("DomainPage.recordNamePlaceholder")}
+            type="number"
+            min={1}
+            value={form.ttl}
+            onChange={(e) => set("ttl", e.target.value)}
+          />
+        </label>
+      </div>
+
+      <label className={styles.field}>
+        <span>{t("DomainPage.recordName")}</span>
+        <input
+          value={form.name}
+          onChange={(e) => set("name", e.target.value)}
+          placeholder={t("DomainPage.recordNamePlaceholder")}
+          required
+        />
+      </label>
+
+      <label className={styles.field}>
+        <span>{t("DomainPage.recordContent")}</span>
+        <input
+          value={form.content}
+          onChange={(e) => set("content", e.target.value)}
+          placeholder={t("DomainPage.recordContentPlaceholder")}
+          required
+        />
+      </label>
+
+      {PRIORITY_TYPES.has(form.type) && (
+        <label className={styles.field}>
+          <span>{t("DomainPage.recordPriority")}</span>
+          <input
+            type="number"
+            min={0}
+            max={65535}
+            step={1}
+            value={form.priority}
+            onChange={(e) => set("priority", e.target.value)}
             required
           />
         </label>
+      )}
 
-        <label className={styles.field}>
-          <span>{t("DomainPage.recordContent")}</span>
-          <input
-            value={form.content}
-            onChange={(e) => set("content", e.target.value)}
-            placeholder={t("DomainPage.recordContentPlaceholder")}
-            required
-          />
-        </label>
+      <label className={styles.field}>
+        <span>{t("DomainPage.recordComment")}</span>
+        <input
+          value={form.comment}
+          onChange={(e) => set("comment", e.target.value)}
+          placeholder={t("DomainPage.optional")}
+        />
+      </label>
 
-        <label className={styles.field}>
-          <span>{t("DomainPage.recordComment")}</span>
-          <input
-            value={form.comment}
-            onChange={(e) => set("comment", e.target.value)}
-            placeholder={t("DomainPage.optional")}
-          />
-        </label>
-
-        <label className={styles.checkRow}>
-          <input
-            type="checkbox"
-            checked={form.proxied}
-            onChange={(e) => set("proxied", e.target.checked)}
-          />
-          <span>{t("DomainPage.proxiedLabel")}</span>
-        </label>
-
-        <div className={styles.modalActions}>
-          <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={loading}>
-            {t("DomainPage.cancel")}
-          </button>
-          <button type="submit" className={styles.btnPrimary} disabled={loading}>
-            {loading ? t("DomainPage.saving") : t("DomainPage.save")}
-          </button>
-        </div>
-      </form>
-    </div>
+      <label className={styles.checkRow}>
+        <input
+          type="checkbox"
+          checked={form.proxied}
+          onChange={(e) => set("proxied", e.target.checked)}
+        />
+        <span>{t("DomainPage.proxiedLabel")}</span>
+      </label>
+    </Modal>
   );
 }
 
@@ -294,7 +331,7 @@ export default function DomainPage() {
       const res = await CloudflareService.listZones({ per_page: 50 });
       const items = res?.items ?? [];
       setZones(items);
-      setSelectedZone((prev) => prev ?? items[0] ?? null);
+      setSelectedZone((prev) => pickSelectedZone(prev, items));
     } catch (err) {
       // 未設定連線時後端會回錯誤，front 只顯示空狀態
       if (err?.status !== 400) toast.error(err?.message ?? t("DomainPage.toastLoadZonesFailed"));
@@ -303,18 +340,25 @@ export default function DomainPage() {
     }
   }, [toast, t]);
 
+  /* 只套用最後一次請求的結果：快速切換 zone 時，較晚回來的舊 zone 回應不能蓋掉目前 zone 的紀錄
+     （否則編輯／刪除會拿 A 的 record id 打到 B 的 zone） */
+  const recordsSeq = useRef(0);
   const fetchRecords = useCallback(async (zoneId, keyword) => {
+    const seq = ++recordsSeq.current;
     setLoadingRecords(true);
     try {
       const res = await CloudflareService.listDnsRecords(zoneId, {
         per_page: 100,
         search: keyword || undefined,
       });
-      setRecords(res?.items ?? []);
+      if (seq === recordsSeq.current) setRecords(res?.items ?? []);
     } catch (err) {
-      toast.error(err?.message ?? t("DomainPage.toastLoadRecordsFailed"));
+      if (seq === recordsSeq.current) {
+        setRecords([]);
+        toast.error(err?.message ?? t("DomainPage.toastLoadRecordsFailed"));
+      }
     } finally {
-      setLoadingRecords(false);
+      if (seq === recordsSeq.current) setLoadingRecords(false);
     }
   }, [toast, t]);
 
@@ -401,6 +445,17 @@ export default function DomainPage() {
   }
 
   const isConfigured = config?.is_configured;
+  const accountId = config?.account_id;
+  const verifiedAt = config?.last_verified_at;
+  /* 32 字元的 Account ID 只留頭尾，完整值與精確時間放滑過提示（連線設定裡也看得到） */
+  const statusMeta = [
+    accountId && `${t("DomainPage.accountLabel")}${accountId.length > 12 ? `${accountId.slice(0, 4)}…${accountId.slice(-4)}` : accountId}`,
+    verifiedAt && `${t("DomainPage.lastVerifiedLabel")}${formatShortDateTime(verifiedAt)}`,
+  ].filter(Boolean).join(" · ");
+  const statusTitle = [
+    accountId && `${t("DomainPage.accountLabel")}${accountId}`,
+    verifiedAt && `${t("DomainPage.lastVerifiedLabel")}${formatDateTime(verifiedAt)}`,
+  ].filter(Boolean).join("\n");
 
   return (
     <div className={styles.page}>
@@ -426,30 +481,30 @@ export default function DomainPage() {
         </div>
       </PageHeader>
 
-      {config && (
-        <div className={styles.configBar} data-guide="domain-status">
-          <span className={`${styles.badge} ${isConfigured ? styles.badge_success : styles.badge_danger}`}>
-            <MIcon name={isConfigured ? "check_circle" : "error"} size={13} />
-            {isConfigured ? t("DomainPage.connected") : t("DomainPage.notSet")}
-          </span>
-          {config.account_id && <span className={styles.configMeta}>{t("DomainPage.accountLabel")}{config.account_id}</span>}
-          {config.last_verified_at && (
-            <span className={styles.configMeta}>{t("DomainPage.lastVerifiedLabel")}{formatDateTime(config.last_verified_at)}</span>
-          )}
+      <div className={styles.tabsRow}>
+        {/* 連線狀態顯示在分頁列右側，但 DOM 排在分頁前面（order 移到右邊）：
+            導覽第 2 步的選擇器取第一個符合的元素，才會先框狀態、設定未載入時再退回分頁 */}
+        {config && (
+          <div className={styles.connStatus} title={statusTitle || undefined} data-guide="domain-status">
+            <span className={`${styles.badge} ${isConfigured ? styles.badge_success : styles.badge_danger}`}>
+              <MIcon name={isConfigured ? "check_circle" : "error"} size={13} />
+              {isConfigured ? t("DomainPage.connected") : t("DomainPage.notSet")}
+            </span>
+            {statusMeta && <span className={styles.connMeta}>{statusMeta}</span>}
+          </div>
+        )}
+        {/* 外層 div 承接頁面導覽的 data-guide 錨點（SegmentedControl 根節點不收額外屬性） */}
+        <div className={styles.tabs} data-guide="domain-tabs">
+          <SegmentedControl
+            ariaLabel={t("DomainPage.tabsAriaLabel")}
+            value={activeTab}
+            onChange={selectTab}
+            options={[
+              { value: "dns", label: t("DomainPage.tabDns"), icon: "dns" },
+              { value: "reverse-proxy", label: t("DomainPage.tabReverseProxy"), icon: "swap_horiz" },
+            ]}
+          />
         </div>
-      )}
-
-      {/* 外層 div 承接頁面導覽的 data-guide 錨點（SegmentedControl 根節點不收額外屬性） */}
-      <div className={styles.tabs} data-guide="domain-tabs">
-        <SegmentedControl
-          ariaLabel={t("DomainPage.tabsAriaLabel")}
-          value={activeTab}
-          onChange={selectTab}
-          options={[
-            { value: "dns", label: t("DomainPage.tabDns"), icon: "dns" },
-            { value: "reverse-proxy", label: t("DomainPage.tabReverseProxy"), icon: "swap_horiz" },
-          ]}
-        />
       </div>
 
       {activeTab === "reverse-proxy" ? (

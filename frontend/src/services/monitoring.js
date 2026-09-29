@@ -13,11 +13,6 @@ export const MonitoringService = {
     );
   },
 
-  /** VM/LXC RRD 趨勢（擁有者或管理員） */
-  getVmRrd(vmid, timeframe = "hour") {
-    return apiGet(`/api/v1/monitoring/vms/${vmid}/rrd?timeframe=${timeframe}`);
-  },
-
   /** 警告事件列表（active=true 只列未解除的） */
   listAlerts({ active = false, limit = 200 } = {}) {
     const q = new URLSearchParams();
@@ -29,5 +24,18 @@ export const MonitoringService = {
   /** 確認（ack）一筆警告 */
   ackAlert(alertId) {
     return apiPost(`/api/v1/monitoring/alerts/${alertId}/ack`, {});
+  },
+
+  /** 平台健康：DB、Redis、worker、PVE 連線與排程任務心跳（管理員） */
+  getSystemHealth(options) {
+    return apiGet("/api/v1/monitoring/system-health", options);
+  },
+
+  /**
+   * 監控 stack 的 Grafana 是否啟用：{ enabled, url }（未啟用時 url 為 null；管理員）。
+   * 啟用時後端同時設定只在 /grafana/ 送出的 httponly cookie，點連結即免密碼登入。
+   */
+  createGrafanaSession(options) {
+    return apiPost("/api/v1/monitoring/grafana/session", {}, options);
   },
 };

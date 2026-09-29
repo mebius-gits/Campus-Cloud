@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import styles from "./ResourceDetailPage.module.scss";
 import sl from "./SpecificationsTab.module.scss";
 import LoadingState from "../../../../components/LoadingState/LoadingState";
+import ErrorState from "../../../../components/ErrorState/ErrorState";
+import NotFoundState from "../../../../components/ErrorState/NotFoundState";
+import { isNotFound } from "../../../../services/api";
 import MIcon from "../../../../components/MIcon";
 import { useConfirm } from "../../../../components/ConfirmDialog/ConfirmProvider";
 import { useAuth } from "../../../../contexts/AuthContext";
@@ -17,6 +20,7 @@ import {
 } from "../../../../services/specChangeRequests";
 import { useToast } from "../../../../hooks/useToast";
 import { focusInvalidField } from "../../../../utils/focusField";
+import { isAdminUser } from "../../../../utils/roles";
 
 /* 套用中（關機 → 改規格 → 開機）約 1～3 分鐘，期間每 5 秒跟一次進度 */
 const APPLY_POLL_MS = 5000;
@@ -108,7 +112,7 @@ function OpenRequestNotice({ request, busy, onApply, onCancel }) {
   }
 
   return (
-    <div className={styles.noteBox}>
+    <div className={`${styles.noteBox} ${styles.noteCard}`}>
       <span className={styles.noteBoxTitle}>
         <MIcon name={display.key === "applying" ? "hourglass_top" : "tune"} size={14} />
         {t("SpecificationsTab.noticeTitle", { status: statusLabel })}
@@ -210,11 +214,11 @@ export default function SpecificationsTab({ vmid }) {
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.is_superuser || false;
+  const isAdmin = isAdminUser(user);
 
   const [config, setConfig] = useState(null);
   // 課堂與快速練習的機器照課程環境版本建立，規格不接受個別調整；
-  // 後端一直有算 can_request_spec_change，只是沒有人讀。
+  // 資源的 can_request_spec_change 為 false 時鎖住整張調整表單。
   const [specFixed, setSpecFixed] = useState(false);
   const [cores, setCores] = useState(1);
   const [memory, setMemory] = useState(512);
@@ -235,8 +239,8 @@ export default function SpecificationsTab({ vmid }) {
       setCores(c.cpu_cores || 1);
       setMemory(c.memory_mb || 512);
       setDisk(c.disk_gb || 0);
-    } catch {
-      setError(true);
+    } catch (e) {
+      setError(e ?? true);
       return;
     }
     try {
@@ -382,7 +386,7 @@ export default function SpecificationsTab({ vmid }) {
     }
   };
 
-  if (error) return <p className={styles.stateText}>{t("SpecificationsTab.loadFailed")}</p>;
+  if (error) return isNotFound(error) ? <NotFoundState /> : <ErrorState />;
   if (!config) return <LoadingState />;
 
   /* 一張處理中就不能再送（後端也擋），表單只留給管理員或沒有申請時 */
@@ -402,7 +406,7 @@ export default function SpecificationsTab({ vmid }) {
   return (
     <div className={styles.tabStack}>
       {!isAdmin && appliedWarning && !openRequest && (
-        <div className={styles.noteBox}>
+        <div className={`${styles.noteBox} ${styles.noteCard}`}>
           <span className={styles.noteBoxTitle}>
             <MIcon name="warning" size={14} />
             {t("SpecificationsTab.appliedWarningTitle")}
@@ -503,7 +507,7 @@ export default function SpecificationsTab({ vmid }) {
           </div>
 
           {!isAdmin && !specFixed && (
-            <div className={`${styles.field} ${reasonInvalid ? styles.fieldInvalid : ""}`}>
+            <div className={`${styles.field} ${formLocked ? sl.fieldDisabled : ""} ${reasonInvalid ? styles.fieldInvalid : ""}`}>
               <label htmlFor="spec-reason">{t("SpecificationsTab.reasonLabel")}</label>
               <textarea
                 id="spec-reason"

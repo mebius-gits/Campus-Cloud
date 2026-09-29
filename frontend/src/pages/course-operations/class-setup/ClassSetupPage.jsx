@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import MIcon from "../../../components/MIcon";
 import PageHeader from "../../../components/PageHeader/PageHeader";
+import Stepper from "../../../components/Stepper/Stepper";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import { CourseEnvironmentsService } from "../../../services/courseEnvironments";
@@ -17,6 +18,7 @@ import {
   createClassScheduleForm,
   SHUTDOWN_GRACE_OPTIONS,
 } from "../classScheduleForm";
+import { parseStudentEmails, VISIBLE_WEEK_STATUSES, visibleWeekCount, weekFilesPayload } from "../classWeeks";
 import styles from "./ClassSetupPage.module.scss";
 import useAiScreen from "../../../hooks/useAiScreen";
 
@@ -48,13 +50,6 @@ const WEEKDAY_SHORT_KEYS = [
   "ClassSetupPage.weekdayShortSun",
 ];
 
-export function parseStudentEmails(value) {
-  return [...new Set(String(value).split(/[\s,;]+/).map((email) => email.trim().toLowerCase()).filter(Boolean))];
-}
-
-// 後端只把這兩種狀態的週次送到學生端（weekly_task_service.VISIBLE_WEEK_STATUSES）。
-const VISIBLE_WEEK_STATUSES = ["published", "completed"];
-
 export function weekPayload(weeks, { publish = false } = {}) {
   return weeks.map((week, index) => {
     const title = String(week.title ?? "").trim();
@@ -67,19 +62,9 @@ export function weekPayload(weeks, { publish = false } = {}) {
       // 精靈沒有班級頁那種逐週發布鈕；少了這個開關，老師填好的主題會全部停在
       // 草稿，班級建好、狀態變成可上課，學生端卻一週內容都看不到。
       status: publish && title && !VISIBLE_WEEK_STATUSES.includes(status) ? "published" : status,
-      // 只送已上傳檔案的 id，storage_key 由後端依 id 查回（不接受前端指定）
-      files: (week.files ?? [])
-        .filter((file) => file.id)
-        .map((file) => ({
-          id: String(file.id),
-          target_path: file.target_path ?? null,
-        })),
+      files: weekFilesPayload(week.files),
     };
   });
-}
-
-export function visibleWeekCount(weeks) {
-  return weeks.filter((week) => VISIBLE_WEEK_STATUSES.includes(week.status)).length;
 }
 
 export function templateBuilderPath(classId) {
@@ -185,15 +170,24 @@ export default function ClassSetupPage() {
     return () => { active = false; };
   }, [classId, t]);
 
+  const classLoaded = Boolean(item);
   useEffect(() => {
-    if (step !== 5 || !classId || !item?.students.length || !item?.nodes.length) return undefined;
+    if (step !== 5 || !classId || !classLoaded) return undefined;
+    /* 缺學生或缺環境根本不必問後端；直接說缺什麼，不要讓標題一直停在「正在執行容量預檢」 */
+    const missing = [];
+    if (!item?.students.length) missing.push(t("ClassSetupPage.needAtLeastOneStudent"));
+    if (!item?.nodes.length) missing.push(t("ClassWorkspacePage.noEnvSelected"));
+    if (missing.length) {
+      setCapacity({ ready: false, issues: missing });
+      return undefined;
+    }
     let active = true;
     setCapacity(null);
     TeachingClassesService.capacityPreview(classId)
       .then((result) => active && setCapacity(result))
       .catch((reason) => active && setCapacity({ ready: false, issues: [reason?.message ?? t("ClassSetupPage.capacityCheckFailed")] }));
     return () => { active = false; };
-  }, [step, classId, item?.students.length, item?.nodes.length, t]);
+  }, [step, classId, classLoaded, item?.students.length, item?.nodes.length, t]);
 
   function updateForm(key, value) { setForm((current) => ({ ...current, [key]: value })); clearInvalid(key); }
   function go(nextStep) { setParams(classId ? { classId, step: String(nextStep) } : { step: String(nextStep) }); window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -219,8 +213,13 @@ export default function ClassSetupPage() {
     if (parsed.length) {
       const result = await TeachingClassesService.addStudents(classId, parsed);
       applyClass(result.class);
+      const notices = [];
+      if (result.not_found?.length) notices.push(t("ClassSetupPage.addedStudentsMsg", { added: result.added, notFound: joinList(result.not_found) }));
+      if (result.invalid_role?.length) notices.push(t("ClassWorkspacePage.invalidRoleList", { list: joinList(result.invalid_role) }));
+      if (notices.length) setMessage(notices.join(" "));
+      /* 一位都沒加進來（全部找不到或都不是學生帳號）就停在這一步，名單留著讓老師修正 */
+      if (!(result.class?.students ?? []).length) { markInvalid("emails", emailsRef); return false; }
       setEmails("");
-      if (result.not_found?.length) setMessage(t("ClassSetupPage.addedStudentsMsg", { added: result.added, notFound: joinList(result.not_found) }));
     }
     return true;
   }
@@ -265,11 +264,17 @@ export default function ClassSetupPage() {
     </PageHeader>
 
     <section className={styles.stepperBar}>
-      <nav className={styles.stepper} aria-label={t("ClassSetupPage.stepperAriaLabel")}>{STEPS.map(([key, labelKey], index) => {
-        const number = index + 1;
-        const done = number < step || (number <= 4 && completed[index]);
-        return <button type="button" key={key} disabled={!classId && number > 1} className={`${step === number ? styles.stepActive : ""} ${done ? styles.stepDone : ""}`} onClick={() => number <= step && go(number)}><span>{done ? <MIcon name="check" size={13} /> : number}</span><strong>{t(labelKey)}</strong></button>;
-      })}</nav>
+      {/* 精靈只能往回跳：還沒走到的步驟停用；班級還沒建立前只能停在第一步 */}
+      <Stepper
+        className={styles.stepperMain}
+        ariaLabel={t("ClassSetupPage.stepperAriaLabel")}
+        steps={STEPS.map(([key, labelKey], index) => {
+          const number = index + 1;
+          return { key, label: t(labelKey), done: number < step || (number <= 4 && completed[index]), disabled: number > step || (!classId && number > 1) };
+        })}
+        activeKey={STEPS[step - 1]?.[0]}
+        onSelect={(key) => go(STEPS.findIndex(([k]) => k === key) + 1)}
+      />
       <div className={styles.stepperProgress}><span>{t("ClassSetupPage.progressLabel")}</span><strong>{t("ClassSetupPage.progressCount", { count: provisionReady })}</strong></div>
     </section>
 

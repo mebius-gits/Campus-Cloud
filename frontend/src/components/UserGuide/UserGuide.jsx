@@ -28,37 +28,6 @@ const STUDENT_HOME_GUIDE = {
       titleKey: "UserGuide.studentHome.step3.title",
       textKey: "UserGuide.studentHome.step3.text",
     },
-    {
-      selector: '[data-guide="home-current-course"]',
-      titleKey: "UserGuide.studentHome.step4.title",
-      textKey: "UserGuide.studentHome.step4.text",
-    },
-    {
-      selector: '[data-guide="home-progress"]',
-      titleKey: "UserGuide.studentHome.step5.title",
-      textKey: "UserGuide.studentHome.step5.text",
-    },
-    {
-      selector: '[data-guide="home-start"]',
-      titleKey: "UserGuide.studentHome.step6.title",
-      textKey: "UserGuide.studentHome.step6.text",
-    },
-    {
-      selector: '[data-guide="home-environment"]',
-      titleKey: "UserGuide.studentHome.step7.title",
-      textKey: "UserGuide.studentHome.step7.text",
-    },
-    {
-      selector: '[data-guide="home-tasks"]',
-      titleKey: "UserGuide.studentHome.step8.title",
-      textKey: "UserGuide.studentHome.step8.text",
-    },
-    {
-      selector: '[data-guide="course-ai-assignments"]',
-      titleKey: "UserGuide.studentHome.step9.title",
-      textKey: "UserGuide.studentHome.step9.text",
-      optional: true,
-    },
   ],
 };
 
@@ -92,7 +61,6 @@ const PAGE_GUIDES = {
   },
   "/my-requests": {
     id: "my-requests",
-    guideVersion: "v8",
     autoStart: true,
     enterSelector: '[data-guide="request-create"]',
     enterTargetSelector: '[data-guide="request-resource-settings"]',
@@ -317,7 +285,6 @@ const PAGE_GUIDES = {
   },
   "/ai-api": {
     id: "ai-api",
-    guideVersion: "v7",
     titleKey: "UserGuide.aiApi.title",
     icon: "psychology",
     steps: [
@@ -473,7 +440,7 @@ const COURSE_WEEK_GUIDE = {
 
 function getDetailedGuide(pathname, search = "") {
   if (/^\/courses\/[^/]+\/weeks\/[^/]+$/.test(pathname)) return COURSE_WEEK_GUIDE;
-  if (/^\/(?:courses|dashboard\/course)\/[^/]+$/.test(pathname)) return STUDENT_COURSE_GUIDE;
+  if (/^\/courses\/[^/]+$/.test(pathname)) return STUDENT_COURSE_GUIDE;
   if (/^\/(?:my-resources|resource-mgmt)\/[^/]+$/.test(pathname)) return RESOURCE_DETAIL_GUIDE;
   if (pathname === "/domain" && new URLSearchParams(search).get("tab") === "reverse-proxy") return PAGE_GUIDES["/reverse-proxy"];
   return PAGE_GUIDES[pathname] ?? null;
@@ -585,11 +552,11 @@ export default function UserGuide() {
     if (!routeGuide) return null;
     const detailed = getDetailedGuide(location.pathname, location.search);
     if (!detailed || (location.pathname === "/dashboard" && !isStudent)) return routeGuide;
+    /* guideVersion 沿用 getRouteGuide 的全站版本（進 storageKey，決定自動導覽是否已看過） */
     return {
       ...routeGuide,
       ...detailed,
       generic: false,
-      guideVersion: "v8",
     };
   }, [isStudent, location.pathname, location.search]);
   const [open, setOpen] = useState(false);
@@ -635,7 +602,7 @@ export default function UserGuide() {
   const current = availableSteps[step] ?? availableSteps[0];
   const showEmptySimulation = open && guide?.generic && current?.selector === EMPTY_SIMULATION_STEP.selector;
   const storageKey = guide
-    ? `skylab:user-guide:${guide.guideVersion ?? "v5"}:${user?.id ?? user?.email ?? "user"}:${guide.id}`
+    ? `skylab:user-guide:${guide.guideVersion}:${user?.id ?? user?.email ?? "user"}:${guide.id}`
     : null;
   const isLast = step >= availableSteps.length - 1;
 
@@ -771,7 +738,13 @@ export default function UserGuide() {
         return;
       }
       target ??= activate;
-      if (!target) return;
+      if (!target) {
+        /* 目標始終沒出現（例如容器沒有「開機選項」卡片）：沒有 targetRect 面板就不會顯示，
+           導覽會卡在看不見的一步，直接跳到下一步 */
+        if (step + 1 < availableSteps.length) setStep(step + 1);
+        else complete();
+        return;
+      }
       target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
       frame = window.requestAnimationFrame(update);
       settleTimer = window.setTimeout(update, 360);
@@ -855,18 +828,20 @@ export default function UserGuide() {
   return (
     <>
       {showEmptySimulation && <EmptyGuideSimulation profile={guide.profile} title={displayTitle} t={t} />}
-      {(slot || document.body) && createPortal(
+      {/* 只掛在頁首標題旁的 slot；找不到（頁面還在載入、沒有頁首）就不顯示，
+          不再退回浮在右下角，免得載入中閃現、疊在 AI 助手鈕上 */}
+      {slot && createPortal(
         <button
           type="button"
           data-user-guide-trigger=""
-          className={`${styles.helpButton} ${!slot ? styles.helpButtonFloating : ""}`}
+          className={styles.helpButton}
           onClick={start}
           aria-label={t("UserGuide.openGuideAriaLabel", { title: displayTitle })}
           title={t("UserGuide.guideTitleAttr", { title: displayTitle })}
         >
           <MIcon name="help_outline" size={16} />
         </button>,
-        slot || document.body
+        slot
       )}
 
       {open && current && targetRect && panelPosition && (

@@ -12,6 +12,7 @@ from app.core.db import engine
 from app.domain.scheduling.models import ScheduledTask
 from app.domain.scheduling.runner import run_polling_scheduler
 from app.exceptions import NotFoundError, ProxmoxError
+from app.infrastructure.proxmox import get_connection_id_for_node
 from app.models import (
     VMProvisioningStatus,
     VMRequest,
@@ -61,20 +62,12 @@ def _utc_now() -> datetime:
     return scheduling_policy.utc_now()
 
 
-def _normalize_datetime(value: datetime | None) -> datetime | None:
-    return scheduling_policy.normalize_datetime(value)
-
-
-def _resource_type_for_request(request: VMRequest) -> str:
-    return scheduling_policy.resource_type_for_request(request)
-
-
 def _sync_lxc_platform_key(
     *, session: Session, node: str, vmid: int, resource_type: str
 ) -> None:
     if resource_type != "lxc":
         return
-    from app.services.resource import resource_service  # noqa: PLC0415
+    from app.services.resource import resource_service
 
     resource_service.ensure_lxc_platform_key(
         session=session,
@@ -88,17 +81,6 @@ def _sync_lxc_platform_key(
     )
 
 
-def _find_existing_resource_for_request(
-    *,
-    session: Session,
-    request: VMRequest,
-) -> dict | None:
-    return scheduling_support.find_existing_resource_for_request(
-        session=session,
-        request=request,
-    )
-
-
 def _adopt_existing_resource(
     *,
     session: Session,
@@ -108,8 +90,8 @@ def _adopt_existing_resource(
 
     Returns (vmid, actual_node, placement_strategy, started) or None.
     """
-    resource_type = _resource_type_for_request(request)
-    existing_resource = _find_existing_resource_for_request(
+    resource_type = scheduling_policy.resource_type_for_request(request)
+    existing_resource = scheduling_support.find_existing_resource_for_request(
         session=session,
         request=request,
     )
@@ -131,6 +113,7 @@ def _adopt_existing_resource(
         resource_repo.create_resource(
             session=session,
             vmid=vmid,
+            connection_id=get_connection_id_for_node(actual_node),
             user_id=request.user_id,
             environment_type=request.environment_type,
             os_info=request.os_info,
@@ -185,15 +168,20 @@ def _provision_new_resource(
     session: Session,
     request: VMRequest,
 ) -> tuple[int, str, str | None] | None:
-    """Lock, mark provisioning running, clone outside txn, then record VMID.
+    """Mark provisioning running, clone outside txn, then record VMID.
 
-    This is the core anti-duplication pattern:
-    1. SELECT FOR UPDATE SKIP LOCKED; if locked, bail
-    2. provisioning_status = running, commit (visible to other sessions)
-    3. plan_provision (resolve storage etc.) in a short txn
-    4. commit / close session
-    5. execute_provision (clone VM) with no open transaction
-    6. Open new session, record vmid and provisioning_status, commit
+    The caller (``_adopt_or_provision_due_request``) already holds the row
+    lock (SELECT FOR UPDATE SKIP LOCKED). This is the core anti-duplication
+    pattern:
+    1. provisioning_status = running, commit (visible to other sessions)
+    2. plan_provision (resolve storage etc.) in a short txn
+    3. commit / close session
+    4. execute_provision (clone VM) with no open transaction
+    5. Open new session, record vmid and provisioning_status, commit
+
+    A failure in plan or clone marks the request ``provisioning_status=failed``
+    and re-raises. Returns ``None`` when the request stopped being approved
+    during the clone (the orphan VM is removed).
     """
     desired_node = str(request.desired_node or request.assigned_node or "")
 
@@ -208,7 +196,7 @@ def _provision_new_resource(
     try:
         # 送單時的配額檢查看不到後來一起核准的其他申請；真正要開機器前再驗
         # 一次（這張單自己會被排除、PVE 查詢失敗 fail-open）。
-        from app.services.resource import (  # noqa: PLC0415 — 避免 import cycle
+        from app.services.resource import (
             quota_service,
         )
 
@@ -222,9 +210,9 @@ def _provision_new_resource(
             )
             session.commit()
     except Exception as plan_exc:
-        # Plan failed — revert to approved so scheduler can retry.
+        # Plan failed — mark provisioning failed (a retry re-queues it).
         # IP allocated during plan_provision is already flushed to session;
-        # rollback first, then revert status cleanly.
+        # rollback first, then mark the request failed cleanly.
         session.rollback()
         request = vm_request_repo.get_vm_request_by_id(
             session=session, request_id=request.id, for_update=True,
@@ -253,7 +241,7 @@ def _provision_new_resource(
     try:
         new_vmid, actual_node = provisioning_service.execute_provision(plan)
     except Exception as provision_exc:
-        # Clone failed — revert to approved and release allocated IP.
+        # Clone failed — release the allocated IP and mark provisioning failed.
         with Session(engine) as rollback_session:
             # Release IP allocated during planning
             try:
@@ -277,7 +265,7 @@ def _provision_new_resource(
                 )
                 rollback_session.add(req)
                 rollback_session.commit()
-                logger.warning("Reverted request %s to approved after provision failure", request_id)
+                logger.warning("Marked request %s provisioning failed after clone failure", request_id)
         raise
 
     # --- Phase 3: record result (new short txn) ---------------------------
@@ -318,6 +306,7 @@ def _provision_new_resource(
         resource_repo.create_resource(
             session=finish_session,
             vmid=new_vmid,
+            connection_id=get_connection_id_for_node(actual_node),
             user_id=request_user_id,
             environment_type=request_env_type,
             os_info=request_os_info,
@@ -367,7 +356,7 @@ def _provision_new_resource(
         finish_session.commit()
 
     # E1：provision 完成即建受保護初始快照（best-effort，不阻斷）
-    from app.services.resource import reset_service  # noqa: PLC0415 — 避免 import cycle
+    from app.services.resource import reset_service
 
     reset_service.ensure_init_snapshot(new_vmid)
 
@@ -391,19 +380,34 @@ def _mark_request_runtime_error(
     )
 
 
+def _is_consumed_or_inactive(request: VMRequest) -> bool:
+    return (
+        request.status != VMRequestStatus.approved
+        or request.provisioning_status == VMProvisioningStatus.failed
+    )
+
+
 def _refresh_actual_node(
     *,
     session: Session,
     request: VMRequest,
-) -> tuple[str, dict]:
+) -> tuple[str, dict] | None:
+    """鎖定申請單、確認 PVE 上的機器仍是它的，並把節點寫回（completed）。
+
+    回傳 None 代表鎖定重讀後發現申請單已被消耗或停用：本 tick 撈單之後，
+    使用者刪機流程可能已把它標成 failed。這個判斷必須在寫回 completed
+    之前做，否則下個 tick 會把它當成活單、發現機器不見而重新 clone。
+    """
     db_request = vm_request_repo.get_vm_request_by_id(
         session=session,
         request_id=request.id,
         for_update=True,
     ) or request
+    if _is_consumed_or_inactive(db_request):
+        return None
     if request.vmid is None:
         raise NotFoundError(f"Request {request.id} has no provisioned VMID")
-    resource = proxmox_service.find_resource(request.vmid)
+    resource = scheduling_support.find_resource_strict(request.vmid)
     resource_name = str(resource.get("name") or "")
     # hostname is stored as punycode in DB since creation, so a direct
     # comparison is sufficient.
@@ -464,12 +468,15 @@ def _adopt_or_provision_due_request(
             locked.id, locked.provisioning_started_at,
         )
 
-    # Try adopting an existing Proxmox resource first.
-    adopted = _adopt_existing_resource(session=session, request=locked)
-    if adopted is not None:
-        vmid, actual_node, strategy, started = adopted
-        session.commit()
-        return vmid, actual_node, strategy, started
+    # 只有之前開始過 provision（中斷接手、stale-VMID 復原）才可能在 PVE 上
+    # 留下這張單自己的機器；全新的申請單直接 provision，不去認領同名的
+    # 既有機器（可能是範本或未登記的基礎設施 VM）。
+    if locked.provisioning_started_at is not None:
+        adopted = _adopt_existing_resource(session=session, request=locked)
+        if adopted is not None:
+            vmid, actual_node, strategy, started = adopted
+            session.commit()
+            return vmid, actual_node, strategy, started
 
     # Full provision: mark provisioning → clone outside txn → mark running.
     # _provision_new_resource manages its own sessions/commits.
@@ -480,15 +487,11 @@ def _adopt_or_provision_due_request(
     )
     if refreshed is None or refreshed.vmid is None:
         return None
-    started = (
-        refreshed.vmid is not None
-        or refreshed.provisioning_status == VMProvisioningStatus.running
-    )
     return (
         refreshed.vmid,
         refreshed.actual_node,
         refreshed.placement_strategy_used,
-        started,
+        True,
     )
 
 
@@ -496,67 +499,41 @@ def _ensure_request_running(
     *,
     session: Session,
     request: VMRequest,
-    now: datetime,
 ) -> bool:
     """Make sure an approved request has a live VM.
 
     For requests without a vmid: lock, mark provisioning running, clone, record VMID.
     For requests with a vmid: ensure the VM is started.
     """
-    resource_type = _resource_type_for_request(request)
+    resource_type = scheduling_policy.resource_type_for_request(request)
 
     # ---- No VMID yet → need to provision ---------------------------------
     if request.vmid is None:
         outcome = _adopt_or_provision_due_request(session=session, request=request)
         if outcome is None:
             return False
-        _vmid, outcome_actual_node, _strategy, started = outcome
-        # A freshly provisioned guest is complete once its actual node is recorded.
-        refreshed_after = vm_request_repo.get_vm_request_by_id(
-            session=session, request_id=request.id,
-        )
-        if (
-            refreshed_after is not None
-            and refreshed_after.vmid is not None
-            and refreshed_after.desired_node
-            and outcome_actual_node
-            and refreshed_after.desired_node == outcome_actual_node
-            and refreshed_after.provisioning_status
-            in (VMProvisioningStatus.idle, VMProvisioningStatus.pending)
-        ):
-            vm_request_repo.update_vm_request_provisioning(
-                session=session,
-                db_request=refreshed_after,
-                vmid=refreshed_after.vmid,
-                assigned_node=refreshed_after.assigned_node or outcome_actual_node,
-                desired_node=refreshed_after.desired_node,
-                actual_node=outcome_actual_node,
-                placement_strategy_used=refreshed_after.placement_strategy_used,
-                provisioning_status=VMProvisioningStatus.completed,
-                provisioning_error=None,
-                commit=False,
-            )
-            session.commit()
+        # 認領與新 provision 兩條路都已把申請單寫成 completed 並 commit
+        _vmid, _actual_node, _strategy, started = outcome
         return started
 
     # ---- Already provisioned → ensure VM is started ----------------------
-    actual_node, _ = _refresh_actual_node(session=session, request=request)
-    request = vm_request_repo.get_vm_request_by_id(
+    # 本 tick 撈單之後，使用者刪機流程可能已把申請單標成已消耗
+    # （provisioning_status=failed）；_refresh_actual_node 在鎖定重讀後、
+    # 寫回 completed 之前就會發現並回 None。
+    refreshed = _refresh_actual_node(session=session, request=request)
+    locked_request = vm_request_repo.get_vm_request_by_id(
         session=session, request_id=request.id, for_update=True,
-    ) or request
-    # 鎖定後再確認一次：本 tick 撈單之後，使用者刪機流程可能已把申請單標成
-    # 已消耗（provisioning_status=failed）。這時不能再把它寫回 completed，
-    # 否則下個 tick 會把它當成活單、發現機器不見而重新 clone 出來。
-    if (
-        request.status != VMRequestStatus.approved
-        or request.provisioning_status == VMProvisioningStatus.failed
-    ):
+    )
+    if locked_request is not None:
+        request = locked_request
+    if refreshed is None or _is_consumed_or_inactive(request):
         logger.info(
             "Skipping auto-start for request %s: consumed or deactivated "
             "after this tick began",
             request.id,
         )
         return False
+    actual_node, _ = refreshed
 
     pve_status = proxmox_service.get_status(actual_node, request.vmid, resource_type)
     is_running = str(pve_status.get("status") or "").lower() == "running"
@@ -640,16 +617,16 @@ def process_single_request_start(request_id: uuid.UUID) -> bool:
         )
         if not request or request.status != VMRequestStatus.approved:
             return False
+        restarting_existing_vm = request.vmid is not None
         try:
             started = _ensure_request_running(
                 session=session,
                 request=request,
-                now=_utc_now(),
             )
             # A quick-practice environment becomes ready only after every
             # machine is provisioned and its published network topology has
             # been materialized. This callback is idempotent and row-locked.
-            from app.services import quick_practice  # noqa: PLC0415
+            from app.services import quick_practice
 
             session.expire_all()
             quick_practice.reconcile_for_request(
@@ -658,11 +635,24 @@ def process_single_request_start(request_id: uuid.UUID) -> bool:
             )
             session.commit()
             return started
-        except Exception:
+        except Exception as exc:
             session.rollback()
             logger.exception(
                 "Failed to immediately provision request %s", request_id
             )
+            # 重試已建好機器的開機（見 vm_request_service.retry）失敗要寫回 failed，
+            # 資源頁才會再顯示失敗與錯誤原因，否則會一直停在建立中。
+            # 機器已不存在（NotFoundError）不標：留給排程 tick 的 stale-VMID 復原重新 clone。
+            # PVE 連線暫時列不出資源也不標：無法判定機器狀態，等連線恢復
+            if restarting_existing_vm and not isinstance(
+                exc,
+                (NotFoundError, scheduling_support.ProxmoxConnectionUnavailableError),
+            ):
+                _mark_request_runtime_error(
+                    session=session,
+                    request_id=request_id,
+                    message=str(exc),
+                )
             return False
 
 
@@ -689,7 +679,7 @@ def process_due_request_starts() -> int:
                     # 先跳過省一次 Redis 往返
                     continue
                 # 尚未 provision — 入列到 arq worker 並行 clone（worker 內
-                # semaphore 限流），tick 不再同步等待重 I/O。防重複由 job id
+                # in-flight 上限，名額滿時 Retry 重排），tick 不再同步等待重 I/O。防重複由 job id
                 # 去重 + DB SKIP LOCKED + provisioning_status 再檢查三層保障。
                 provision_pool.submit_provision(
                     session,
@@ -703,11 +693,19 @@ def process_due_request_starts() -> int:
                 started = _ensure_request_running(
                     session=session,
                     request=request,
-                    now=now,
                 )
                 if started:
                     started_count += 1
                 session.commit()
+            except scheduling_support.ProxmoxConnectionUnavailableError as exc:
+                # 有 PVE 連線列不出資源：機器可能只是暫時看不到，不能當成
+                # 被刪（清 Resource 重建）也不標 failed，等下一輪再對帳
+                session.rollback()
+                logger.warning(
+                    "Skipping request %s (VMID %s): Proxmox connection "
+                    "unavailable: %s",
+                    request.id, request.vmid, exc,
+                )
             except NotFoundError:
                 stale_vmid = request.vmid
                 session.rollback()
@@ -717,12 +715,21 @@ def process_due_request_starts() -> int:
                     confirmed_gone = True
                     for attempt in range(3):
                         try:
-                            proxmox_service.find_resource(stale_vmid)
+                            scheduling_support.find_resource_strict(stale_vmid)
                             confirmed_gone = False
                             break
                         except NotFoundError:
                             if attempt < 2:
                                 time.sleep(2)
+                        except ProxmoxError as exc:
+                            # 連線有問題時無法確認機器不在，這輪不復原
+                            logger.warning(
+                                "Cannot confirm VMID %s is gone for request "
+                                "%s: %s",
+                                stale_vmid, request.id, exc,
+                            )
+                            confirmed_gone = False
+                            break
                     if not confirmed_gone:
                         logger.info(
                             "VMID %s still exists on Proxmox; "
@@ -764,7 +771,6 @@ def process_due_request_starts() -> int:
                     started = _ensure_request_running(
                         session=session,
                         request=request,
-                        now=now,
                     )
                     if started:
                         started_count += 1
@@ -825,10 +831,12 @@ def process_due_request_stops() -> int:
             if vmid is None:
                 continue
 
-            resource_type = _resource_type_for_request(request)
+            resource_type = scheduling_policy.resource_type_for_request(request)
 
             try:
-                resource = proxmox_service.find_resource(vmid)
+                # 嚴格查詢：有連線列不出資源時丟 ProxmoxError，走下方一般
+                # 錯誤分支（只記 log），不會把申請單誤標 failed
+                resource = scheduling_support.find_resource_strict(vmid)
                 node = str(resource["node"])
                 status = proxmox_service.get_status(node, vmid, resource_type)
                 current_status = str(status.get("status") or "").lower()
@@ -885,7 +893,8 @@ def process_due_request_stops() -> int:
 
 
 async def run_scheduler(stop_event: asyncio.Event) -> None:
-    from app.services.scheduling.leader import (  # noqa: PLC0415 — 避免 import cycle
+    from app.services.monitoring.heartbeat_service import HeartbeatObserver
+    from app.services.scheduling.leader import (
         scheduler_leader_lock,
     )
 
@@ -894,6 +903,7 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
         stop_event=stop_event,
         interval_seconds=SCHEDULER_POLL_SECONDS,
         leader_gate=scheduler_leader_lock,
+        observer=HeartbeatObserver("scheduler", interval_seconds=SCHEDULER_POLL_SECONDS),
         tasks=[
             ScheduledTask(name="process_due_request_starts", handler=process_due_request_starts),
             ScheduledTask(name="process_due_request_stops", handler=process_due_request_stops),
@@ -950,6 +960,10 @@ async def run_scheduler(stop_event: asyncio.Event) -> None:
                 name="reap_stale_batch_jobs",
                 handler=reap_stale_batch_jobs_task,
             ),
+            ScheduledTask(
+                name="process_system_health_alerts",
+                handler=process_system_health_alerts_task,
+            ),
         ],
     )
     logger.info("VM request scheduler stopped")
@@ -959,7 +973,7 @@ def reap_stale_batch_jobs_task() -> int:
     """Scheduler tick：批次佈建跑在 daemon thread，重啟後會永遠停在 running；
     超過 STALE_BATCH_JOB_HOURS 沒進度的工作標 failed 讓老師能重試。"""
     from app.services.vm import (
-        batch_provision_service,  # noqa: PLC0415 — 避免 import cycle
+        batch_provision_service,
     )
 
     return batch_provision_service.reap_stale_batch_jobs()
@@ -968,7 +982,7 @@ def reap_stale_batch_jobs_task() -> int:
 def process_expired_requests_task() -> int:
     """Scheduler tick：已過使用時段仍未審核的申請自動過期。"""
     from app.services.vm import (
-        vm_request_expiry_service,  # noqa: PLC0415 — 避免 import cycle
+        vm_request_expiry_service,
     )
 
     return vm_request_expiry_service.process_expired_requests()
@@ -976,7 +990,7 @@ def process_expired_requests_task() -> int:
 
 def process_quick_practice_lifecycle_task() -> int:
     """Finalize multi-machine topology and reclaim expired practice groups."""
-    from app.services import quick_practice  # noqa: PLC0415
+    from app.services import quick_practice
 
     return quick_practice.process_lifecycle()
 
@@ -984,16 +998,25 @@ def process_quick_practice_lifecycle_task() -> int:
 def process_resource_alerts_task() -> int:
     """Scheduler tick：資源閾值警告評估（間隔由 GovernanceConfig 控制）。"""
     from app.services.monitoring import (
-        alert_service,  # noqa: PLC0415 — 避免 import cycle
+        alert_service,
     )
 
     return alert_service.process_resource_alerts()
 
 
+def process_system_health_alerts_task() -> int:
+    """Scheduler tick：平台健康告警（任務連續失敗、迴圈停擺、worker／Redis／PVE 斷線）。"""
+    from app.services.monitoring import (
+        system_health_service,
+    )
+
+    return system_health_service.process_system_health_alerts()
+
+
 def process_ttl_lifecycle_task() -> int:
     """Scheduler tick：TTL 漸進回收（通知 → 關機 → 寬限期 → 刪除佇列）。"""
     from app.services.governance import (
-        lifecycle_service,  # noqa: PLC0415 — 避免 import cycle
+        lifecycle_service,
     )
 
     return lifecycle_service.process_ttl_lifecycle()
@@ -1002,7 +1025,7 @@ def process_ttl_lifecycle_task() -> int:
 def process_idle_detection_task() -> int:
     """Scheduler tick：閒置偵測（CPU 長期低於閾值 → 通知 → 自動關機）。"""
     from app.services.governance import (
-        lifecycle_service,  # noqa: PLC0415 — 避免 import cycle
+        lifecycle_service,
     )
 
     return lifecycle_service.process_idle_detection()
@@ -1011,7 +1034,7 @@ def process_idle_detection_task() -> int:
 def process_mining_detection_task() -> int:
     """Scheduler tick：挖礦偵測（CPU 長期滿載 → 存證 → 暫停 → 通知）。"""
     from app.services.security import (
-        mining_service,  # noqa: PLC0415 — 避免 import cycle
+        mining_service,
     )
 
     return mining_service.process_mining_detection()
@@ -1020,7 +1043,7 @@ def process_mining_detection_task() -> int:
 def process_snapshot_cleanup_task() -> int:
     """Scheduler tick：快照自動清理（超過保留天數的一般快照）。"""
     from app.services.governance import (
-        snapshot_cleanup_service,  # noqa: PLC0415 — 避免 import cycle
+        snapshot_cleanup_service,
     )
 
     return snapshot_cleanup_service.process_snapshot_cleanup()
@@ -1028,7 +1051,7 @@ def process_snapshot_cleanup_task() -> int:
 
 def reap_stale_task_records_task() -> int:
     """Scheduler tick：把 worker 被硬殺後永遠停在 running／queued 的 TaskRecord 收成 failed。"""
-    from app.repositories import task_record as task_record_repo  # noqa: PLC0415
+    from app.repositories import task_record as task_record_repo
 
     try:
         with Session(engine) as session:
@@ -1041,13 +1064,12 @@ def reap_stale_task_records_task() -> int:
 def reap_stale_script_runs_task() -> int:
     """Scheduler tick：把被硬殺的 Teacher Judge script run 從 running 收成 failed。"""
     from app.ai.teacher_judge import (
-        script_executor_service,  # noqa: PLC0415 — 避免 import cycle
+        script_executor_service,
     )
 
     try:
         with Session(engine) as session:
-            reaped = script_executor_service.reap_stale_script_runs(session)
-        return reaped
+            return script_executor_service.reap_stale_script_runs(session)
     except Exception:
         logger.exception("reap_stale_script_runs_task failed")
         return 0
@@ -1056,7 +1078,7 @@ def reap_stale_script_runs_task() -> int:
 def process_pending_deletions_task() -> int:
     """Scheduler tick：處理一筆 pending DeletionRequest（每 tick 最多一筆，避免長阻塞）。"""
     from app.services.resource import (
-        deletion_service,  # noqa: PLC0415 — 避免 import cycle
+        deletion_service,
     )
 
     try:

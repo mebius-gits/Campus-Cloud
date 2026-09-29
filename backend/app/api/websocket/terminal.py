@@ -1,21 +1,24 @@
 import asyncio
 import logging
-from urllib.parse import quote
 
 import websockets
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 from app.api.deps.auth import get_ws_current_user
-from app.api.deps.proxmox import check_resource_control_access
-from app.api.websocket.utils import safe_close_websocket
+from app.api.websocket.utils import (
+    pump_client_to_upstream,
+    pump_upstream_to_client,
+    run_until_first_done,
+    safe_close_websocket,
+)
 from app.exceptions import NotFoundError, ProxmoxError
 from app.infrastructure.proxmox import (
-    build_ws_ssl_context,
     get_connection_id_for_node,
-    get_host_for_node,
     get_proxmox_settings,
+    open_vncwebsocket,
 )
 from app.services.proxmox import proxmox_service
+from app.services.resource.access import require_resource_use
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,10 @@ async def terminal_proxy(websocket: WebSocket, vmid: int, token: str):
     # Authenticate user and check ownership before accepting
     user, session = await get_ws_current_user(websocket, token=token)
     try:
-        check_resource_control_access(vmid, user, session)
+        # 同步 DB 查詢丟到 worker thread，連線池耗盡時才不會凍住 event loop
+        await asyncio.to_thread(
+            require_resource_use, session=session, user=user, vmid=vmid
+        )
     except Exception:
         await safe_close_websocket(websocket, code=1008, reason="Permission denied")
         return
@@ -73,33 +79,13 @@ async def terminal_proxy(websocket: WebSocket, vmid: int, token: str):
         terminal_port = console_data["port"]
         terminal_ticket = console_data["ticket"]
 
-        encoded_terminal_ticket = quote(terminal_ticket, safe="")
-
-        # WebSocket URL for terminal — 使用節點所屬連線的 active host，
-        # 確保多連線與 HA 切換後都連到正確的入口
+        # termproxy 的認證訊息要用節點所屬連線的 PVE 帳號
         _cfg = get_proxmox_settings(get_connection_id_for_node(node))
-        active_host = get_host_for_node(node)
-        pve_ws_url = (
-            f"wss://{active_host}:{_cfg.port}"
-            f"/api2/json/nodes/{node}/lxc/{vmid}/vncwebsocket"
-            f"?port={terminal_port}&vncticket={encoded_terminal_ticket}"
-        )
 
-        ssl_context = build_ws_ssl_context(_cfg)
-
-        logger.debug(f"Connecting to Proxmox terminal WebSocket: {pve_ws_url}")
+        logger.debug(f"Connecting to Proxmox terminal WebSocket for LXC {vmid} on {node}")
         try:
-            # Cookie header must NOT be URL-encoded; Proxmox rejects percent-encoded cookies.
-            # Proxmox vncwebsocket requires Sec-WebSocket-Protocol: binary (same as noVNC client).
-            # proxy=None: disable system proxy — Proxmox is on a private network and
-            # going through a proxy (websockets 16 default: proxy=True) breaks the connection.
-            pve_websocket = await websockets.connect(
-                pve_ws_url,
-                ssl=ssl_context,
-                additional_headers={"Cookie": f"PVEAuthCookie={pve_auth_cookie}"},
-                subprotocols=["binary"],
-                max_size=2**20,
-                proxy=None,
+            pve_websocket = await open_vncwebsocket(
+                node, "lxc", vmid, terminal_port, terminal_ticket, pve_auth_cookie
             )
             logger.info("Successfully connected to Proxmox WebSocket for terminal")
 
@@ -123,60 +109,10 @@ async def terminal_proxy(websocket: WebSocket, vmid: int, token: str):
         logger.info(f"WebSocket proxy established for LXC {vmid}")
 
         disconnect = asyncio.Event()
-
-        async def forward_from_proxmox():
-            try:
-                async for message in pve_websocket:
-                    if disconnect.is_set():
-                        break
-                    try:
-                        if isinstance(message, bytes):
-                            await websocket.send_bytes(message)
-                        else:
-                            await websocket.send_text(message)
-                    except Exception:
-                        break
-            except websockets.exceptions.ConnectionClosed:
-                # PVE 端正常關閉連線
-                pass
-            except Exception as e:
-                logger.error(f"Error forwarding from Proxmox: {e}")
-            finally:
-                disconnect.set()
-
-        async def forward_to_proxmox():
-            try:
-                while not disconnect.is_set():
-                    data = await websocket.receive()
-                    if data.get("type") == "websocket.disconnect":
-                        break
-                    if disconnect.is_set():
-                        break
-                    if "bytes" in data:
-                        await pve_websocket.send(data["bytes"])
-                    elif "text" in data:
-                        await pve_websocket.send(data["text"])
-            except WebSocketDisconnect:
-                # 客戶端斷線屬正常結束
-                pass
-            except Exception as e:
-                logger.error(f"Error forwarding to Proxmox: {e}")
-            finally:
-                disconnect.set()
-
-        # Run both directions; cancel the other when one finishes
-        tasks = [
-            asyncio.create_task(forward_from_proxmox()),
-            asyncio.create_task(forward_to_proxmox()),
-        ]
-        _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                # 任務取消屬預期行為
-                pass
+        await run_until_first_done(
+            pump_upstream_to_client(pve_websocket, websocket, disconnect),
+            pump_client_to_upstream(websocket, pve_websocket, disconnect),
+        )
 
     except Exception as e:
         logger.error(f"Failed to establish WebSocket proxy: {e}", exc_info=True)

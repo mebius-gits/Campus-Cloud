@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../../contexts/AuthContext";
 import styles from "./RequestsPage.module.scss";
-import i18n from "../../../i18n";
 import { VmRequestsService } from "../../../services/vmRequests";
 import { CONSUMED_REQUEST_MARKERS, isConsumedRequest } from "../../../services/pendingResources";
 import {
@@ -16,17 +14,19 @@ import {
 } from "../../../services/specChangeRequests";
 import { useToast } from "../../../hooks/useToast";
 import useAutoRefresh from "../../../hooks/useAutoRefresh";
+import useDialogPresence from "../../../hooks/useDialogPresence";
 import RequestFormPage from "./RequestFormPage";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import SharedEmptyState from "../../../components/EmptyState/EmptyState";
+import ErrorState from "../../../components/ErrorState/ErrorState";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
-import * as fmt from "../../../utils/formatDate";
+import { formatDate, formatDateTime } from "../../../utils/formatDate";
+import { canTeachUser, isAdminUser } from "../../../utils/roles";
 
 /* ── Constants ── */
-const defaultT = (key) => i18n.t(key, { ns: "personal" });
-
 const STATUS_MAP = {
   pending:   { labelKey: "RequestsPage.statusPending",   color: "info"    },
   approved:  { labelKey: "RequestsPage.statusApproved",  color: "success" },
@@ -78,7 +78,7 @@ function isWaitingForResources(req) {
 }
 
 /* approved 在 UI 上再依開通進度細分（vmid 為空時 provisioning_status 反映開通流程） */
-function getDisplayStatus(req, t = defaultT) {
+function getDisplayStatus(req, t) {
   if (req.status === "approved") {
     if (req.vmid != null) {
       if (req.provisioning_status === "failed") return { label: t("RequestsPage.statusMachineError"), color: "danger" };
@@ -114,6 +114,7 @@ const SPEC_COLUMN_KEYS = [
   "RequestsPage.specColChange",
   "RequestsPage.colReason",
   "RequestsPage.colRequestedAt",
+  "RequestsPage.specColAppliedAt",
   "RequestsPage.colStatus",
   "RequestsPage.colActions",
 ];
@@ -123,14 +124,6 @@ const SPEC_APPLY_POLL_MS = 5000;
 const SPEC_CANCEL_MARKERS = ["Cancelled by requester", "Cancelled by admin"];
 
 /* ── Helpers ── */
-function formatDatetime(isoStr) {
-  return fmt.formatDateTime(isoStr, null);
-}
-
-function formatDate(isoStr) {
-  return fmt.formatDate(isoStr);
-}
-
 function getOsDisplay(req) {
   if (req.os_info) return req.os_info;
   if (req.ostemplate) {
@@ -156,39 +149,16 @@ function StatusBadge({ req }) {
   );
 }
 
-function InfoRow({ icon, label, value }) {
-  if (!value) return null;
-  return (
-    <div className={styles.infoRow}>
-      <span className={styles.infoLabel}>
-        <MIcon name={icon} size={12} />
-        {label}
-      </span>
-      <span className={styles.infoValue}>{value}</span>
-    </div>
-  );
-}
-
-function getSpecDisplay(req, t = defaultT) {
+function getSpecDisplay(req, t) {
   return t("RequestsPage.specDisplay", { cores: req.cores, mem: getMemDisplay(req.memory), storage: req.storage });
 }
 
 
 /* ── Error Log Modal ── */
 /* 管理員限定：原始開通錯誤 log 太長，不進表格也不進展開列，點狀態旁圖示開窗看 */
-function ErrorLogModal({ req, onClose }) {
+function ErrorLogModal({ req, closing, onClose }) {
   const { t } = useTranslation("personal");
   const toast = useToast();
-  const [closing, setClosing] = useState(false);
-
-  function close() {
-    if (closing) return;
-    setClosing(true);
-  }
-
-  function handleAnimationEnd() {
-    if (closing) onClose();
-  }
 
   async function handleCopy() {
     try {
@@ -199,31 +169,27 @@ function ErrorLogModal({ req, onClose }) {
     }
   }
 
-  /* 同 ConfirmModal：portal 到 body 逃離 .tableWrap 的 backdrop-filter containing block */
-  return createPortal(
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onClick={close}
-      onAnimationEnd={handleAnimationEnd}
-    >
-      <div className={`${styles.modal} ${styles.logModal}`} onClick={(e) => e.stopPropagation()}>
-        <span className={styles.modalTitle}>{t("ErrorLogModal.title", { hostname: req.hostname })}</span>
-        {isProvisionedButFailed(req) && (
-          <p className={styles.modalDesc}>{t("ErrorLogModal.machineFailDesc")}</p>
-        )}
-        <pre className={styles.logText}>{req.provisioning_error}</pre>
-        <div className={styles.modalActions}>
+  return (
+    <Modal
+      size="log"
+      closing={closing}
+      onClose={onClose}
+      title={t("ErrorLogModal.title", { hostname: req.hostname })}
+      description={isProvisionedButFailed(req) ? t("ErrorLogModal.machineFailDesc") : undefined}
+      actions={
+        <>
           <button type="button" className={styles.btnSecondary} onClick={handleCopy}>
             <MIcon name="content_copy" size={14} />
             {t("ErrorLogModal.copy")}
           </button>
-          <button type="button" className={styles.btnPrimary} onClick={close}>
+          <button type="button" className={styles.btnPrimary} onClick={onClose}>
             {t("ErrorLogModal.close")}
           </button>
-        </div>
-      </div>
-    </div>,
-    document.body
+        </>
+      }
+    >
+      <pre className={styles.logText}>{req.provisioning_error}</pre>
+    </Modal>
   );
 }
 
@@ -234,18 +200,20 @@ function RequestRow({ req, onUpdated }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   /* VMID 是系統內部編號，僅管理員／老師看得到 */
-  const showVmid = user?.is_superuser || user?.role === "admin" || user?.role === "teacher";
+  const showVmid = canTeachUser(user);
   /* 原始開通錯誤 log 是給管理員除錯用的，學生／老師只看狀態與操作 */
-  const isAdmin = user?.is_superuser || user?.role === "admin";
+  const isAdmin = isAdminUser(user);
   const confirm = useConfirm();
   const [cancelling, setCancelling]       = useState(false);
   const [retrying, setRetrying]           = useState(false);
   const [logOpen, setLogOpen]             = useState(false);
+  const logPresence = useDialogPresence(logOpen);
 
   const type      = RESOURCE_TYPE_MAP[req.resource_type] ?? { label: req.resource_type, icon: "computer" };
   const osDisplay = getOsDisplay(req);
-  const startFmt  = formatDatetime(req.start_at);
-  const endFmt    = formatDatetime(req.end_at);
+  /* 無值時回 null（不是「—」），下方依此決定要不要顯示時段 */
+  const startFmt  = formatDateTime(req.start_at, null);
+  const endFmt    = formatDateTime(req.end_at, null);
 
   const showRejection = req.status === "rejected" && req.review_comment;
   const showFailureLog =
@@ -363,7 +331,7 @@ function RequestRow({ req, onUpdated }) {
             {!hasAction && <span className={styles.emptyAction}>—</span>}
             {canRetry(req) && (
               <button type="button" className={styles.retryBtn} disabled={retrying} onClick={handleRetry}>
-                <MIcon name="refresh" size={13} />
+                <MIcon name="refresh" size={13} spin={retrying} />
                 {retrying ? "…" : t("RequestRow.retry")}
               </button>
             )}
@@ -383,7 +351,7 @@ function RequestRow({ req, onUpdated }) {
         </td>
       </tr>
 
-      {logOpen && <ErrorLogModal req={req} onClose={() => setLogOpen(false)} />}
+      {logPresence.open && <ErrorLogModal req={req} closing={logPresence.closing} onClose={() => setLogOpen(false)} />}
     </>
   );
 }
@@ -393,9 +361,8 @@ function SpecRequestRow({ req, onUpdated }) {
   const { t } = useTranslation("personal");
   const toast = useToast();
   const { user } = useAuth();
-  const showVmid = user?.is_superuser || user?.role === "admin" || user?.role === "teacher";
+  const showVmid = canTeachUser(user);
   const confirm = useConfirm();
-  const [expanded, setExpanded]           = useState(false);
   const [busy, setBusy]                   = useState(false);
 
   const display     = specRequestDisplayStatus(req);
@@ -410,8 +377,6 @@ function SpecRequestRow({ req, onUpdated }) {
       ? req.review_comment
       : null;
   const applyNote = req.apply_error || null;
-  const appliedAt = formatDatetime(req.applied_at);
-  const hasDetail = Boolean(reviewNote || applyNote || deletedByMachine || appliedAt);
 
   async function handleApply() {
     const ok = await confirm({
@@ -455,101 +420,72 @@ function SpecRequestRow({ req, onUpdated }) {
   const machineName = req.resource_name || t("SpecRequestRow.machineFallback", { vmid: req.vmid });
 
   return (
-    <>
-      <tr
-        className={`${styles.tr} ${hasDetail ? styles.trClickable : ""} ${expanded ? styles.trExpanded : ""}`}
-        onClick={hasDetail ? (event) => {
-          if (event.target.closest("button")) return;
-          setExpanded((v) => !v);
-        } : undefined}
-      >
-        <td className={styles.td}>
-          <div className={styles.nameCell}>
-            {hasDetail ? (
-              <button
-                type="button"
-                className={styles.expandBtn}
-                aria-expanded={expanded}
-                aria-label={expanded ? t("RequestRow.collapseDetails") : t("RequestRow.expandDetails")}
-                onClick={() => setExpanded((v) => !v)}
-              >
-                <MIcon name={expanded ? "expand_more" : "chevron_right"} size={16} />
-              </button>
-            ) : (
-              <span className={styles.expandPlaceholder} aria-hidden="true" />
-            )}
-            <div className={styles.nameIcon}>
-              <MIcon name="tune" size={18} />
-            </div>
-            <div className={styles.nameMeta}>
-              <span className={styles.namePrimary} title={machineName}>{machineName}</span>
-              <span className={styles.nameSub}>
-                {t("SpecRequestRow.kindLabel")}
-                {showVmid && t("RequestRow.numberSuffix", { vmid: req.vmid })}
-              </span>
-            </div>
+    <tr className={styles.tr}>
+      <td className={styles.td}>
+        <div className={styles.nameCell}>
+          <div className={styles.nameIcon}>
+            <MIcon name="tune" size={18} />
           </div>
-        </td>
-        <td className={styles.td}>
-          <span className={styles.specCell}>{specRequestChangeLabel(req, t)}</span>
-        </td>
-        <td className={styles.td}>
-          <span className={styles.reasonCell} title={req.reason || undefined}>
-            {req.reason || "—"}
-          </span>
-        </td>
-        <td className={styles.td}>{formatDate(req.created_at)}</td>
-        <td className={styles.td}>
+          <div className={styles.nameMeta}>
+            <span className={styles.namePrimary} title={machineName}>{machineName}</span>
+            <span className={styles.nameSub}>
+              {t("SpecRequestRow.kindLabel")}
+              {showVmid && t("RequestRow.numberSuffix", { vmid: req.vmid })}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td className={styles.td}>
+        <span className={styles.specCell}>{specRequestChangeLabel(req, t)}</span>
+      </td>
+      <td className={styles.td}>
+        <span className={styles.reasonCell} title={req.reason || undefined}>
+          {req.reason || "—"}
+        </span>
+      </td>
+      <td className={styles.td}>{formatDate(req.created_at)}</td>
+      <td className={styles.td}>
+        <span className={styles.dateTimeCell}>{formatDateTime(req.applied_at)}</span>
+      </td>
+      <td className={styles.td}>
+        <div className={styles.statusCell}>
           <span className={`${styles.badge} ${styles[`badge_${display.color}`]}`}>{statusLabel}</span>
-        </td>
-        <td className={styles.td}>
-          <div className={styles.rowActions}>
-            {!hasAction && <span className={styles.emptyAction}>—</span>}
-            {showApply && (
-              <button type="button" className={styles.applyBtn} disabled={busy} onClick={handleApply}>
-                <MIcon name="play_arrow" size={13} />
-                {display.key === "ready" ? t("SpecRequestRow.apply") : t("SpecRequestRow.reapply")}
-              </button>
-            )}
-            {showCancel && (
-              <button type="button" className={styles.cancelBtn} disabled={busy} onClick={handleCancel}>
-                <MIcon name="close" size={13} />
-                {t("SpecRequestRow.cancel")}
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr className={styles.detailTr}>
-          <td className={styles.detailTd} colSpan={SPEC_COLUMN_KEYS.length}>
-            <div className={styles.detailBody}>
-              <InfoRow icon="event_available" label={t("SpecRequestRow.appliedAtLabel")} value={appliedAt} />
-              {reviewNote && (
-                <div className={styles.reviewComment}>
-                  <MIcon name="comment" size={13} />
-                  <span>{reviewNote}</span>
-                </div>
-              )}
-              {deletedByMachine && (
-                <div className={styles.reviewComment}>
-                  <MIcon name="info" size={13} />
-                  <span>{t("SpecRequestRow.deletedNote")}</span>
-                </div>
-              )}
-              {applyNote && (
-                <div className={styles.reviewComment}>
-                  <MIcon name={req.applied_at ? "warning" : "error_outline"} size={13} />
-                  <span>{applyNote}</span>
-                </div>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
-
-    </>
+          {/* 展開明細已移除（比照上方申請表）：審核備註／機器已刪除／套用失敗訊息改掛在小圖示的 tooltip */}
+          {reviewNote && (
+            <span className={styles.statusNote} title={reviewNote}>
+              <MIcon name="comment" size={14} />
+            </span>
+          )}
+          {deletedByMachine && (
+            <span className={styles.statusNote} title={t("SpecRequestRow.deletedNote")}>
+              <MIcon name="info" size={14} />
+            </span>
+          )}
+          {applyNote && (
+            <span className={styles.statusNote} title={applyNote}>
+              <MIcon name={req.applied_at ? "warning" : "error_outline"} size={14} />
+            </span>
+          )}
+        </div>
+      </td>
+      <td className={styles.td}>
+        <div className={styles.rowActions}>
+          {!hasAction && <span className={styles.emptyAction}>—</span>}
+          {showApply && (
+            <button type="button" className={styles.applyBtn} disabled={busy} onClick={handleApply}>
+              <MIcon name="play_arrow" size={13} />
+              {display.key === "ready" ? t("SpecRequestRow.apply") : t("SpecRequestRow.reapply")}
+            </button>
+          )}
+          {showCancel && (
+            <button type="button" className={styles.cancelBtn} disabled={busy} onClick={handleCancel}>
+              <MIcon name="close" size={13} />
+              {t("SpecRequestRow.cancel")}
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -570,22 +506,6 @@ function EmptyState({ onCreateClick }) {
   );
 }
 
-function ErrorState({ onRetry }) {
-  const { t } = useTranslation("personal");
-  return (
-    <EmptyState
-      icon="error_outline"
-      title={t("RequestsPage.errorTitle")}
-      action={
-        <button type="button" className={styles.btnSecondary} onClick={onRetry}>
-          <MIcon name="refresh" size={16} />
-          {t("RequestsPage.retry")}
-        </button>
-      }
-    />
-  );
-}
-
 /* ── Page ── */
 export default function RequestsPage() {
   const { t } = useTranslation("personal");
@@ -600,9 +520,12 @@ export default function RequestsPage() {
   /* AI 助手談完需求後會把推薦配置一起帶過來 */
   const [pendingPrefill, setPendingPrefill] = useState(location.state?.prefill ?? null);
 
-  /** silent = true 時不觸發 loading / error state，供背景自動刷新使用 */
+  /** silent === true 時不觸發 loading / error state，供背景自動刷新使用。
+   *  必須嚴格比對 true：直接當 onClick 傳入時第一個參數是 click event（truthy）。
+   *  任何一次成功載入都清掉錯誤狀態，背景刷新成功也能讓頁面離開錯誤畫面。 */
   const fetchRequests = useCallback(async (silent = false) => {
-    if (!silent) {
+    const isSilent = silent === true;
+    if (!isSilent) {
       setLoading(true);
       setError(false);
     }
@@ -615,10 +538,11 @@ export default function RequestsPage() {
       // 機器已被刪除／轉範本的申請單只留做稽核，不顯示
       setRequests((res.data ?? []).filter((r) => !isConsumedRequest(r)));
       if (specRes) setSpecRequests(specRes.data ?? []);
+      setError(false);
     } catch {
-      if (!silent) setError(true);
+      if (!isSilent) setError(true);
     } finally {
-      if (!silent) setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
@@ -678,7 +602,7 @@ export default function RequestsPage() {
 
       <div className={styles.content} data-guide="request-list">
         {error ? (
-          <ErrorState onRetry={fetchRequests} />
+          <ErrorState onRetry={() => fetchRequests()} />
         ) : loading ? (
           <LoadingState fullPage />
         ) : requests.length === 0 && specRequests.length === 0 ? (
@@ -690,7 +614,7 @@ export default function RequestsPage() {
                 <table className={styles.table}>
                   <thead>
                     <tr>
-                      {LIST_COLUMN_KEYS.map((columnKey, idx) => (
+                      {LIST_COLUMN_KEYS.map((columnKey) => (
                         <th key={columnKey} className={styles.th}>{t(columnKey)}</th>
                       ))}
                     </tr>
@@ -712,8 +636,8 @@ export default function RequestsPage() {
                   <table className={styles.table}>
                     <thead>
                       <tr>
-                        {SPEC_COLUMN_KEYS.map((columnKey, idx) => (
-                          <th key={columnKey} className={idx === 0 ? `${styles.th} ${styles.thName}` : styles.th}>{t(columnKey)}</th>
+                        {SPEC_COLUMN_KEYS.map((columnKey) => (
+                          <th key={columnKey} className={styles.th}>{t(columnKey)}</th>
                         ))}
                       </tr>
                     </thead>

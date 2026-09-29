@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import styles from "./AccountSettingsPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import Avatar from "../../../components/Avatar/Avatar";
 import PasswordInput from "../../../components/PasswordInput/PasswordInput";
 import FileDropzone from "../../../components/FileDropzone/FileDropzone";
+import TotpEnrollment from "../../../components/TotpEnrollment/TotpEnrollment";
 import { useAuth } from "../../../contexts/AuthContext";
 import { useToast } from "../../../hooks/useToast";
 import useDialogPresence from "../../../hooks/useDialogPresence";
@@ -57,7 +58,7 @@ function ProfileTab() {
       setForm((prev) => ({ ...prev, avatar_url: updated?.avatar_url ?? "" }));
       toast.success(t("ProfileTab.avatarUpdated"));
     } catch (err) {
-      toast.error(err?.message ?? t("ProfileTab.avatarUploadFailed"));
+      toast.error(err?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       setUploading(false);
     }
@@ -276,6 +277,166 @@ function PasswordSection() {
   );
 }
 
+/* ── 兩步驟驗證 ─────────────────────────────────────── */
+
+function TwoFactorSection() {
+  const { t } = useTranslation("personal");
+  const { user, updateUser } = useAuth();
+  const toast = useToast();
+  const enabled = Boolean(user?.totp_enabled);
+  /* 管理員在使用者資料勾了「強制兩步驟驗證」時不能自行停用 */
+  const enforced = Boolean(user?.totp_required);
+  const [dialog, setDialog] = useState(null); // null | "enable" | "disable"
+  const presence = useDialogPresence(dialog);
+  const [code, setCode] = useState("");
+  const [disabling, setDisabling] = useState(false);
+  const codeRef = useRef(null);
+
+  function closeDialog() {
+    if (disabling) return;
+    setDialog(null);
+    setCode("");
+  }
+
+  function handleEnabled() {
+    updateUser({ totp_enabled: true, totp_setup_required: false });
+    toast.success(t("TwoFactorSection.enabledToast"));
+    setDialog(null);
+  }
+
+  async function handleDisable(e) {
+    e.preventDefault();
+    const digits = code.replace(/\D/g, "");
+    if (digits.length !== 6) {
+      codeRef.current?.focus();
+      return;
+    }
+    setDisabling(true);
+    try {
+      await AccountService.disableTotp(digits);
+      updateUser({ totp_enabled: false });
+      toast.success(t("TwoFactorSection.disabledToast"));
+      setDialog(null);
+      setCode("");
+    } catch (err) {
+      toast.error(err?.message ?? t("TwoFactorSection.codeInvalid"));
+      setCode("");
+      codeRef.current?.focus();
+    } finally {
+      setDisabling(false);
+    }
+  }
+
+  const activeDialog = presence.item;
+
+  return (
+    <>
+      <div className={styles.card}>
+        <h2 className={styles.cardTitle}>{t("TwoFactorSection.title")}</h2>
+
+        <div className={styles.twoFactorStatus}>
+          <div className={styles.twoFactorText}>
+            <strong>
+              {enabled ? t("TwoFactorSection.statusOn") : t("TwoFactorSection.statusOff")}
+            </strong>
+            <span>
+              {enabled ? t("TwoFactorSection.descOn") : t("TwoFactorSection.descOff")}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.formActions}>
+          {enabled ? (
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              onClick={() => setDialog("disable")}
+              disabled={enforced}
+              title={enforced ? t("TwoFactorSection.enforcedHint") : undefined}
+            >
+              {t("TwoFactorSection.disable")}
+            </button>
+          ) : (
+            <button type="button" className={styles.btnPrimary} onClick={() => setDialog("enable")}>
+              {t("TwoFactorSection.enable")}
+            </button>
+          )}
+        </div>
+        {enabled && enforced && (
+          <p className={styles.twoFactorHint}>{t("TwoFactorSection.enforcedHint")}</p>
+        )}
+      </div>
+
+      {activeDialog === "enable" && (
+        <TotpEnrollment onConfirmed={handleEnabled} onCancel={closeDialog}>
+          {({ content, actions, busy }) => (
+            <Modal
+              closing={presence.closing}
+              onClose={closeDialog}
+              busy={busy}
+              closeButton
+              size="md"
+              title={t("TwoFactorSection.enableTitle")}
+              closeProps={{ "aria-label": t("TwoFactorSection.close") }}
+              actions={actions}
+            >
+              {content}
+            </Modal>
+          )}
+        </TotpEnrollment>
+      )}
+
+      {activeDialog === "disable" && (
+        <Modal
+          as="form"
+          onSubmit={handleDisable}
+          closing={presence.closing}
+          onClose={closeDialog}
+          busy={disabling}
+          closeButton
+          role="alertdialog"
+          icon={<span className={styles.confirmTitleIcon}><MIcon name="warning" size={20} /></span>}
+          title={t("TwoFactorSection.disableTitle")}
+          description={t("TwoFactorSection.disableDesc")}
+          actions={
+            <>
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                onClick={closeDialog}
+                disabled={disabling}
+              >
+                {t("TwoFactorSection.cancel")}
+              </button>
+              <button
+                type="submit"
+                className={styles.btnDanger}
+                disabled={disabling || code.replace(/\D/g, "").length !== 6}
+              >
+                {disabling ? t("TwoFactorSection.disabling") : t("TwoFactorSection.confirmDisable")}
+              </button>
+            </>
+          }
+        >
+          <input
+            ref={codeRef}
+            className={`${styles.confirmInput} ${styles.otpInput}`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={7}
+            placeholder="000000"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ""))}
+            disabled={disabling}
+            autoFocus
+          />
+        </Modal>
+      )}
+    </>
+  );
+}
+
 /* ── 危險區域 ───────────────────────────────────────── */
 
 function DangerZoneSection() {
@@ -316,36 +477,27 @@ function DangerZoneSection() {
         </p>
         <div className={styles.formActions}>
           <button type="button" className={styles.btnDanger} onClick={() => setShowConfirm(true)}>
-            <MIcon name="delete_forever" size={16} />
             {t("DangerZoneTab.deleteAccount")}
           </button>
         </div>
       </div>
 
-      {confirmDialog.open && createPortal(
-        /* 用 portal 掛到 document.body：避免 Modal 巢狀在有 backdrop-filter 的 .dangerCard
-           底下 —— backdrop-filter 會讓後代的 position:fixed 失去「相對整個視窗定位」的能力，
-           變成只覆蓋卡片自己的範圍（CSS containing block 陷阱）。 */
-        <div
-          className={`${styles.modalOverlay} ${confirmDialog.closing ? styles.modalOverlayOut : ""}`}
-          onMouseDown={closeConfirm}
-        >
-          <div className={styles.confirm} onMouseDown={(e) => e.stopPropagation()}>
-            <div className={styles.confirmIcon}>
-              <MIcon name="warning" size={24} />
-            </div>
-            <h2>{t("DangerZoneTab.confirmTitle")}</h2>
-            <p>
-              {t("DangerZoneTab.confirmDescPart1")}<strong>{t("DangerZoneTab.confirmDescBold")}</strong>{t("DangerZoneTab.confirmDescPart2")} <code>{confirmWord}</code> {t("DangerZoneTab.confirmDescPart3")}
-            </p>
-            <input
-              className={styles.confirmInput}
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder={t("DangerZoneTab.confirmPlaceholder", { word: confirmWord })}
-              disabled={deleting}
-            />
-            <div className={styles.modalActions}>
+      {confirmDialog.open && (
+        /* 共用 Modal 會 portal 到 body，不受 .dangerCard 的 backdrop-filter 影響 */
+        <Modal
+          closing={confirmDialog.closing}
+          onClose={closeConfirm}
+          busy={deleting}
+          role="alertdialog"
+          icon={<span className={styles.confirmTitleIcon}><MIcon name="warning" size={20} /></span>}
+          title={t("DangerZoneTab.confirmTitle")}
+          description={
+            <>
+              {t("DangerZoneTab.confirmDescPart1")}<strong>{t("DangerZoneTab.confirmDescBold")}</strong>{t("DangerZoneTab.confirmDescPart2")} <code className={styles.confirmWord}>{confirmWord}</code> {t("DangerZoneTab.confirmDescPart3")}
+            </>
+          }
+          actions={
+            <>
               <button
                 type="button"
                 className={styles.btnSecondary}
@@ -362,10 +514,18 @@ function DangerZoneSection() {
               >
                 {deleting ? t("DangerZoneTab.deleting") : t("DangerZoneTab.confirmDelete")}
               </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
+            </>
+          }
+        >
+          <input
+            className={styles.confirmInput}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={t("DangerZoneTab.confirmPlaceholder", { word: confirmWord })}
+            disabled={deleting}
+            autoFocus
+          />
+        </Modal>
       )}
     </>
   );
@@ -395,6 +555,7 @@ export default function AccountSettingsPage() {
             <ProfileTab />
             <div className={styles.profileSide}>
               <PasswordSection />
+              <TwoFactorSection />
               <DangerZoneSection />
             </div>
           </div>

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
-import { computePosition, isAnchorOffscreen } from "../../../components/PowerMenu/position";
+import useAnchoredMenu from "../../../hooks/useAnchoredMenu";
 import styles from "./TemplatesPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import { TemplatesService } from "../../../services/templates";
 import { downloadBlob } from "../../../services/api";
@@ -13,6 +14,7 @@ import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import { TemplateStatusBadge } from "./TemplateBadges";
 import TemplateCloneDialog from "./TemplateCloneDialog";
 import TemplateFormDialog from "./TemplateFormDialog";
+import { formatBytes } from "./templateFormat";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 
@@ -21,12 +23,6 @@ function visibilityLabel(template, t) {
     ? t("TemplatesPage.visibilityGlobal")
     : t("TemplatesPage.visibilityPrivate");
 }
-
-const formatBytes = (bytes) => {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
-};
 
 /** 使用手冊（附件）瀏覽與下載 */
 function ManualDialog({ template, closing = false, onClose }) {
@@ -41,7 +37,7 @@ function ManualDialog({ template, closing = false, onClose }) {
       .then((res) => !cancelled && setAttachments(res?.data ?? []))
       .catch((e) => {
         if (!cancelled) {
-          toast.error(e?.message ?? t("TemplatesPage.attachmentLoadFailed"));
+          toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
           setAttachments([]);
         }
       });
@@ -50,68 +46,56 @@ function ManualDialog({ template, closing = false, onClose }) {
     };
   }, [template.id, toast, t]);
 
-  /* Esc 關閉（Dialog 標準行為） */
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   const handleDownload = async (attachment) => {
     setDownloadingId(attachment.id);
     try {
       const blob = await TemplatesService.downloadAttachment(template.id, attachment.id);
       downloadBlob(blob, attachment.filename);
     } catch (e) {
-      toast.error(e?.message ?? t("TemplatesPage.downloadFailed"));
+      toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       setDownloadingId(null);
     }
   };
 
   return (
-    <div
-      className={`${styles.modalOverlay} ${closing ? styles.modalOverlayOut : ""}`}
-      onClick={onClose}
+    <Modal
+      closing={closing}
+      onClose={onClose}
+      size="md"
+      icon={<MIcon name="description" size={20} />}
+      title={t("TemplatesPage.manualTitle", { name: template.name })}
+      actions={
+        <button type="button" className={styles.btnSecondary} onClick={onClose}>
+          {t("TemplatesPage.close")}
+        </button>
+      }
     >
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <span className={styles.modalTitle}>
-          <MIcon name="description" size={20} />
-          {t("TemplatesPage.manualTitle", { name: template.name })}
-        </span>
-        {attachments === null ? (
-          <LoadingState text={t("TemplatesPage.loadingAttachments")} />
-        ) : attachments.length === 0 ? (
-          <p className={styles.stateText}>{t("TemplatesPage.noAttachments")}</p>
-        ) : (
-          <div className={styles.attachList}>
-            {attachments.map((a) => (
-              <div key={a.id} className={styles.attachItem}>
-                <MIcon name="description" size={15} />
-                <span className={styles.attachName}>{a.filename}</span>
-                <span className={styles.attachSize}>{formatBytes(a.size_bytes)}</span>
-                <button
-                  type="button"
-                  className={styles.attachBtn}
-                  disabled={downloadingId === a.id}
-                  onClick={() => handleDownload(a)}
-                >
-                  <MIcon name="download" size={15} />
-                  {downloadingId === a.id ? t("TemplatesPage.downloading") : t("TemplatesPage.download")}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className={styles.modalActions}>
-          <button type="button" className={styles.btnSecondary} onClick={onClose}>
-            {t("TemplatesPage.close")}
-          </button>
+      {attachments === null ? (
+        <LoadingState text={t("TemplatesPage.loadingAttachments")} />
+      ) : attachments.length === 0 ? (
+        <p className={styles.stateText}>{t("TemplatesPage.noAttachments")}</p>
+      ) : (
+        <div className={styles.attachList}>
+          {attachments.map((a) => (
+            <div key={a.id} className={styles.attachItem}>
+              <MIcon name="description" size={15} />
+              <span className={styles.attachName}>{a.filename}</span>
+              <span className={styles.attachSize}>{formatBytes(a.size_bytes)}</span>
+              <button
+                type="button"
+                className={styles.attachBtn}
+                disabled={downloadingId === a.id}
+                onClick={() => handleDownload(a)}
+              >
+                <MIcon name="download" size={15} />
+                {downloadingId === a.id ? t("TemplatesPage.downloading") : t("TemplatesPage.download")}
+              </button>
+            </div>
+          ))}
         </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }
 
@@ -122,48 +106,7 @@ const ROW_MENU_WIDTH = 200;
 
 function RowMenu({ template, cycleBusy, onClone, onEdit, onManual, onRetry, onCycle, onDelete, onClose, anchorRef, closing = false }) {
   const { t } = useTranslation("resource");
-  const ref = useRef(null);
-  const [pos, setPos] = useState(null);
-  const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; });
-
-  const reposition = useCallback(() => {
-    const anchor = anchorRef?.current;
-    const menu = ref.current;
-    if (!anchor || !menu) return;
-    const rect = anchor.getBoundingClientRect();
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    if (isAnchorOffscreen(rect, viewport)) {
-      onCloseRef.current();
-      return;
-    }
-    setPos(computePosition(rect, menu.offsetHeight, viewport, ROW_MENU_WIDTH));
-  }, [anchorRef]);
-
-  useLayoutEffect(() => { reposition(); }, [reposition]);
-
-  useEffect(() => {
-    const opts = { passive: true, capture: true };
-    window.addEventListener("scroll", reposition, opts);
-    window.addEventListener("resize", reposition);
-    return () => {
-      window.removeEventListener("scroll", reposition, opts);
-      window.removeEventListener("resize", reposition);
-    };
-  }, [reposition]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (!ref.current?.contains(e.target) && !anchorRef?.current?.contains(e.target)) onClose();
-    };
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose, anchorRef]);
+  const { ref, pos } = useAnchoredMenu({ anchorRef, onClose, width: ROW_MENU_WIDTH });
 
   return createPortal(
     <div
@@ -347,7 +290,7 @@ export default function TemplatesPage() {
       setTemplates(res?.data ?? []);
       return res?.data ?? [];
     } catch (e) {
-      toast.error(e?.message ?? t("TemplatesPage.loadFailed"));
+      toast.error(e?.message ?? t("Error.generic", { ns: "common" }));
       setTemplates((prev) => prev ?? []);
       return [];
     }
@@ -526,7 +469,6 @@ export default function TemplatesPage() {
       {cloneDialog.open && (
         <TemplateCloneDialog
           template={cloneDialog.item}
-          canBatch
           closing={cloneDialog.closing}
           onClose={() => setCloneTarget(null)}
         />

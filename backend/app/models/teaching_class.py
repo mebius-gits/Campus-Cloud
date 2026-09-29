@@ -65,7 +65,7 @@ class TeachingClass(SQLModel, table=True):
     )
     updated_at: datetime = Field(
         default_factory=get_datetime_utc,
-        sa_column=Column(DateTime(timezone=True), nullable=False),
+        sa_column=Column(DateTime(timezone=True), nullable=False, onupdate=get_datetime_utc),
     )
     archived_at: datetime | None = Field(
         default=None,
@@ -84,6 +84,10 @@ class TeachingClass(SQLModel, table=True):
 class TeachingClassMachineNode(SQLModel, table=True):
     __tablename__ = "teaching_class_machine_nodes"
     __table_args__ = (
+        sa.CheckConstraint(
+            "source_type IN ('template', 'custom')",
+            name="ck_teaching_class_machine_nodes_source_type",
+        ),
         UniqueConstraint("class_id", "node_key", name="uq_teaching_class_machine_node"),
     )
 
@@ -100,7 +104,7 @@ class TeachingClassMachineNode(SQLModel, table=True):
     source_template_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(
-            sa.ForeignKey("vm_templates.id", ondelete="RESTRICT"), nullable=True
+            sa.ForeignKey("vm_templates.id", ondelete="RESTRICT"), nullable=True, index=True
         ),
     )
     custom_image_ref: str | None = Field(default=None, max_length=500)
@@ -128,6 +132,10 @@ class TeachingClassMachineNode(SQLModel, table=True):
 class TeachingClassWeek(SQLModel, table=True):
     __tablename__ = "teaching_class_weeks"
     __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('draft', 'published', 'completed')",
+            name="ck_teaching_class_weeks_status",
+        ),
         UniqueConstraint("class_id", "week_number", name="uq_teaching_class_week"),
     )
 
@@ -162,6 +170,11 @@ class TeachingClassTaskFile(SQLModel, table=True):
     target_path: str | None = Field(default=None, max_length=500)
 
 
+# 班級擁有者自己的那一列：跟學生一樣佔容量、拿一整套機器、套同一份拓樸，
+# 但學生端的課程、提醒、評分都只看 status == "active"，不會把老師算進去。
+INSTRUCTOR_ENROLLMENT_STATUS = "instructor"
+
+
 class TeachingClassStudent(SQLModel, table=True):
     __tablename__ = "teaching_class_students"
     __table_args__ = (
@@ -191,6 +204,10 @@ class TeachingClassStudent(SQLModel, table=True):
 class TeachingClassStudentMachine(SQLModel, table=True):
     __tablename__ = "teaching_class_student_machines"
     __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'reclaimed')",
+            name="ck_teaching_class_student_machines_status",
+        ),
         UniqueConstraint(
             "class_student_id",
             "machine_node_id",
@@ -210,6 +227,7 @@ class TeachingClassStudentMachine(SQLModel, table=True):
         sa_column=Column(
             sa.ForeignKey("teaching_class_machine_nodes.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         )
     )
     batch_task_id: uuid.UUID | None = Field(
@@ -217,6 +235,7 @@ class TeachingClassStudentMachine(SQLModel, table=True):
         sa_column=Column(
             sa.ForeignKey("batch_provision_tasks.id", ondelete="SET NULL"),
             nullable=True,
+            index=True,
         ),
     )
     vmid: int | None = Field(default=None)
@@ -225,6 +244,7 @@ class TeachingClassStudentMachine(SQLModel, table=True):
 
 
 __all__ = [
+    "INSTRUCTOR_ENROLLMENT_STATUS",
     "TeachingClass",
     "TeachingClassStatus",
     "TeachingClassMachineNode",

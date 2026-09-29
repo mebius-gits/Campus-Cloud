@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from app.features.ai.config import settings
+from app.core.config import settings
 from app.models import TaskRecord, TaskRecordStatus
 from app.repositories import task_record as task_record_repo
 
@@ -88,7 +88,7 @@ def enqueue_task_sync(
     在 event loop 執行緒上呼叫會直接拋錯（那裡應該 await ``enqueue_task``）。
     """
     from app.infrastructure.worker import (
-        get_runner,  # noqa: PLC0415 — 避免 import cycle
+        get_runner,
     )
 
     try:
@@ -166,22 +166,22 @@ def _mark_enqueue_failed(
 
 
 async def _run_then_close_pool(coro: Any) -> Any:
-    from .arq_client import close_arq_pool  # noqa: PLC0415
+    from .arq_client import close_arq_pool
 
     try:
         return await coro
     finally:
-        if settings.redis_enabled:
+        if settings.REDIS_ENABLED:
             await close_arq_pool()
 
 
 async def _job_exists(job_id: str) -> bool:
     """同 job id 的任務是否已在排隊／執行中（arq 或本機 runner）。"""
-    if not settings.redis_enabled:
-        from app.infrastructure.worker import is_active  # noqa: PLC0415
+    if not settings.REDIS_ENABLED:
+        from app.infrastructure.worker import is_active
 
         return is_active(job_id)
-    from arq.jobs import Job, JobStatus  # noqa: PLC0415
+    from arq.jobs import Job, JobStatus
 
     pool = await get_arq_pool()
     status = await Job(job_id, redis=pool, _queue_name=QUEUE_NAME).status()
@@ -200,13 +200,13 @@ async def _dispatch(
 
     只做入列，不碰 DB；被 ``job_id`` 去重擋下時拋 ``DuplicateJobError``。
     """
-    if not settings.redis_enabled:
+    if not settings.REDIS_ENABLED:
         # Import task modules lazily so their decorators populate the
         # registry without creating an import cycle during app startup.
-        from app.infrastructure.worker import is_active, submit  # noqa: PLC0415
+        from app.infrastructure.worker import is_active, submit
 
-        from .modules import import_task_modules  # noqa: PLC0415
-        from .registry import run_registered_task_locally  # noqa: PLC0415
+        from .modules import import_task_modules
+        from .registry import run_registered_task_locally
 
         import_task_modules()
         local_task_id = job_id or str(record_id)

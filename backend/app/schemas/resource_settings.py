@@ -1,4 +1,4 @@
-"""資源進階設定 schemas：規格摘要、開機選項、登入憑證、標籤備註、共享與轉移。"""
+"""資源進階設定 schemas：規格摘要、開機選項、ISO 映像、登入憑證、共享與轉移。"""
 
 import re
 import uuid
@@ -140,6 +140,10 @@ class PasswordResetResponse(BaseModel):
     password: str
     applied_immediately: bool = Field(
         description="True：已在機器內直接改好；False：重新開機後生效"
+    )
+    rebooting: bool = Field(
+        default=False,
+        description="True：已送出重新開機，開機完成後新密碼生效（執行中的 VM）",
     )
     message: str
 

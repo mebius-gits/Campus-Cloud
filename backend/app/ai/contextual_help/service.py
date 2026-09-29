@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import functools
 import logging
+from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
@@ -35,7 +37,12 @@ from app.ai.contextual_help.surfaces import (
     get_surfaces_for_user,
     match_element_by_label,
 )
-from app.ai.monitoring import CALL_AI_CONTEXTUAL_HELP, record_ai_template_call
+from app.ai.monitoring import (
+    CALL_AI_CONTEXTUAL_HELP,
+    new_ai_request_id,
+    record_ai_template_call,
+    usage_metrics,
+)
 from app.ai.system_config import system_ai_env
 from app.ai.utils import strip_think_tags
 from app.infrastructure.ai.contextual_help import client as help_client
@@ -48,22 +55,6 @@ _MAX_TOKENS = 220
 _TEMPERATURE = 0.2
 # 說明就是說明，長了沒人看。超過就截斷，不讓模型把整頁教學倒出來。
 _MAX_ANSWER_CHARS = 400
-
-
-def _usage_metrics(response_data: dict[str, Any], elapsed: float) -> dict[str, Any]:
-    usage = response_data.get("usage")
-    if not isinstance(usage, dict):
-        usage = {}
-    prompt_tokens = int(usage.get("prompt_tokens") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or 0)
-    return {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": int(
-            usage.get("total_tokens") or prompt_tokens + completion_tokens
-        ),
-        "elapsed_seconds": round(max(elapsed, 0.0), 3),
-    }
 
 
 # ------------------------------------------------------------ 確定性答案
@@ -106,18 +97,15 @@ def _deterministic_answer(
 def _fallback_answer(
     surface: SurfaceSpec,
     intent: HelpIntent,
-    context: dict[str, Any],
     *,
     active_target: str | None,
     blocked: list[str],
 ) -> str:
-    """模型不可用時的答案。講得硬，但不會錯。"""
-    direct = _deterministic_answer(
-        surface, intent, context, active_target=active_target, blocked=blocked
-    )
-    if direct:
-        return direct
+    """模型不可用時的答案。講得硬，但不會錯。
 
+    只在 ``_deterministic_answer`` 已經答不出來之後才會被呼叫（見 :func:`explain`），
+    所以這裡不再重試確定性答案。
+    """
     if intent == "field_help" and active_target:
         element = find_element(surface, active_target)
         if element:
@@ -203,7 +191,7 @@ async def explain(
         return ExplainResponse(
             intent=intent,
             answer=_fallback_answer(
-                surface, intent, context, active_target=active_target, blocked=blocked
+                surface, intent, active_target=active_target, blocked=blocked
             ),
             target=target,
             grounded_in=grounded,
@@ -212,23 +200,13 @@ async def explain(
             used_model=False,
         )
 
-    def _log(
-        metrics: dict[str, Any] | None = None,
-        *,
-        status: str = "success",
-        error_message: str | None = None,
-    ) -> None:
-        if session is None:
-            return
-        record_ai_template_call(
-            session=session,
-            user_id=current_user.id,
-            call_type=CALL_AI_CONTEXTUAL_HELP,
-            model_name=model_name,
-            metrics=metrics,
-            status=status,
-            error_message=error_message,
-        )
+    _log = functools.partial(
+        record_ai_template_call,
+        session=session,
+        user_id=current_user.id,
+        call_type=CALL_AI_CONTEXTUAL_HELP,
+        model_name=model_name,
+    )
 
     payload = {
         "model": model_name,
@@ -238,22 +216,29 @@ async def explain(
         "top_p": 0.9,
     }
 
+    request_id = new_ai_request_id()
+    started = perf_counter()
+    started_at = datetime.now(timezone.utc)
     try:
-        started = perf_counter()
         response_data = await help_client.create_chat_completion(
-            payload, timeout=_TIMEOUT_SECONDS
+            payload, timeout=_TIMEOUT_SECONDS, request_id=request_id
         )
-        metrics = _usage_metrics(response_data, perf_counter() - started)
+        metrics = usage_metrics(
+            response_data,
+            perf_counter() - started,
+            request_id=request_id,
+            started_at=started_at,
+        )
         content = str(response_data["choices"][0]["message"]["content"] or "")
         answer = strip_think_tags(content).strip()
         if not answer:
-            _log(metrics, status="error", error_message="Empty answer from model.")
+            _log(metrics=metrics, status="error", error_message="Empty answer from model.")
             answer = _fallback_answer(
-                surface, intent, context, active_target=active_target, blocked=blocked
+                surface, intent, active_target=active_target, blocked=blocked
             )
             used_model = False
         else:
-            _log(metrics)
+            _log(metrics=metrics)
             used_model = True
         return ExplainResponse(
             intent=intent,
@@ -266,11 +251,20 @@ async def explain(
         )
     except Exception as exc:  # pragma: no cover - defensive fallback
         logger.exception("Contextual help failed, using deterministic answer: %s", exc)
-        _log(status="error", error_message=str(exc))
+        _log(
+            metrics=usage_metrics(
+                {},
+                perf_counter() - started,
+                request_id=request_id,
+                started_at=started_at,
+            ),
+            status="error",
+            error_message=str(exc),
+        )
         return ExplainResponse(
             intent=intent,
             answer=_fallback_answer(
-                surface, intent, context, active_target=active_target, blocked=blocked
+                surface, intent, active_target=active_target, blocked=blocked
             ),
             target=target,
             grounded_in=grounded,

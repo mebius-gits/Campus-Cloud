@@ -19,7 +19,7 @@ from app.core import security
 from app.core.config import settings
 from app.exceptions import AuthenticationError
 from app.services.user import auth_service
-from app.utils.token import generate_password_reset_token, verify_password_reset_token
+from app.utils.token import decode_password_reset_token, generate_password_reset_token
 
 _USER_ID = uuid.uuid4()
 
@@ -40,7 +40,7 @@ class _FakeSession:
     def __init__(self, user: Any) -> None:
         self._user = user
 
-    def get(self, model: Any, key: Any) -> Any:  # noqa: ARG002
+    def get(self, model: Any, key: Any) -> Any:
         return self._user
 
 
@@ -48,7 +48,7 @@ def _patch_redis(monkeypatch: pytest.MonkeyPatch, *, revoked: bool) -> None:
     async def fake_get_redis() -> None:
         return None
 
-    async def fake_is_jti_revoked(redis: Any, jti: str) -> bool:  # noqa: ARG001
+    async def fake_is_jti_revoked(redis: Any, jti: str) -> bool:
         return revoked
 
     # auth_service imports these lazily from app.infrastructure.redis
@@ -110,7 +110,7 @@ async def test_access_token_rejected_as_refresh_token(
 
 def test_password_reset_token_round_trips() -> None:
     token = generate_password_reset_token(email="user@example.com")
-    assert verify_password_reset_token(token=token) == "user@example.com"
+    assert decode_password_reset_token(token) == ("user@example.com", 0)
 
 
 def test_access_token_not_valid_as_password_reset_token() -> None:
@@ -119,4 +119,4 @@ def test_access_token_not_valid_as_password_reset_token() -> None:
     access_token = security.create_access_token(
         "user@example.com", expires_delta=timedelta(minutes=5)
     )
-    assert verify_password_reset_token(token=access_token) is None
+    assert decode_password_reset_token(access_token) is None

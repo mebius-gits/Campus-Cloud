@@ -2,12 +2,12 @@
 @use "../../assets/styles/mixins" as *;
 
 /* ── Power dropdown ──
-   位置由 PowerMenu.jsx 依錨點按鈕即時算好寫進 inline style，
+   位置由 PowerMenu.jsx 經 useAnchoredMenu 依錨點按鈕即時算好寫進 inline style，
    這裡只負責外觀。刻意不套 glass-surface：選單浮在列表內容之上，
    半透明背景會讓底下的列（節點名稱、終端機按鈕…）透出來。 */
 .powerMenu {
   position: fixed;
-  width: 240px; // 需與 PowerMenu.jsx 的 MENU_WIDTH 一致
+  width: 240px; // 需與 position.js 的 MENU_WIDTH 一致
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: $radius-12;
@@ -47,6 +47,25 @@
   font-weight: $font-weight-500;
   color: var(--color-text-muted);
   padding: 2px $spacing-16 $spacing-8;
+}
+
+/* 開機被使用時段擋住時的原因說明（標題下、選項上） */
+.powerMenuNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 $spacing-8 $spacing-8;
+  padding: 6px 8px;
+  border-radius: $radius-8;
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+  color: var(--color-danger);
+  font-size: $font-size-12;
+  line-height: 1.5;
+
+  > :global(.material-icons-outlined) {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
 }
 
 .powerMenuGrid {

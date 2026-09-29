@@ -8,6 +8,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.exceptions import NotFoundError, PermissionDeniedError
 from app.models import (
+    INSTRUCTOR_ENROLLMENT_STATUS,
     Resource,
     TeachingClass,
     TeachingClassMachineNode,
@@ -39,12 +40,11 @@ def db():
         yield session
 
 
-def _user(db: Session, role: UserRole, *, superuser: bool = False) -> User:
+def _user(db: Session, role: UserRole) -> User:
     user = User(
         email=f"{uuid.uuid4().hex[:12]}@example.com",
         hashed_password="x",
         role=role,
-        is_superuser=superuser,
     )
     db.add(user)
     db.commit()
@@ -173,6 +173,25 @@ class TestTeachingClassClassroom:
         assert [(vm.vmid, vm.name, vm.status) for vm in rows[0].vms] == [
             (503, "Client", "running")
         ]
+
+    def test_instructor_machine_is_not_listed_as_a_student(self, db: Session) -> None:
+        teacher = _user(db, UserRole.teacher)
+        student = _user(db, UserRole.student)
+        teaching_class = _class(db, teacher, student)
+        db.add(
+            TeachingClassStudent(
+                class_id=teaching_class.id,
+                user_id=teacher.id,
+                status=INSTRUCTOR_ENROLLMENT_STATUS,
+            )
+        )
+        db.commit()
+
+        rows = classroom_service.list_class_students(
+            db, teaching_class.id, teacher, cluster_resources=[]
+        )
+
+        assert [row.email for row in rows] == [student.email]
 
     def test_teacher_broadcasts_own_vm_to_own_class(self, db: Session) -> None:
         teacher = _user(db, UserRole.teacher)

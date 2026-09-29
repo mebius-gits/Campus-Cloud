@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
 import {
   CartesianGrid,
   ComposedChart,
@@ -15,54 +14,22 @@ import MIcon from "../../../components/MIcon";
 import { formatDateTime, formatTime } from "../../../utils/formatDate";
 import i18n from "../../../i18n";
 import LoadingState from "../../../components/LoadingState/LoadingState";
-import SharedEmptyState from "../../../components/EmptyState/EmptyState";
+import EmptyState from "../../../components/EmptyState/EmptyState";
 import { AiMonitoringService } from "../../../services/aiMonitoring";
+import { MonitoringService } from "../../../services/monitoring";
 import { useToast } from "../../../hooks/useToast";
 import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import SegmentedControl from "../../../components/SegmentedControl/SegmentedControl";
-
-export function presetToRange(preset) {
-  const end = new Date();
-  const start = new Date();
-  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
-  start.setDate(start.getDate() - days);
-  return { startDate: start.toISOString(), endDate: end.toISOString() };
-}
-
-export function presetToBucket(preset) {
-  return preset === "7d" ? "hour" : "day";
-}
-
-export function formatTokens(n) {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-export function formatDuration(ms) {
-  if (ms == null) return "—";
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${ms}ms`;
-}
-
-export function formatModelDisplay(modelName) {
-  if (!modelName) return "—";
-  const trimmed = modelName.trim();
-  if (!trimmed) return "—";
-
-  const match = trimmed.match(/models--([^/]+)--([^/]+)/);
-  if (match) return `${match[1]}/${match[2]}`;
-
-  if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(trimmed)) {
-    const separator = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-    const basename = separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
-    return basename || trimmed;
-  }
-
-  return trimmed;
-}
+import {
+  formatDuration,
+  formatModelDisplay,
+  formatTokenRate,
+  formatTokens,
+  isOkStatus,
+  presetToBucket,
+  presetToRange,
+} from "../aiFormat";
 
 function modelKey(modelName) {
   return formatModelDisplay(modelName).toLocaleLowerCase();
@@ -101,15 +68,6 @@ export function mergeModelRows(usageModels = [], runtimeModels = []) {
   return Array.from(rows.values()).sort((a, b) => b.total_calls - a.total_calls);
 }
 
-export function isOkStatus(status) {
-  return (
-    status === "success" ||
-    status === 200 ||
-    status === "200" ||
-    status === "ok"
-  );
-}
-
 function formatNumber(n) {
   if (n == null) return "—";
   return new Intl.NumberFormat(i18n.language).format(n);
@@ -136,10 +94,6 @@ function formatChartTime(value, bucket) {
       ? { month: "numeric", day: "numeric", hour: "2-digit" }
       : { month: "numeric", day: "numeric" },
   );
-}
-
-function EmptyState({ icon, title }) {
-  return <SharedEmptyState icon={icon} title={title} />;
 }
 
 function StatusBadge({ status }) {
@@ -348,11 +302,11 @@ function DetailSummary({ summary, t }) {
   );
 }
 
-function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFilter, onModelSelect, t }) {
+function DetailTable({ tab, calls, users, modelRows, query, statusFilter, onModelSelect, t }) {
   const q = query.trim().toLowerCase();
 
   if (tab === "models") {
-    const visibleModels = mergeModelRows(models, runtimeModels).filter((model) => (
+    const visibleModels = modelRows.filter((model) => (
       !q
       || model.model_name.toLowerCase().includes(q)
       || (model.runtime_name ?? "").toLowerCase().includes(q)
@@ -360,7 +314,7 @@ function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFi
     ));
     if (!visibleModels.length) return <EmptyState icon="model_training" title={t("AiMonitoringPage.emptyModelBreakdown")} />;
     return <div className={styles.tableWrap}><table className={styles.table}>
-      <thead><tr><th className={styles.th}>{t("AiMonitoringPage.colModel")}</th><th className={styles.th}>{t("AiMonitoringPage.colRuntimeStatus")}</th><th className={styles.th}>{t("AiMonitoringPage.colDeployments")}</th><th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colCallCount")}</th><th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colTokensTotal")}</th><th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colFailRate")}</th><th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colAvgLatency")}</th></tr></thead>
+      <thead><tr><th className={styles.th}>{t("AiMonitoringPage.colModel")}</th><th className={styles.th}>{t("AiMonitoringPage.colRuntimeStatus")}</th><th className={styles.th}>{t("AiMonitoringPage.colDeployments")}</th><th className={styles.th}>{t("AiMonitoringPage.colCallCount")}</th><th className={styles.th}>{t("AiMonitoringPage.colTokensTotal")}</th><th className={styles.th}>{t("AiMonitoringPage.colFailRate")}</th><th className={styles.th}>{t("AiMonitoringPage.colAvgLatency")}</th></tr></thead>
       <tbody>{visibleModels.map((model) => <tr key={`${model.model_name}:${model.runtime_name ?? "usage"}`} className={styles.tr}><td className={`${styles.td} ${styles.monoCell}`}>{model.total_calls > 0 ? <button type="button" className={styles.modelDrilldown} onClick={() => onModelSelect(model.model_name)} title={t("AiMonitoringPage.viewModelCalls", { model: formatModelDisplay(model.model_name) })}><span>{formatModelDisplay(model.model_name)}</span><MIcon name="arrow_forward" size={15} /></button> : <span>{formatModelDisplay(model.model_name)}</span>}</td><td className={styles.td}><ModelRuntimeBadge status={model.runtime_status} t={t} /></td><td className={styles.td}>{model.runtime_status ? t("AiMonitoringPage.deploymentCount", { healthy: model.healthy_deployments, unhealthy: model.unhealthy_deployments }) : "—"}</td><td className={`${styles.td} ${styles.numericCell}`}>{formatNumber(model.total_calls)}</td><td className={`${styles.td} ${styles.numericCell}`}>{formatTokens(model.total_tokens)}</td><td className={`${styles.td} ${styles.numericCell}`}>{formatPercent(model.error_rate)}</td><td className={`${styles.td} ${styles.numericCell}`}>{formatDuration(model.avg_latency_ms)}</td></tr>)}</tbody>
     </table></div>;
   }
@@ -377,14 +331,15 @@ function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFi
         <table className={styles.table}>
           <thead><tr>
             <th className={styles.th}>{t("AiMonitoringPage.colUser")}</th>
-            <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colCallCount")}</th>
-            <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colTokensTotal")}</th>
-            <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colAvgLatency")}</th>
-            <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colFailRate")}</th>
+            <th className={styles.th}>{t("AiMonitoringPage.colCallCount")}</th>
+            <th className={styles.th}>{t("AiMonitoringPage.colTokensTotal")}</th>
+            <th className={styles.th}>{t("AiMonitoringPage.colAvgLatency")}</th>
+            <th className={styles.th}>{t("AiMonitoringPage.colFailRate")}</th>
           </tr></thead>
           <tbody>{visibleUsers.map((user) => {
-            const totalCalls = user.proxy_calls ?? 0;
-            const totalTokens = (user.proxy_input_tokens ?? 0) + (user.proxy_output_tokens ?? 0);
+            const totalCalls = (user.proxy_calls ?? 0) + (user.template_calls ?? 0);
+            const totalTokens = (user.proxy_input_tokens ?? 0) + (user.proxy_output_tokens ?? 0)
+              + (user.template_input_tokens ?? 0) + (user.template_output_tokens ?? 0);
             return <tr key={user.user_id} className={styles.tr}>
               <td className={styles.td}><UserCell email={user.user_email} fullName={user.user_full_name} fallback={user.user_id} /></td>
               <td className={`${styles.td} ${styles.numericCell}`}>{formatNumber(totalCalls)}</td>
@@ -405,7 +360,8 @@ function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFi
     return (call.user_email ?? "").toLowerCase().includes(q)
       || (call.user_full_name ?? "").toLowerCase().includes(q)
       || (call.model_name ?? "").toLowerCase().includes(q)
-      || (call.request_type ?? "").toLowerCase().includes(q);
+      || (call.request_type ?? call.call_type ?? "").toLowerCase().includes(q)
+      || (call.request_id ?? "").toLowerCase().includes(q);
   });
 
   if (!visibleCalls.length) return <EmptyState icon="analytics" title={t("AiMonitoringPage.emptyCallsTitle")} />;
@@ -417,19 +373,25 @@ function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFi
           <th className={styles.th}>{t("AiMonitoringPage.colUser")}</th>
           <th className={styles.th}>{t("AiMonitoringPage.colModel")}</th>
           <th className={styles.th}>{t("AiMonitoringPage.colType")}</th>
-          <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colInput")}</th>
-          <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colOutput")}</th>
-          <th className={`${styles.th} ${styles.thRight}`}>{t("AiMonitoringPage.colDuration")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colInput")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colOutput")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colDuration")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colFirstToken")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colOutputRate")}</th>
+          <th className={styles.th}>{t("AiMonitoringPage.colUsageEvidence")}</th>
           <th className={styles.th}>{t("AiMonitoringPage.colStatus")}</th>
         </tr></thead>
         <tbody>{visibleCalls.map((call) => <tr key={call.id} className={styles.tr}>
-          <td className={styles.td}>{formatDateTime(call.created_at)}</td>
+          <td className={styles.td}>{formatDateTime(call.created_at)}{call.request_id ? <small className={styles.monoCell} title={[call.request_id, call.upstream_request_id].filter(Boolean).join(" / ")}>{call.request_id.slice(0, 8)}</small> : null}</td>
           <td className={styles.td}><UserCell email={call.user_email} fullName={call.user_full_name} fallback={call.user_id} /></td>
-          <td className={`${styles.td} ${styles.monoCell}`} title={call.model_name}>{formatModelDisplay(call.model_name)}</td>
-          <td className={styles.td}>{call.request_type ?? "—"}</td>
+          <td className={`${styles.td} ${styles.monoCell}`} title={[call.model_name, call.response_model].filter(Boolean).join(" → ")}>{call.response_model && call.response_model !== call.model_name ? `${formatModelDisplay(call.model_name)} → ${formatModelDisplay(call.response_model)}` : formatModelDisplay(call.model_name)}</td>
+          <td className={styles.td}>{call.request_type ?? call.call_type ?? "—"}</td>
           <td className={`${styles.td} ${styles.numericCell}`}>{formatTokens(call.input_tokens ?? 0)}</td>
           <td className={`${styles.td} ${styles.numericCell}`}>{formatTokens(call.output_tokens ?? 0)}</td>
           <td className={`${styles.td} ${styles.numericCell}`}>{formatDuration(call.request_duration_ms)}</td>
+          <td className={`${styles.td} ${styles.numericCell}`}>{formatDuration(call.first_token_ms)}</td>
+          <td className={`${styles.td} ${styles.numericCell}`}>{formatTokenRate(call.e2e_output_tokens_per_second)}</td>
+          <td className={styles.td}>{t(call.usage_reported ? "AiMonitoringPage.usageReported" : "AiMonitoringPage.usageMissing")}</td>
           <td className={styles.td}><StatusBadge status={call.status} /></td>
         </tr>)}</tbody>
       </table>
@@ -440,7 +402,6 @@ function DetailTable({ tab, calls, users, models, runtimeModels, query, statusFi
 export default function AiMonitoringPage() {
   const { t } = useTranslation("ai");
   const toast = useToast();
-  const navigate = useNavigate();
   const [preset, setPreset] = useState("7d");
   const [trendMetric, setTrendMetric] = useState("calls");
   const [detailTab, setDetailTab] = useState("models");
@@ -449,8 +410,9 @@ export default function AiMonitoringPage() {
   const [overview, setOverview] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [proxyCalls, setProxyCalls] = useState([]);
+  const [templateCalls, setTemplateCalls] = useState([]);
   const [users, setUsers] = useState([]);
-  const [counts, setCounts] = useState({ proxy: 0, users: 0 });
+  const [counts, setCounts] = useState({ proxy: 0, template: 0, users: 0 });
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -458,7 +420,11 @@ export default function AiMonitoringPage() {
   const [runtimeError, setRuntimeError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [detailFocusRequest, setDetailFocusRequest] = useState(0);
+  /* 監控 stack 有啟用且目前是管理員才顯示「SkyLab AI」儀表板連結（查詢失敗或 403 就不顯示）；
+     同一支 API 會設定 Grafana 免密碼登入的 cookie，頁面開著時定期續期 */
+  const [grafanaUrl, setGrafanaUrl] = useState(null);
   const detailSectionRef = useRef(null);
+  const loadSeqRef = useRef(0);
   const modelRows = useMemo(
     () => mergeModelRows(overview?.model_breakdown, runtime?.models),
     [overview?.model_breakdown, runtime?.models],
@@ -472,6 +438,7 @@ export default function AiMonitoringPage() {
   const DETAIL_TABS = [
     { key: "models", label: t("AiMonitoringPage.tabModels"), icon: "model_training", count: modelRows.length },
     { key: "proxy", label: t("AiMonitoringPage.tabProxy"), icon: "swap_horiz", count: counts.proxy },
+    { key: "template", label: t("AiMonitoringPage.tabTemplate"), icon: "smart_toy", count: counts.template },
     { key: "users", label: t("AiMonitoringPage.tabUsers"), icon: "groups", count: counts.users },
   ];
   const STATUS_FILTERS = [
@@ -493,6 +460,10 @@ export default function AiMonitoringPage() {
       setRuntimeLoading(true);
       setDetailLoading(true);
     }
+    /* 快速切換時間範圍時，較慢的舊範圍回應不可蓋掉新範圍的資料：
+       只有最後一次 load 的結果寫入 state */
+    const seq = ++loadSeqRef.current;
+    const isCurrent = () => seq === loadSeqRef.current;
     const range = presetToRange(preset);
     const shared = { ...range, limit: 100 };
 
@@ -503,49 +474,74 @@ export default function AiMonitoringPage() {
       ...range,
       bucket: presetToBucket(preset),
       compare: true,
-      source: "api_key",
+      source: "all",
     })
       .then((value) => {
+        if (!isCurrent()) return;
         setOverview(value);
         setOverviewError(false);
       })
       .catch(() => {
+        if (!isCurrent()) return;
         setOverviewError(true);
         if (!silent) toast.error(t("AiMonitoringPage.loadError"));
       })
-      .finally(() => setOverviewLoading(false));
+      .finally(() => { if (isCurrent()) setOverviewLoading(false); });
 
     const runtimeRequest = AiMonitoringService.runtime()
       .then((value) => {
+        if (!isCurrent()) return;
         setRuntime(value);
         setRuntimeError(false);
       })
       .catch(() => {
-        setRuntimeError(true);
+        if (isCurrent()) setRuntimeError(true);
       })
-      .finally(() => setRuntimeLoading(false));
+      .finally(() => { if (isCurrent()) setRuntimeLoading(false); });
 
     const detailRequest = Promise.allSettled([
       AiMonitoringService.listProxyCalls(shared),
-      AiMonitoringService.listUsersUsage({ ...shared, source: "api_key" }),
-    ]).then(([proxyResult, usersResult]) => {
+      AiMonitoringService.listTemplateCalls(shared),
+      AiMonitoringService.listUsersUsage({ ...shared, source: "all" }),
+    ]).then(([proxyResult, templateResult, usersResult]) => {
+      if (!isCurrent()) return;
       if (proxyResult.status === "fulfilled") {
         setProxyCalls(proxyResult.value?.data ?? []);
         setCounts((current) => ({ ...current, proxy: proxyResult.value?.count ?? proxyResult.value?.data?.length ?? 0 }));
+      }
+      if (templateResult.status === "fulfilled") {
+        setTemplateCalls(templateResult.value?.data ?? []);
+        setCounts((current) => ({ ...current, template: templateResult.value?.count ?? templateResult.value?.data?.length ?? 0 }));
       }
       if (usersResult.status === "fulfilled") {
         setUsers(usersResult.value?.data ?? []);
         setCounts((current) => ({ ...current, users: usersResult.value?.count ?? usersResult.value?.data?.length ?? 0 }));
       }
     }).finally(() => {
-      setDetailLoading(false);
+      if (isCurrent()) setDetailLoading(false);
     });
 
     await Promise.allSettled([overviewRequest, runtimeRequest, detailRequest]);
-    setLastUpdated(new Date());
+    if (isCurrent()) setLastUpdated(new Date());
   }, [preset, t, toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () =>
+      MonitoringService.createGrafanaSession({ signal: controller.signal })
+        .then((link) =>
+          setGrafanaUrl(link?.enabled && link.url ? `${link.url.replace(/\/+$/, "")}/d/skylab-ai` : null),
+        )
+        .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 30 * 60_000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, []);
   useAutoRefresh(() => load(true));
 
   useEffect(() => {
@@ -562,7 +558,6 @@ export default function AiMonitoringPage() {
     () => buildAttentionItems({ overview, runtime, overviewError, runtimeError }, t),
     [overview, runtime, overviewError, runtimeError, t],
   );
-  const detailQuery = query;
   const detailPlaceholder = detailTab === "users"
     ? t("AiMonitoringPage.searchPlaceholderUsers")
     : detailTab === "models" ? t("AiMonitoringPage.searchPlaceholderModels") : t("AiMonitoringPage.searchPlaceholderCalls");
@@ -574,11 +569,9 @@ export default function AiMonitoringPage() {
   };
 
   const openAttention = (target) => {
-    if (target === "runtime") {
-      navigate("/gateway");
-      return;
-    }
-    if (target === "models") {
+    /* AI Gateway（LiteLLM／vLLM）就緒狀態看的是本頁模型分頁的執行狀態；
+       /gateway 是網路 Gateway VM（nginx），跟這個告警無關 */
+    if (target === "models" || target === "runtime") {
       setDetailTab("models");
       setStatusFilter("all");
     } else {
@@ -603,6 +596,12 @@ export default function AiMonitoringPage() {
             onChange={setPreset}
             ariaLabel={t("AiMonitoringPage.rangeLabel")}
           />
+          {grafanaUrl && (
+            <a className={styles.linkBtn} href={grafanaUrl} target="_blank" rel="noopener noreferrer">
+              <MIcon name="open_in_new" size={16} />
+              {t("AiMonitoringPage.openGrafana")}
+            </a>
+          )}
         </div>
       </PageHeader>
 
@@ -688,7 +687,7 @@ export default function AiMonitoringPage() {
           ))}
         </div>
         <div className={styles.detailContent}>
-          {detailLoading ? <LoadingState /> : <DetailTable tab={detailTab} calls={proxyCalls} users={users} models={overview?.model_breakdown} runtimeModels={runtime?.models} query={detailQuery} statusFilter={statusFilter} onModelSelect={selectModel} t={t} />}
+          {detailLoading ? <LoadingState /> : <DetailTable tab={detailTab} calls={detailTab === "template" ? templateCalls : proxyCalls} users={users} modelRows={modelRows} query={query} statusFilter={statusFilter} onModelSelect={selectModel} t={t} />}
         </div>
       </section>
     </div>

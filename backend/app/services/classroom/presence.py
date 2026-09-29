@@ -6,12 +6,12 @@
      "session_id": ..., "vmid": ..., "class_id": ...}
 """
 
-import asyncio
-import contextlib
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
+
+from app.services.classroom.broadcast_hub import JsonBroadcastHub, JsonSocket
 
 logger = logging.getLogger(__name__)
 
@@ -19,50 +19,30 @@ logger = logging.getLogger(__name__)
 SEND_TIMEOUT_SECONDS = 5
 
 
-class PresenceSocket(Protocol):
-    """已 accept 的 FastAPI WebSocket 需要的最小介面。"""
-
-    async def receive_text(self) -> str:
-        """讀取下一則文字訊息（斷線時拋出）。"""
-
-    async def send_json(self, data: dict[str, Any]) -> None:
-        """推送一則 JSON 事件。"""
-
-
 @dataclass
 class _Connection:
     user_id: uuid.UUID
     class_ids: set[uuid.UUID]
-    websocket: PresenceSocket
+    websocket: JsonSocket
     # dataclass eq=False 效果：以身分比較，同一 user 多分頁各是一條連線
     key: object = field(default_factory=object)
 
 
-class ClassroomPresenceHub:
-    def __init__(self) -> None:
-        self._connections: dict[object, _Connection] = {}
+class ClassroomPresenceHub(JsonBroadcastHub[_Connection]):
+    def _send_timeout(self) -> float:
+        return SEND_TIMEOUT_SECONDS
 
     async def register(
         self,
         *,
         user_id: uuid.UUID,
         class_ids: set[uuid.UUID],
-        websocket: PresenceSocket,
+        websocket: JsonSocket,
     ) -> None:
         """註冊連線並常駐讀取直到斷線（訊息內容忽略，僅偵測斷線）。"""
-        conn = _Connection(
-            user_id=user_id,
-            class_ids=set(class_ids),
-            websocket=websocket,
+        await self._hold(
+            _Connection(user_id=user_id, class_ids=set(class_ids), websocket=websocket)
         )
-        self._connections[conn.key] = conn
-        try:
-            while True:
-                await websocket.receive_text()
-        except Exception:
-            pass  # 斷線（WebSocketDisconnect 或其他中斷）屬正常結束
-        finally:
-            self._connections.pop(conn.key, None)
 
     def online_user_ids_for_class(self, class_id: uuid.UUID) -> set[uuid.UUID]:
         return {
@@ -80,34 +60,6 @@ class ClassroomPresenceHub:
         await self._send_to(
             [c for c in self._connections.values() if c.user_id == user_id], event
         )
-
-    async def _send_to(self, connections: list[_Connection], event: dict[str, Any]) -> None:
-        """同時推給所有連線：逐一 await 會讓一條慢連線拖住整班的事件。"""
-        if not connections:
-            return
-        await asyncio.gather(
-            *(self._send_one(conn, event) for conn in connections),
-            return_exceptions=True,
-        )
-
-    async def _send_one(self, conn: _Connection, event: dict[str, Any]) -> None:
-        try:
-            await asyncio.wait_for(
-                conn.websocket.send_json(event), timeout=SEND_TIMEOUT_SECONDS
-            )
-        except Exception:
-            # 逾時或送出失敗一律當死連線清掉；register 端的 finally 再清一次是 no-op
-            self._connections.pop(conn.key, None)
-            await _close_quietly(conn.websocket)
-
-
-async def _close_quietly(websocket: PresenceSocket) -> None:
-    """盡力關閉連線；對端早就斷了或物件沒有 close 都不是問題。"""
-    close = getattr(websocket, "close", None)
-    if close is None:
-        return
-    with contextlib.suppress(Exception):
-        await close()
 
 
 classroom_presence_hub = ClassroomPresenceHub()

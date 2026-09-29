@@ -1,57 +1,33 @@
 """Split from tests/test_backend_workflows.py: placement, provisioning plan & storage selection."""
 
-import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ValidationError
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.security import encrypt_value
 from app.domain.placement.schemas import NodeCapacity, PlacementRequest
-from app.exceptions import (
-    BadRequestError,
-    ConflictError,
-    PermissionDeniedError,
-    ProvisioningError,
-    ProxmoxError,
-)
 from app.infrastructure.proxmox import operations as proxmox_service
 from app.models import (
     ProxmoxConfig,
     ProxmoxNode,
     ProxmoxStorage,
-    Resource,
-    SpecChangeRequest,
-    SpecChangeRequestStatus,
-    SpecChangeType,
     SubnetConfig,
     User,
     UserRole,
     VMRequest,
     VMRequestStatus,
-    VMTemplate,
-    VMTemplateStatus,
-    VMTemplateVisibility,
 )
-from app.repositories import spec_change_request as spec_change_request_repo
 from app.repositories import user as user_repo
 from app.schemas import (
-    SpecChangeRequestCreate,
-    SpecChangeRequestReview,
     UserCreate,
     VMCreateRequest,
-    VMRequestCreate,
-    VMRequestReview,
 )
 from app.services.proxmox import gpu_service, provisioning_service
-from app.services.user import user_service
 from app.services.vm import (
-    spec_change_service,
     vm_request_placement_service,
-    vm_request_service,
 )
 
 
@@ -78,7 +54,6 @@ def _create_user(
             email=f"{'admin' if is_superuser else 'user'}-{datetime.now(timezone.utc).timestamp()}@example.com",
             password="strongpass123",
             role=role or (UserRole.admin if is_superuser else UserRole.student),
-            is_superuser=is_superuser,
         ),
     )
     session.commit()
@@ -276,15 +251,15 @@ def test_select_request_placement_falls_back_when_reserved_node_is_unavailable(
         lambda request: None,
     )
     monkeypatch.setattr(
-        "app.services.proxmox.provisioning_service.placement_advisor._load_cluster_state",
+        "app.services.proxmox.provisioning_service.placement_support.load_cluster_state",
         lambda: ([], []),
     )
     monkeypatch.setattr(
-        "app.services.proxmox.provisioning_service.placement_advisor._build_node_capacities",
+        "app.services.proxmox.provisioning_service.placement_support.build_live_node_capacities",
         lambda **kwargs: [SimpleNamespace(node="pve-a")],
     )
     monkeypatch.setattr(
-        "app.services.proxmox.provisioning_service.placement_advisor._decide_resource_type",
+        "app.services.proxmox.provisioning_service.placement_advisor.decide_resource_type",
         lambda request: ("lxc", "Prefer LXC for this request."),
     )
     monkeypatch.setattr(
@@ -344,14 +319,6 @@ def test_reserved_target_node_prefers_admin_storage_profile(
     db.add(
         ProxmoxConfig(
             id=1,
-            host="pve.local",
-            user="root@pam",
-            encrypted_password="encrypted",
-            verify_ssl=False,
-            iso_storage="local",
-            data_storage="local-lvm",
-            pool_name="SkyLab",
-            placement_strategy="priority_dominant_share",
             cpu_overcommit_ratio=2.0,
             disk_overcommit_ratio=1.0,
         )
@@ -392,11 +359,11 @@ def test_reserved_target_node_prefers_admin_storage_profile(
     )
 
     monkeypatch.setattr(
-        "app.services.vm.placement_service.placement_advisor._load_cluster_state",
+        "app.services.vm.placement_service.placement_support.load_cluster_state",
         lambda: ([], []),
     )
     monkeypatch.setattr(
-        "app.services.vm.placement_service.placement_advisor._build_node_capacities",
+        "app.services.vm.placement_service.placement_support.build_live_node_capacities",
         lambda **kwargs: [
             NodeCapacity(
                 node="pve-a",
@@ -460,14 +427,6 @@ def test_reserved_target_node_uses_managed_storage_instead_of_node_root_disk(
     db.add(
         ProxmoxConfig(
             id=1,
-            host="pve.local",
-            user="root@pam",
-            encrypted_password="encrypted",
-            verify_ssl=False,
-            iso_storage="local",
-            data_storage="local-lvm",
-            pool_name="SkyLab",
-            placement_strategy="priority_dominant_share",
         )
     )
     _seed_managed_storage(
@@ -482,11 +441,11 @@ def test_reserved_target_node_uses_managed_storage_instead_of_node_root_disk(
     db.commit()
 
     monkeypatch.setattr(
-        "app.services.vm.placement_service.placement_advisor._load_cluster_state",
+        "app.services.vm.placement_service.placement_support.load_cluster_state",
         lambda: ([], []),
     )
     monkeypatch.setattr(
-        "app.services.vm.placement_service.placement_advisor._build_node_capacities",
+        "app.services.vm.placement_service.placement_support.build_live_node_capacities",
         lambda **kwargs: [
             NodeCapacity(
                 node="pve-a",
@@ -517,7 +476,6 @@ def test_reserved_target_node_uses_managed_storage_instead_of_node_root_disk(
         start_at=now + timedelta(hours=1),
         end_at=now + timedelta(hours=2),
         reserved_requests=[],
-        allow_cohort_optimization=False,
     )
 
     assert selection.node == "pve-a"
@@ -681,14 +639,6 @@ def test_build_plan_avoids_high_loadavg_and_peak_risk_node(
     db.add(
         ProxmoxConfig(
             id=1,
-            host="pve.local",
-            user="root@pam",
-            encrypted_password="encrypted",
-            verify_ssl=False,
-            iso_storage="local",
-            data_storage="local-lvm",
-            pool_name="SkyLab",
-            placement_strategy="priority_dominant_share",
             placement_peak_cpu_margin=2.0,
             placement_peak_memory_margin=1.05,
             placement_loadavg_warn_per_core=0.5,
@@ -748,14 +698,6 @@ def test_build_plan_prefers_balance_before_node_priority(
     db.add(
         ProxmoxConfig(
             id=1,
-            host="pve.local",
-            user="root@pam",
-            encrypted_password="encrypted",
-            verify_ssl=False,
-            iso_storage="local",
-            data_storage="local-lvm",
-            pool_name="SkyLab",
-            placement_strategy="priority_dominant_share",
         )
     )
     db.commit()

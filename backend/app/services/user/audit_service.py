@@ -43,7 +43,6 @@ ACTION_CATEGORY: dict[AuditAction, str] = {
     AuditAction.spec_change_apply: "resource",
     AuditAction.spec_direct_update: "resource",
     AuditAction.config_update: "resource",
-    AuditAction.script_deploy: "resource",
     # 申請
     AuditAction.vm_request_submit: "request",
     AuditAction.vm_request_submit_auto_approved: "request",
@@ -51,18 +50,11 @@ ACTION_CATEGORY: dict[AuditAction, str] = {
     AuditAction.vm_request_expired: "request",
     AuditAction.ai_api_request_submit: "request",
     AuditAction.ai_api_request_review: "request",
-    AuditAction.course_lab_deploy: "request",
     AuditAction.quick_practice_machine_create: "request",
     # 使用者 / 群組
     AuditAction.user_create: "user",
     AuditAction.user_update: "user",
     AuditAction.user_delete: "user",
-    AuditAction.batch_provision_vm: "user",
-    AuditAction.batch_provision_lxc: "user",
-    AuditAction.group_create: "user",
-    AuditAction.group_delete: "user",
-    AuditAction.group_member_add: "user",
-    AuditAction.group_member_remove: "user",
     # 防火牆
     AuditAction.firewall_layout_update: "firewall",
     AuditAction.firewall_connection_create: "firewall",
@@ -70,8 +62,6 @@ ACTION_CATEGORY: dict[AuditAction, str] = {
     AuditAction.firewall_rule_create: "firewall",
     AuditAction.firewall_rule_update: "firewall",
     AuditAction.firewall_rule_delete: "firewall",
-    AuditAction.nat_rule_delete: "firewall",
-    AuditAction.nat_rule_sync: "firewall",
     AuditAction.reverse_proxy_rule_delete: "firewall",
     AuditAction.reverse_proxy_rule_sync: "firewall",
     # Gateway
@@ -85,7 +75,6 @@ ACTION_CATEGORY: dict[AuditAction, str] = {
     AuditAction.cloudflare_dns_record_create: "system",
     AuditAction.cloudflare_dns_record_update: "system",
     AuditAction.cloudflare_dns_record_delete: "system",
-    AuditAction.cloudflare_zone_activation_check: "system",
     # Proxmox
     AuditAction.proxmox_config_update: "system",
     AuditAction.proxmox_node_update: "system",
@@ -96,25 +85,6 @@ ACTION_CATEGORY: dict[AuditAction, str] = {
     AuditAction.ai_api_credential_rotate: "ai",
     AuditAction.ai_api_credential_delete: "ai",
     AuditAction.ai_api_credential_update: "ai",
-}
-
-
-DANGER_ACTIONS: set[AuditAction] = {
-    AuditAction.resource_delete,
-    AuditAction.resource_reset,
-    AuditAction.snapshot_delete,
-    AuditAction.snapshot_rollback,
-    AuditAction.user_delete,
-    AuditAction.firewall_rule_delete,
-    AuditAction.firewall_connection_delete,
-    AuditAction.nat_rule_delete,
-    AuditAction.reverse_proxy_rule_delete,
-    AuditAction.proxmox_config_update,
-    AuditAction.cloudflare_config_update,
-    AuditAction.cloudflare_dns_record_delete,
-    AuditAction.gateway_keypair_generate,
-    AuditAction.login_failed,
-    AuditAction.login_google_failed,
 }
 
 
@@ -221,6 +191,25 @@ def list_audit_users(*, session: Session) -> list[AuditUserOption]:
     ]
 
 
+#: 試算表會把以這些字元開頭的儲存格當成公式（含 CJK 輸入法常見的全形版本）
+_CSV_FORMULA_PREFIXES = (
+    "=", "+", "-", "@", "\t", "\r", "＝", "＋", "－", "＠",
+)
+
+
+def _csv_safe(value: str | None) -> str:
+    """Neutralise spreadsheet formula injection in a free-text CSV cell.
+
+    A leading formula trigger (after any leading spaces) gets a single-quote
+    prefix so Excel / LibreOffice show the text instead of evaluating it.
+    """
+    if not value:
+        return ""
+    if value.lstrip(" ").startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 EXPORT_CSV_HEADER = [
     "id",
     "created_at",
@@ -282,23 +271,14 @@ def export_csv_chunks(
             str(log.id),
             log.created_at.isoformat(),
             log.action.value if hasattr(log.action, "value") else str(log.action),
-            log.user.email if log.user else "",
-            log.user.full_name if log.user else "",
+            _csv_safe(log.user.email if log.user else None),
+            _csv_safe(log.user.full_name if log.user else None),
             log.vmid or "",
-            log.ip_address or "",
-            log.user_agent or "",
-            log.details,
+            _csv_safe(log.ip_address),
+            _csv_safe(log.user_agent),
+            _csv_safe(log.details),
         ])
         yield flush()
-
-
-def get_by_vmid(
-    *, session: Session, vmid: int, skip: int = 0, limit: int = 100
-) -> AuditLogsPublic:
-    logs, count = audit_repo.get_audit_logs_by_vmid(
-        session=session, vmid=vmid, skip=skip, limit=limit
-    )
-    return AuditLogsPublic(data=[_to_public(log) for log in logs], count=count)
 
 
 def _to_public(log: AuditLog) -> AuditLogPublic:

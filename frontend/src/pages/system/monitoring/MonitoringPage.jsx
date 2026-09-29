@@ -6,8 +6,12 @@ import LoadingState from "../../../components/LoadingState/LoadingState";
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import RrdChart from "../../../components/RrdChart/RrdChart";
 import MiningIncidentsPanel from "./MiningIncidentsPanel";
+import SystemHealthCard from "./SystemHealthCard";
+import usePersistedToggle from "./usePersistedToggle";
 import { MonitoringService } from "../../../services/monitoring";
 import { useToast } from "../../../hooks/useToast";
+import useAutoRefresh from "../../../hooks/useAutoRefresh";
+import usePveOverview from "../../../hooks/usePveOverview";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import { formatDateTime, formatTime } from "../../../utils/formatDate";
 
@@ -46,22 +50,6 @@ function mapNodeRrd(points) {
 
 /* 節點用量整卡收合的偏好記在本機，重整後維持使用者的選擇 */
 const NODES_OPEN_STORAGE_KEY = "skylab.monitoringNodesOpen";
-
-function loadNodesOpen() {
-  try {
-    return window.localStorage.getItem(NODES_OPEN_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function saveNodesOpen(open) {
-  try {
-    window.localStorage.setItem(NODES_OPEN_STORAGE_KEY, open ? "1" : "0");
-  } catch {
-    // localStorage 不可用時偏好僅本次瀏覽生效
-  }
-}
 
 function UsageBar({ pct }) {
   return (
@@ -150,7 +138,12 @@ function AlertsCard({ onCountChange }) {
   const { t } = useTranslation("system");
   const toast = useToast();
   const METRIC_LABELS = { cpu: "CPU", memory: t("MonitoringPage.memoryLabel"), disk: t("MonitoringPage.diskLabel") };
-  const SCOPE_LABELS  = { cluster: t("MonitoringPage.scopeCluster"), node: t("MonitoringPage.scopeNode"), vm: "VM" };
+  const SCOPE_LABELS  = {
+    cluster: t("MonitoringPage.scopeCluster"),
+    node: t("MonitoringPage.scopeNode"),
+    vm: "VM",
+    system: t("MonitoringPage.scopeSystem"),
+  };
   const [alerts, setAlerts] = useState(null);
   const [ackBusy, setAckBusy] = useState(null);
 
@@ -164,9 +157,8 @@ function AlertsCard({ onCountChange }) {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 30_000);
-    return () => clearInterval(timer);
   }, [load]);
+  useAutoRefresh(load);
 
   /* 分頁角標要顯示筆數，載入後回報給頁面 */
   useEffect(() => {
@@ -211,12 +203,19 @@ function AlertsCard({ onCountChange }) {
                       {SCOPE_LABELS[alert.scope] ?? alert.scope}
                     </span>
                     <span className={styles.alertTarget}>{alert.target}</span>
-                    <span className={styles.alertMetric}>
-                      {METRIC_LABELS[alert.metric] ?? alert.metric} {alert.value.toFixed(0)}%
-                    </span>
-                    <span className={styles.alertThreshold}>
-                      {t("MonitoringPage.thresholdSuffix", { threshold: alert.threshold.toFixed(0) })}
-                    </span>
+                    {/* 平台健康告警的 value 不是百分比（連續失敗次數等），直接顯示後端訊息 */}
+                    {alert.scope === "system" ? (
+                      <span className={styles.alertMetric}>{alert.message}</span>
+                    ) : (
+                      <>
+                        <span className={styles.alertMetric}>
+                          {METRIC_LABELS[alert.metric] ?? alert.metric} {alert.value.toFixed(0)}%
+                        </span>
+                        <span className={styles.alertThreshold}>
+                          {t("MonitoringPage.thresholdSuffix", { threshold: alert.threshold.toFixed(0) })}
+                        </span>
+                      </>
+                    )}
                   </div>
                   <p className={styles.alertTime}>
                     {formatDateTime(alert.created_at)}
@@ -261,7 +260,7 @@ function TopVmTable({ title, entries, metric }) {
               <th className={styles.th}>{t("MonitoringPage.colName")}</th>
               <th className={styles.th}>{t("MonitoringPage.colNode")}</th>
               <th className={styles.th}>{t("MonitoringPage.colType")}</th>
-              <th className={`${styles.th} ${styles.thRight}`}>
+              <th className={styles.th}>
                 {metric === "cpu" ? "CPU" : t("MonitoringPage.memoryLabel")}
               </th>
             </tr>
@@ -293,69 +292,67 @@ function TopVmTable({ title, entries, metric }) {
 export default function MonitoringPage() {
   const { t } = useTranslation("system");
   const [expandedNode, setExpandedNode] = useState(null);
-  const [overview, setOverview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  /* PVE 概況與首頁共用 usePveOverview（30 秒輪詢、分頁隱藏時暫停） */
+  const { overview, loading, error } = usePveOverview();
   /* 警告與挖礦事件收進分頁（#24）；筆數由面板載入後回報 */
   const [panelTab, setPanelTab] = useState("alerts");
   const [alertCount, setAlertCount] = useState(null);
   const [miningCount, setMiningCount] = useState(null);
   /* 節點用量整卡收合：預設收起省版面，標題列保留在線摘要 */
-  const [nodesOpen, setNodesOpen] = useState(loadNodesOpen);
-
-  const load = useCallback(async (signal) => {
-    try {
-      setOverview(await MonitoringService.getOverview({ signal }));
-      setError(false);
-    } catch (err) {
-      if (!err?.cancelled) setError(true);
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+  const [nodesOpen, toggleNodesOpen] = usePersistedToggle(NODES_OPEN_STORAGE_KEY);
+  /* 監控 stack 有啟用（後端連得到 Grafana）才顯示連結；查詢失敗就當沒啟用。
+     同一支 API 會設定 Grafana 免密碼登入的 cookie（效期數小時），頁面開著時定期續期 */
+  const [grafanaUrl, setGrafanaUrl] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal);
-    const timer = setInterval(() => load(), 30_000);
+    const refresh = () =>
+      MonitoringService.createGrafanaSession({ signal: controller.signal })
+        .then((link) => setGrafanaUrl(link?.enabled ? link.url : null))
+        .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 30 * 60_000);
     return () => {
       controller.abort();
       clearInterval(timer);
     };
-  }, [load]);
+  }, []);
 
-  if (loading) {
-    return <LoadingState fullPage text={t("MonitoringPage.loadingOverview")} />;
-  }
+  /* 系統健康卡與警告面板不依賴 PVE：概況還在載入或 PVE 連不上時照樣顯示——
+     PVE 掛掉的當下，正是最需要看平台健康與系統告警的時候 */
+  const ready = !loading && !error && overview != null;
+  const cpuPct = ready && overview.cpu_total > 0 ? (overview.cpu_used / overview.cpu_total) * 100 : 0;
+  const memPct = ready && overview.mem_total > 0 ? (overview.mem_used / overview.mem_total) * 100 : 0;
+  const diskPct =
+    ready && overview.disk_total > 0 ? (overview.disk_used / overview.disk_total) * 100 : 0;
 
-  if (error || !overview) {
-    return (
-      <div className={styles.page}>
+  return (
+    <div className={styles.page}>
+      <PageHeader title={t("MonitoringPage.pageTitle")}>
+        {grafanaUrl && (
+          <a
+            className={styles.linkBtn}
+            href={grafanaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <MIcon name="open_in_new" size={16} />
+            {t("MonitoringPage.openGrafana")}
+          </a>
+        )}
+      </PageHeader>
+
+      <SystemHealthCard />
+
+      {loading ? (
+        <LoadingState text={t("MonitoringPage.loadingOverview")} />
+      ) : !ready ? (
         <div className={`${styles.card} ${styles.cardEmpty}`}>
           <MIcon name="warning" size={24} />
           <p>{t("MonitoringPage.errorFetchOverview")}</p>
         </div>
-      </div>
-    );
-  }
-
-  function toggleNodesOpen() {
-    setNodesOpen((open) => {
-      saveNodesOpen(!open);
-      return !open;
-    });
-  }
-
-  const cpuPct = overview.cpu_total > 0 ? (overview.cpu_used / overview.cpu_total) * 100 : 0;
-  const memPct = overview.mem_total > 0 ? (overview.mem_used / overview.mem_total) * 100 : 0;
-  const diskPct =
-    overview.disk_total > 0 ? (overview.disk_used / overview.disk_total) * 100 : 0;
-
-  return (
-    <div className={styles.page}>
-      <PageHeader title={t("MonitoringPage.pageTitle")} />
-
-      {/* 叢集用量卡片 */}
+      ) : (
+      /* 叢集用量卡片 */
       <div className={styles.statRow}>
         <OverviewCard
           title={t("MonitoringPage.cpuUsage")}
@@ -399,6 +396,7 @@ export default function MonitoringPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* 警告與挖礦事件收進分頁（#24）；兩個面板保持掛載，輪詢與角標持續更新 */}
       <div className={styles.tabbedPanels}>
@@ -432,6 +430,7 @@ export default function MonitoringPage() {
         </div>
       </div>
 
+      {ready && (<>
       {/* 節點用量：整卡收合，收起時標題列仍看得到在線摘要 */}
       <div className={styles.card}>
         <button
@@ -462,7 +461,7 @@ export default function MonitoringPage() {
               <th className={`${styles.th} ${styles.thWide}`}>CPU</th>
               <th className={`${styles.th} ${styles.thWide}`}>{t("MonitoringPage.memoryLabel")}</th>
               <th className={`${styles.th} ${styles.thWide}`}>{t("MonitoringPage.diskLabel")}</th>
-              <th className={`${styles.th} ${styles.thRight}`}>VM / LXC</th>
+              <th className={styles.th}>VM / LXC</th>
               <th className={styles.th}>{t("MonitoringPage.colUptime")}</th>
             </tr>
           </thead>
@@ -559,6 +558,7 @@ export default function MonitoringPage() {
         <TopVmTable title={t("MonitoringPage.topCpuTitle")} entries={overview.top_cpu} metric="cpu" />
         <TopVmTable title={t("MonitoringPage.topMemTitle")} entries={overview.top_mem} metric="mem" />
       </div>
+      </>)}
     </div>
   );
 }

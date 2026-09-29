@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.api.deps import AIAPIReviewerUser, AIAPIViewAllUser, CurrentUser, SessionDep
 from app.models import AIAPIRequestStatus, UserRole
@@ -105,18 +105,18 @@ def get_my_usage(
     current_user: CurrentUser,
     start_date: datetime | None = None,
     end_date: datetime | None = None,
+    tz: str | None = Query(default=None, max_length=64),
 ) -> Any:
     """申請金鑰的 API 用量統計；不包含平台 Template 功能用量。"""
-    if not end_date:
-        end_date = datetime.now(timezone.utc)
-    if not start_date:
-        start_date = end_date - timedelta(days=30)
-
+    start_date, end_date = ai_gateway_service.default_usage_window(
+        start_date, end_date
+    )
     return ai_gateway_service.get_user_usage_stats(
         session=session,
         user_id=current_user.id,
         start_date=start_date,
         end_date=end_date,
+        tz=tz,
     )
 
 
@@ -130,11 +130,9 @@ def get_my_usage_records(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Any:
     """申請金鑰的逐筆 API 呼叫紀錄（依時間新→舊排序）。"""
-    if not end_date:
-        end_date = datetime.now(timezone.utc)
-    if not start_date:
-        start_date = end_date - timedelta(days=30)
-
+    start_date, end_date = ai_gateway_service.default_usage_window(
+        start_date, end_date
+    )
     return ai_gateway_service.list_user_usage_records(
         session=session,
         user_id=current_user.id,
@@ -169,6 +167,20 @@ def list_all_ai_api_credentials(
     )
 
 
+@router.get("/credentials/{credential_id}", response_model=AIAPICredentialWithSecret)
+def get_my_ai_api_credential(
+    credential_id: uuid.UUID,
+    response: Response,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """擁有者查看單把金鑰詳細資料；含明文回應不得快取。"""
+    response.headers["Cache-Control"] = "no-store"
+    return ai_gateway_service.get_credential(
+        session=session, credential_id=credential_id, current_user=current_user
+    )
+
+
 @router.post(
     "/credentials/{credential_id}/rotate",
     response_model=AIAPICredentialWithSecret,
@@ -178,7 +190,7 @@ def rotate_my_ai_api_credential(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> Any:
-    """輪替金鑰；這是明文 ``api_key`` 唯一會回傳的時機（且僅限擁有者本人）。"""
+    """輪替金鑰；僅擁有者本人取得新金鑰明文。"""
     return ai_gateway_service.rotate_credential(
         session=session, credential_id=credential_id, current_user=current_user
     )

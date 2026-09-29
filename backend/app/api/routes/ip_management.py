@@ -50,6 +50,7 @@ def _subnet_public(
         cidr=config.cidr,
         gateway=config.gateway,
         bridge_name=config.bridge_name,
+        vlan_tag=config.vlan_tag,
         gateway_vm_ip=config.gateway_vm_ip,
         dns_servers=config.dns_servers,
         extra_blocked_subnets=ip_management_service.get_extra_blocked_subnets(config),
@@ -85,6 +86,7 @@ def upsert_subnet_config(
         cidr=body.cidr,
         gateway=body.gateway,
         bridge_name=body.bridge_name,
+        vlan_tag=body.vlan_tag,
         gateway_vm_ip=body.gateway_vm_ip,
         dns_servers=body.dns_servers,
         extra_blocked_subnets=body.extra_blocked_subnets,
@@ -96,9 +98,9 @@ def upsert_subnet_config(
     # 設定存進 DB 不代表機器上真的套用成功，結果一律跟著回應回去，
     # 讓管理員看得到哪幾台沒套到，而不是只留在後端 log 裡。
     try:
-        from app.services.network import firewall_service  # noqa: PLC0415
+        from app.services.network import firewall_service
         block_sync = _block_sync_summary(
-            firewall_service.sync_block_local_subnet_rules()
+            firewall_service.sync_extra_block_rules()
         )
     except Exception as e:
         logger.exception("同步額外封鎖網段規則失敗")
@@ -155,6 +157,7 @@ def get_subnet_status(session: SessionDep, _: CurrentUser):
         configured=True,
         cidr=config.cidr,
         bridge_name=config.bridge_name,
+        vlan_tag=config.vlan_tag,
         total_ips=stats["total"],
         used_ips=stats["used"],
         available_ips=stats["available"],

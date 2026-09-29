@@ -154,7 +154,7 @@ async def check_rate_limit_by_key(
                 window_seconds,
             )
         return allowed, info
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Redis rate limit check failed for key=%s: %s.", key, exc)
         # 連線中途壞掉跟一開始就沒有 Redis 是同一件事，套同一套政策
         _require_redis_or_fail_closed(scope)
@@ -203,21 +203,6 @@ async def peek_rate_limit_by_key(
     try:
         await redis.zremrangebyscore(redis_key, "-inf", window_start_ms)
         return int(await redis.zcard(redis_key))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error("Redis rate limit peek failed for key=%s: %s.", key, exc)
         return None
-
-
-async def clear_user_rate_limit(redis: Redis | None, user_id: str) -> bool:
-    if redis is None:
-        logger.debug("Redis is disabled. Cannot clear rate limit for user %s", user_id)
-        return False
-
-    key = f"{_KEY_PREFIX}{ai_proxy_rate_limit_key(user_id)}"
-    try:
-        deleted = await redis.delete(key)
-        logger.info("Cleared rate limit for user %s (deleted=%d)", user_id, deleted)
-        return deleted > 0
-    except Exception as exc:
-        logger.error("Failed to clear rate limit for user %s: %s", user_id, str(exc))
-        return False

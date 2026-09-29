@@ -63,9 +63,9 @@ backend/
 | `migration_jobs.py` | VM 遷移工作追蹤 |
 | `resources.py` | 節點 / VM / LXC 列表、使用者資源 |
 | `resource_details.py` | 規格、RRD、快照、直接規格更新 |
-| `proxmox_config.py` | Cluster 連線設定、憑證驗證、cluster 統計 |
+| `proxmox_config.py` | PVE 連線（多叢集）、節點、Storage、放置／排程策略 |
 | `firewall.py` | 防火牆拓撲、規則、NAT、Reverse Proxy |
-| `gateway.py` | 閘道 VM SSH、HAProxy / Traefik / WireGuard 管理 |
+| `gateway.py` | 閘道主機 SSH、nginx / WireGuard 管理與憑證同步 |
 | `ai_api.py` | AI API 憑證、申請審核、流量限制 |
 | `ai_proxy.py` | OpenAI 相容文字 API allowlist（`/models`、`/chat/completions`、`/completions`、`/responses`）代理至受限 LiteLLM service key |
 | `spec_change_requests.py` | VM 規格變更申請與審核 |
@@ -81,7 +81,7 @@ WebSocket 端點（`app/main.py`）：
 
 `app/core/`：
 
-- `config.py`：Pydantic Settings，從 `.env` 載入 Proxmox / SMTP / CORS / DB / SECRET_KEY 等
+- `config.py`：Pydantic Settings，從 `.env` 載入 SMTP / CORS / DB / SECRET_KEY 等（PVE 連線存在資料庫，不讀 .env）
 - `db.py`：SQLAlchemy engine、連線池、首位 superuser 建立
 - `security.py`：密碼雜湊（Argon2 + Bcrypt）、JWT 簽發/驗證、Fernet 加密
 - `proxmox.py`：ProxmoxAPI client factory，HA failover（TCP ping）、SSL/CA 處理
@@ -121,12 +121,6 @@ POSTGRES_DB=app
 FIRST_SUPERUSER=admin@example.com
 FIRST_SUPERUSER_PASSWORD=...
 
-# Proxmox
-PROXMOX_HOST=192.168.x.x
-PROXMOX_USER=ccapiuser@pve
-PROXMOX_PASSWORD=...
-PROXMOX_VERIFY_SSL=false
-
 # SMTP（可選）
 SMTP_HOST=...
 SMTP_USER=...
@@ -136,6 +130,8 @@ EMAILS_FROM_EMAIL=...
 # Sentry（可選）
 SENTRY_DSN=...
 ```
+
+PVE 連線不在 `.env` 設定：首次安裝時在初始化精靈（`/setup`）填入並測試連線，之後由管理員在「PVE 連線」頁新增、編輯或同步。舊版的 `PROXMOX_HOST`、`PROXMOX_USER`、`PROXMOX_PASSWORD`、`PROXMOX_VERIFY_SSL` 等環境變數後端已不再讀取，即使寫在 `.env` 也不會生效。
 
 ## 開發環境
 
@@ -214,7 +210,7 @@ uv run prek run --all-files  # 手動執行
 
 - **VM 申請工作流**：可用性檢查 → 租借時段 placement 節點建議 → 審核 → 排程供應；已建立資源不再由 SkyLab 自動跨節點搬移
 - **HA failover**：cluster 設定支援多個 Proxmox host，TCP ping 偵測接管
-- **Gateway 控制**：透過 SSH 管理 HAProxy / Traefik / WireGuard 與連線 ACL
+- **Gateway 控制**：透過 SSH 管理 nginx（stream Port 轉發、http 反向代理、certbot 憑證）/ WireGuard 與連線 ACL
 - **腳本部署**：從 community-scripts/ProxmoxVE 拉取腳本並於 PVE 節點背景部署
 - **AI 代理**：以 OpenAI Chat Completion 介面連接內部 vLLM，含 Redis sliding-window 流量限制
 - **加密憑證儲存**：AI API 憑證以 Fernet 加密落地

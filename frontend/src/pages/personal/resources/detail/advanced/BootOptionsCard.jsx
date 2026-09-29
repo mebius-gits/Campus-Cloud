@@ -10,9 +10,12 @@ import { useTranslation } from "react-i18next";
 import styles from "../ResourceDetailPage.module.scss";
 import MIcon from "../../../../../components/MIcon";
 import LoadingState from "../../../../../components/LoadingState/LoadingState";
+import ErrorState from "../../../../../components/ErrorState/ErrorState";
+import NotFoundState from "../../../../../components/ErrorState/NotFoundState";
 import { useToast } from "../../../../../hooks/useToast";
 import { useConfirm } from "../../../../../components/ConfirmDialog/ConfirmProvider";
 import { ResourcesService } from "../../../../../services/resources";
+import { isNotFound } from "../../../../../services/api";
 
 const KIND_ICON = { disk: "hard_drive", cdrom: "album", network: "lan", other: "memory" };
 
@@ -32,9 +35,12 @@ export default function BootOptionsCard({ vmid, canManage }) {
   const [selectedIso, setSelectedIso] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  /* 第一次就載入失敗時要換成錯誤狀態（可重試），不能讓轉圈圈一直轉 */
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const opts = await ResourcesService.getBootOptions(vmid);
       setOptions(opts);
@@ -45,7 +51,8 @@ export default function BootOptionsCard({ vmid, canManage }) {
         setSelectedIso(opts.cdrom_iso ?? "");
       }
     } catch (err) {
-      toast.error(err?.message ?? t("BootOptionsCard.loadFailed"));
+      setLoadError(err ?? true);
+      toast.error(err?.message ?? t("Error.generic", { ns: "common" }));
     } finally {
       setLoading(false);
     }
@@ -114,19 +121,17 @@ export default function BootOptionsCard({ vmid, canManage }) {
             <MIcon name="power_settings_new" size={18} />
             {t("BootOptionsCard.title")}
           </h2>
+          {/* 主機開機時自動啟動：系統自動管理，說明放在大標下方 */}
+          <p className={styles.cardDesc}>{t("BootOptionsCard.onbootAutoNote")}</p>
         </div>
       </div>
       <div className={styles.cardBody}>
-        {loading || !options ? (
+        {loadError && !options ? (
+          isNotFound(loadError) ? <NotFoundState /> : <ErrorState onRetry={load} />
+        ) : loading || !options ? (
           <LoadingState text={t("BootOptionsCard.loading")} />
         ) : (
           <>
-            {/* 主機開機時自動啟動：系統自動管理，僅說明 */}
-            <p className={styles.hintLine}>
-              <MIcon name="restart_alt" size={14} />
-              {t("BootOptionsCard.onbootAutoNote")}
-            </p>
-
             {/* 開機順序 */}
             {options.supports_boot_order && (
               <div className={styles.rowStack}>
@@ -236,10 +241,6 @@ export default function BootOptionsCard({ vmid, canManage }) {
                   {isoImages.length === 0 ? t("BootOptionsCard.noIsoImages", { storage: options.iso_storage ?? "-" }) : t("BootOptionsCard.isoHint")}
                 </span>
               </div>
-            )}
-
-            {!options.supports_boot_order && (
-              <p className={styles.mutedText}>{t("BootOptionsCard.lxcNote")}</p>
             )}
           </>
         )}

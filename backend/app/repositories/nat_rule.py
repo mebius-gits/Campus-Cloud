@@ -1,7 +1,5 @@
 """NAT 規則資料庫操作"""
 
-import uuid
-
 from sqlmodel import Session, col, select
 
 from app.models.nat_rule import NatRule
@@ -39,10 +37,6 @@ def list_rules_by_vmid_and_port(
             )
         ).all()
     )
-
-
-def get_rule(session: Session, rule_id: uuid.UUID) -> NatRule | None:
-    return session.get(NatRule, rule_id)
 
 
 def is_external_port_taken(
@@ -83,7 +77,7 @@ def delete_rule(session: Session, rule: NatRule, *, commit: bool = True) -> None
     """刪除單一規則。
 
     ``commit=False`` 讓呼叫端自行決定何時 commit：NAT 規則刪除要等
-    haproxy 真的同步成功才能落地，否則 DB 沒了規則、Gateway 上還在轉發。
+    nginx 真的同步成功才能落地，否則 DB 沒了規則、Gateway 上還在轉發。
     """
     session.delete(rule)
     if commit:
@@ -108,7 +102,6 @@ __all__ = [
     "list_rules_by_vmid",
     "list_rules_by_vmid_and_port",
     "list_rules_by_vmids",
-    "get_rule",
     "is_external_port_taken",
     "taken_external_ports",
     "create_rule",

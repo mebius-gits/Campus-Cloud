@@ -6,13 +6,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { AuthStorage, loginLdap } from "../services/auth";
+import { AuthStorage, loginLdap, loginTotp } from "../services/auth";
 import { apiPost, apiPostForm, refreshTokens } from "../services/api";
 import {
   AuthSessionStatus,
   restoreStoredSession,
 } from "../services/authSession";
 import { unsubscribePush } from "../services/webPush";
+import { AiContextualHelpService } from "../services/aiContextualHelp";
 
 const AuthContext = createContext(null);
 
@@ -21,6 +22,29 @@ const REFRESH_MARGIN_MS = 60 * 1000;
 /** 暫時無法 refresh 時保留 session，稍後再試。 */
 const REFRESH_RETRY_MS = 30 * 1000;
 const REFRESH_WARNING_ID = "auth-refresh-unavailable";
+
+/**
+ * 登入後的服務檢查畫面：每次「登入」才跑一次（重新整理、其他分頁同步不算）。
+ * 旗標放 sessionStorage，學生卡在「請通知管理員」時重新整理也不會直接略過。
+ */
+const LOGIN_PREFLIGHT_KEY = "skylab:login-preflight";
+
+function readLoginPreflightFlag() {
+  try {
+    return sessionStorage.getItem(LOGIN_PREFLIGHT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLoginPreflightFlag(pending) {
+  try {
+    if (pending) sessionStorage.setItem(LOGIN_PREFLIGHT_KEY, "1");
+    else sessionStorage.removeItem(LOGIN_PREFLIGHT_KEY);
+  } catch {
+    // 無法存取 sessionStorage（隱私模式等）：只靠記憶體狀態
+  }
+}
 
 const INITIAL_SESSION = {
   status: AuthSessionStatus.CHECKING,
@@ -32,9 +56,19 @@ const INITIAL_SESSION = {
 export function AuthProvider({ children }) {
   const { t } = useTranslation("common");
   const [session, setSession] = useState(INITIAL_SESSION);
+  const [loginPreflightPending, setLoginPreflightPending] = useState(readLoginPreflightFlag);
   const expiryTimerRef = useRef(null);
   const refreshGenerationRef = useRef(0);
   const sessionAbortRef = useRef(null);
+  /** 依身分快取的資料（AI 畫面清單等）目前屬於哪個 session。 */
+  const cachedSessionRef = useRef(null);
+
+  /** 登出或換 session 時清掉依身分快取的資料，免得下一個帳號沿用上一個的內容。 */
+  const syncIdentityCaches = useCallback((sessionId) => {
+    if (cachedSessionRef.current === sessionId) return;
+    cachedSessionRef.current = sessionId;
+    AiContextualHelpService.resetSurfaces();
+  }, []);
 
   const clearExpiryTimer = useCallback(() => {
     refreshGenerationRef.current += 1;
@@ -48,6 +82,17 @@ export function AuthProvider({ children }) {
     sessionAbortRef.current?.abort();
     sessionAbortRef.current = null;
   }, []);
+
+  const setLoginPreflight = useCallback((pending) => {
+    writeLoginPreflightFlag(pending);
+    setLoginPreflightPending(pending);
+  }, []);
+
+  /** 服務檢查通過（或管理員略過）：進入系統。 */
+  const finishLoginPreflight = useCallback(
+    () => setLoginPreflight(false),
+    [setLoginPreflight],
+  );
 
   /** 使用者主動登出。 */
   const logout = useCallback(() => {
@@ -70,19 +115,23 @@ export function AuthProvider({ children }) {
     unsubscribePush().catch(() => {});
 
     AuthStorage.clearTokens();
+    syncIdentityCaches(null);
+    setLoginPreflight(false);
     setSession({
       status: AuthSessionStatus.ANONYMOUS,
       sessionId: null,
       user: null,
       error: null,
     });
-  }, [cancelSessionCheck, clearExpiryTimer]);
+  }, [cancelSessionCheck, clearExpiryTimer, setLoginPreflight, syncIdentityCaches]);
 
   /** API 已確認 token 失效；token 已由發出事件的請求條件式清除。 */
   const finishExpiredSession = useCallback(() => {
     cancelSessionCheck();
     clearExpiryTimer();
     toast.dismiss(REFRESH_WARNING_ID);
+    syncIdentityCaches(null);
+    setLoginPreflight(false);
     setSession({
       status: AuthSessionStatus.ANONYMOUS,
       sessionId: null,
@@ -90,7 +139,7 @@ export function AuthProvider({ children }) {
       error: null,
     });
     toast.error(t("AuthContext.sessionExpired"));
-  }, [cancelSessionCheck, clearExpiryTimer, t]);
+  }, [cancelSessionCheck, clearExpiryTimer, setLoginPreflight, syncIdentityCaches, t]);
 
   /**
    * 依 access token 的 exp 排程 refresh。
@@ -172,6 +221,8 @@ export function AuthProvider({ children }) {
     sessionAbortRef.current = null;
 
     if (result.status === AuthSessionStatus.AUTHENTICATED) {
+      // 每次登入都會產生新的 sessionId；跟快取所屬的不同就代表換了身分。
+      syncIdentityCaches(checkSessionId);
       setSession({
         status: result.status,
         sessionId: checkSessionId,
@@ -181,6 +232,7 @@ export function AuthProvider({ children }) {
       scheduleTokenRefresh();
     } else if (result.status === AuthSessionStatus.ANONYMOUS) {
       clearExpiryTimer();
+      syncIdentityCaches(null);
       setSession({
         status: result.status,
         sessionId: null,
@@ -202,7 +254,7 @@ export function AuthProvider({ children }) {
     }
 
     return result;
-  }, [cancelSessionCheck, clearExpiryTimer, scheduleTokenRefresh]);
+  }, [cancelSessionCheck, clearExpiryTimer, scheduleTokenRefresh, syncIdentityCaches]);
 
   useEffect(() => {
     void verifyStoredSession();
@@ -250,30 +302,57 @@ export function AuthProvider({ children }) {
   }, [cancelSessionCheck, clearExpiryTimer]);
 
   const completeLogin = useCallback(async () => {
+    // 先立旗標再載入使用者：畫面從登入頁直接切到服務檢查，不會閃過首頁。
+    // 裝置授權（device_code）是替桌面端核准登入，不跑檢查。
+    const isDeviceApproval = new URLSearchParams(window.location.search).has("device_code");
+    if (!isDeviceApproval) setLoginPreflight(true);
     const result = await verifyStoredSession({ showChecking: false });
     if (result?.status === AuthSessionStatus.ANONYMOUS) {
+      setLoginPreflight(false);
       throw { status: 401, message: t("AuthContext.loginVerificationFailed") };
     }
     return result;
-  }, [verifyStoredSession, t]);
+  }, [verifyStoredSession, setLoginPreflight, t]);
+
+  /**
+   * 帳號已綁定兩步驟驗證時，第一階段只會拿到挑戰 token（沒有 access_token）：
+   * 回傳 { totpRequired, totpToken } 讓登入頁切到驗證碼步驟，再呼叫 totpLogin。
+   */
+  const toTotpChallenge = (tokens) =>
+    tokens?.totp_required ? { totpRequired: true, totpToken: tokens.totp_token } : null;
 
   const login = useCallback(async (username, password) => {
     const tokens = await apiPostForm("/api/v1/login/access-token", {
       username,
       password,
     });
+    const challenge = toTotpChallenge(tokens);
+    if (challenge) return challenge;
     AuthStorage.setTokens(tokens);
     await completeLogin();
+    return null;
   }, [completeLogin]);
 
   const googleLogin = useCallback(async (idToken) => {
     const tokens = await apiPost("/api/v1/login/google", { id_token: idToken });
+    const challenge = toTotpChallenge(tokens);
+    if (challenge) return challenge;
     AuthStorage.setTokens(tokens);
     await completeLogin();
+    return null;
   }, [completeLogin]);
 
   const ldapLogin = useCallback(async (username, password) => {
-    await loginLdap(username, password);
+    const tokens = await loginLdap(username, password);
+    const challenge = toTotpChallenge(tokens);
+    if (challenge) return challenge;
+    await completeLogin();
+    return null;
+  }, [completeLogin]);
+
+  /** 兩步驟驗證第二階段：驗證碼通過後才真正登入 */
+  const totpLogin = useCallback(async (totpToken, code) => {
+    await loginTotp(totpToken, code);
     await completeLogin();
   }, [completeLogin]);
 
@@ -294,14 +373,16 @@ export function AuthProvider({ children }) {
       value={{
         user: session.user,
         loading: session.status === AuthSessionStatus.CHECKING,
-        authError: session.error,
         authStatus: session.status,
         login,
         googleLogin,
         ldapLogin,
+        totpLogin,
         logout,
         retrySession,
         updateUser,
+        loginPreflightPending,
+        finishLoginPreflight,
       }}
     >
       {children}

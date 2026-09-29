@@ -5,31 +5,20 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from textwrap import dedent
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session
 
-from app import models  # noqa: F401
+from app import models
 from app.ai.teacher_judge import (
-    automation_support,
-    script_artifact_service,
     script_executor_service,
     script_run_service,
     target_ip_resolver,
 )
-from app.ai.teacher_judge.schemas import (
-    TeacherJudgeRubricAnalysis,
-    TeacherJudgeRubricItem,
-)
 from app.ai.teacher_judge.script_policy import (
-    check_script_policy,
     validate_managed_script_output,
 )
-from app.ai.teacher_judge.template_command_service import GENERAL_COMMAND
 from app.models.teacher_judge_script_artifact import TeacherJudgeScriptStatus
 from app.models.teacher_judge_script_run import (
     TeacherJudgeScriptRunStatus,
@@ -38,12 +27,6 @@ from app.models.teacher_judge_script_run import (
 from app.repositories import resource as resource_repo
 from tests.ai.teacher_judge.helpers import (
     make_session,
-    make_teacher_judge_file,
-    patch_teacher_judge_vllm_settings,
-    reply_message,
-    requirement_focus,
-    scripted_vllm,
-    tool_call_message,
 )
 
 SAFE_SCRIPT = """
@@ -700,13 +683,21 @@ def test_execute_target_script_uploads_runs_and_collects_result(
         def write(self, data: bytes) -> None:
             self.files[self.path] = data
 
-        def read(self) -> bytes:
-            return self.files[self.path]
+        def read(self, size: int = -1) -> bytes:
+            data = self.files[self.path]
+            return data if size < 0 else data[:size]
+
+    class FakeChannel:
+        def settimeout(self, _timeout: float) -> None:
+            return None
 
     class FakeSFTP:
         def __init__(self) -> None:
             self.files: dict[str, bytes] = {}
             self.closed = False
+
+        def get_channel(self) -> FakeChannel:
+            return FakeChannel()
 
         def file(self, path: str, mode: str) -> FakeRemoteFile:
             return FakeRemoteFile(self.files, path, mode)
@@ -766,7 +757,10 @@ def test_execute_target_script_uploads_runs_and_collects_result(
     )
     assert commands == [
         "mkdir -p /tmp/campus-cloud-judge/run-1/101",
-        "cd /tmp/campus-cloud-judge/run-1/101 && python3 script.py > result.json 2> stderr.log",
+        "cd /tmp/campus-cloud-judge/run-1/101 && "
+        "if command -v timeout >/dev/null 2>&1; "
+        "then timeout -k 5 60 python3 script.py; "
+        "else python3 script.py; fi > result.json 2> stderr.log",
         cleanup_command,
     ]
     assert fake_client.sftp.files[f"{remote_dir}/script.py"] == SAFE_SCRIPT.encode()

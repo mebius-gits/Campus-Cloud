@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./settings.module.scss";
 import MIcon from "../../../components/MIcon";
-import EmptyState from "../../../components/EmptyState/EmptyState";
+import ErrorState from "../../../components/ErrorState/ErrorState";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import { LdapConfigService } from "../../../services/ldapConfig";
@@ -14,8 +14,12 @@ import { useUnsavedChangesGuard } from "../../../contexts/UnsavedChangesContext"
  * 2026-09 從「系統設定」的分頁拆成獨立頁面。
  */
 
-/** 表單值 → API partial payload（bind_password 留空表示不變更） */
-function toPayload(form) {
+/**
+ * 表單值 → API partial payload（bind_password 留空表示不變更）。
+ * 群組 DN 清空時送空字串而不是 null：後端會略過 null 欄位（等於不變更），
+ * 舊群組就會繼續被對映成老師／管理員；空字串會被存下，角色對映視為未設定。
+ */
+export function toPayload(form) {
   return {
     enabled: form.enabled,
     server_uri: form.server_uri,
@@ -26,8 +30,8 @@ function toPayload(form) {
     user_filter_template: form.user_filter_template,
     email_attribute: form.email_attribute,
     name_attribute: form.name_attribute,
-    teacher_group_dn: form.teacher_group_dn || null,
-    admin_group_dn: form.admin_group_dn || null,
+    teacher_group_dn: (form.teacher_group_dn ?? "").trim(),
+    admin_group_dn: (form.admin_group_dn ?? "").trim(),
     auto_create_users: form.auto_create_users,
     connect_timeout_seconds: form.connect_timeout_seconds,
   };
@@ -76,8 +80,8 @@ function LdapForm() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoadError(err?.message ?? t("LdapTab.toastLoadFailed"));
-        toast.error(err?.message ?? t("LdapTab.toastLoadFailed"));
+        setLoadError(err?.message ?? t("Error.generic", { ns: "common" }));
+        toast.error(err?.message ?? t("Error.generic", { ns: "common" }));
       });
     return () => {
       cancelled = true;
@@ -117,19 +121,7 @@ function LdapForm() {
   }
 
   if (!form && loadError) {
-    return (
-      <EmptyState
-        icon="error_outline"
-        title={t("LdapTab.toastLoadFailed")}
-        description={loadError}
-        action={
-          <button type="button" className={styles.btnSecondary} onClick={retryLoad}>
-            <MIcon name="refresh" size={16} />
-            {t("LdapTab.retry")}
-          </button>
-        }
-      />
-    );
+    return <ErrorState onRetry={retryLoad} />;
   }
   if (!form) return <LoadingState text={t("LdapTab.loading")} />;
 

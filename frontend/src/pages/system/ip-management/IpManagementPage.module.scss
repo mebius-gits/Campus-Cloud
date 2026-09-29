@@ -130,63 +130,6 @@
   @include table-wrap;
 }
 
-/* ── 子網設定 Modal（基準比照 QuotasPage）── */
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  z-index: 300;
-  @include flex-center;
-  padding: $spacing-16;
-  animation: fadeIn 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.modalOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.modal {
-  animation: slideUp 0.18s cubic-bezier(0.25, 0.8, 0.25, 1);
-  @include flex-column;
-  gap: $spacing-16;
-  width: 100%;
-  max-width: 640px;
-  max-height: 88vh;
-  overflow-y: auto;
-  padding: $spacing-24;
-  @include glass-surface($shadow: var(--shadow-lg));
-  border-radius: $radius-16;
-}
-
-.modalTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: $spacing-8;
-  font-size: $font-size-16;
-  font-weight: $font-weight-700;
-  color: var(--color-text-primary);
-}
-
-.modalActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: $spacing-8;
-}
-
 /* modal 內固定兩欄，不吃視口斷點 */
 .modalFormGrid {
   display: grid;
@@ -198,34 +141,17 @@
   }
 }
 
-/* 前端分頁列（樣式同 AuditPage） */
-.pagination {
-  @include flex-between;
-  flex-wrap: wrap;
-  gap: $spacing-8;
-  margin-top: $spacing-16;
-}
-
-.paginationInfo {
-  font-size: $font-size-12;
-  color: var(--color-text-muted);
-}
-
-.paginationBtns {
-  display: flex;
-  gap: $spacing-8;
-}
-
 .table {
   @include table-base;
   table-layout: fixed;
   min-width: 800px;
 }
 
-/* 欄寬集中宣告，搭配 JSX 的 <colgroup>；備註欄不給寬度，吃剩下的空間 */
+/* 欄寬集中宣告，搭配 JSX 的 <colgroup>；備註欄不給寬度，吃剩下的空間。
+   備註放最後一欄：多數備註很短，剩餘寬度落在列尾，不會在兩欄資料中間留一大段空白 */
 .colIp          { width: 200px; }
 .colPurpose     { width: 140px; }
-.colVmid        { width: 96px; }
+.colVmid        { width: 80px; }
 .colAllocatedAt { width: 180px; }
 
 /* 分配時間「日期 時間」不拆成兩行 */
@@ -273,11 +199,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.nameSub {
-  font-size: $font-size-12;
-  color: var(--color-text-muted);
-}
-
 .code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: $font-size-12;
@@ -301,7 +222,9 @@
 .badge_lxc            { background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary); }
 .badge_gateway_vm     { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); }
 .badge_subnet_gateway { background: color-mix(in srgb, var(--color-pending) 14%, transparent); color: var(--color-pending); }
-.badge_reserved       { background: var(--color-hover); color: var(--color-text-muted); }
+.badge_reserved,
+.badge_class_reserved,
+.badge_quick_practice_reserved { background: var(--color-hover); color: var(--color-text-muted); }
 .badge_unknown        { background: var(--color-hover); color: var(--color-text-muted); }
 
 /* ── 子網設定表單 ── */

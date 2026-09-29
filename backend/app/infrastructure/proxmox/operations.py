@@ -7,9 +7,11 @@ duplicate the same cluster.resources iteration or qemu/lxc dispatch logic.
 
 import ipaddress
 import logging
+import re
+import ssl
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -21,6 +23,7 @@ from app.exceptions import BadRequestError, NotFoundError, ProxmoxError
 from app.infrastructure.proxmox import (
     ProxmoxSettings,
     basic_blocking_task_status,
+    build_ws_ssl_context,
     get_active_host,
     get_connection_id_for_node,
     get_proxmox_api,
@@ -33,6 +36,14 @@ from app.infrastructure.proxmox import (
 logger = logging.getLogger(__name__)
 
 ResourceType = Literal["qemu", "lxc"]
+
+
+class ProxmoxConnectionUnavailableError(ProxmoxError):
+    """找不到機器，但有 PVE 連線列不出資源：無法判定機器是否還在。
+
+    ``find_resource(strict=True)`` 專用。呼叫端（排程器）把它當成「略過這一輪、
+    等連線恢復再判斷」，與 VMID 重複等其他 ``ProxmoxError`` 區分開來。
+    """
 
 # ``cluster.nextid`` is a hint, not a reservation.  Every backend worker can
 # observe the same hint before the first worker's clone is visible in PVE, so
@@ -130,28 +141,81 @@ def iter_connection_clients():
 # Resource lookup
 # ---------------------------------------------------------------------------
 
-def _raw_vms_by_connection() -> list[tuple[int | None, list[dict]]]:
-    """Return (connection_key, resources) for every connection, without pool filtering."""
+def _gather_per_connection(
+    fetch: Callable[[Any], Iterable[dict]], *, what: str
+) -> list[tuple[int | None, list[dict]]]:
+    """對每個連線呼叫 ``fetch(client)``，回傳 (connection_key, 結果) 清單。
+
+    單一連線失敗只記 warning 後略過；每個連線都失敗時才拋 ``ProxmoxError``。
+    ``what`` 只用於 log 文字。
+    """
     results: list[tuple[int | None, list[dict]]] = []
     errors: list[str] = []
     keys = _connection_keys()
     for key in keys:
         try:
-            proxmox = get_proxmox_api(key)
-            results.append((key, list(proxmox.cluster.resources.get(type="vm"))))
+            results.append((key, list(fetch(get_proxmox_api(key)))))
         except Exception as exc:
             errors.append(str(exc))
             logger.warning(
-                "Failed to list resources for Proxmox connection %s: %s", key, exc
+                "Failed to list %s for Proxmox connection %s: %s", what, key, exc
             )
     if errors and not results and len(errors) == len(keys):
         raise ProxmoxError(f"All Proxmox connections are unavailable. {errors[0]}")
     return results
 
 
+def _raw_vms_by_connection() -> list[tuple[int | None, list[dict]]]:
+    """Return (connection_key, resources) for every connection, without pool filtering."""
+    return _gather_per_connection(
+        lambda proxmox: proxmox.cluster.resources.get(type="vm"), what="resources"
+    )
+
+
+def list_connection_vms(connection_id: int | None) -> list[dict]:
+    """單一連線的 ``/cluster/resources?type=vm``（不論啟用與否、不套 pool 篩選）。
+
+    錯誤直接往上拋，由呼叫端決定如何處理。
+    """
+    return list(get_proxmox_api(connection_id).cluster.resources.get(type="vm"))
+
+
+def find_vmid_on_connections(
+    vmid: int, connection_ids: Iterable[int | None]
+) -> tuple[int | None, dict] | None:
+    """逐一詢問給定的連線（不套 pool 篩選），回傳第一個 vmid 相符的 (連線, 條目)。
+
+    用於「確認機器真的不在任何 PVE 上」：呼叫端應傳入所有連線（含停用中的）。
+    本模組沒有 DB session，因此連線清單由呼叫端提供。任何一個連線列不出清單
+    都丟 ``ProxmoxError``（訊息含連線 id），因為那條連線上可能還有這台機器；
+    vmid 不是整數的條目略過。
+    """
+    for connection_id in connection_ids:
+        try:
+            vms = list_connection_vms(connection_id)
+        except Exception as exc:
+            raise ProxmoxError(
+                f"Proxmox connection {connection_id} could not be listed: {exc}"
+            ) from exc
+        for vm in vms:
+            try:
+                matched = int(vm.get("vmid")) == vmid
+            except (TypeError, ValueError):
+                continue
+            if matched:
+                return connection_id, vm
+    return None
+
+
 def _raw_vms() -> list[dict]:
     """Return all resources of type vm across all connections, without pool filtering."""
     return [vm for _key, vms in _raw_vms_by_connection() for vm in vms]
+
+
+def _in_own_pool(connection_key: int | None, vms: Iterable[dict]) -> list[dict]:
+    """只留下該連線自己 pool 內的條目（pool 名稱是每個連線各自的設定）。"""
+    pool = get_proxmox_settings(connection_key).pool_name
+    return [vm for vm in vms if vm.get("pool") == pool]
 
 
 def _pool_vms() -> list[dict]:
@@ -162,25 +226,73 @@ def _pool_vms() -> list[dict]:
     """
     matched: list[dict] = []
     for key, vms in _raw_vms_by_connection():
-        pool = get_proxmox_settings(key).pool_name
-        matched.extend(vm for vm in vms if vm.get("pool") == pool)
+        matched.extend(_in_own_pool(key, vms))
     return matched
 
 
-def find_resource(vmid: int) -> dict:
-    """Find any resource (qemu or lxc) by VMID in its connection's pool."""
-    for r in _pool_vms():
-        if r["vmid"] == vmid:
-            return r
+def _single_match(matches: list[dict], vmid: int) -> dict | None:
+    """多連線下同一 VMID 出現在多個叢集時不能猜：回第一筆可能操作到別人的機器。"""
+    if len(matches) > 1:
+        nodes = ", ".join(str(r.get("node")) for r in matches)
+        raise ProxmoxError(
+            f"VMID {vmid} exists on multiple Proxmox connections ({nodes}); "
+            "refusing to guess which one is meant."
+        )
+    return matches[0] if matches else None
+
+
+def find_resource(vmid: int, *, strict: bool = False) -> dict:
+    """Find any resource (qemu or lxc) by VMID in its connection's pool.
+
+    預設（``strict=False``）會略過連不上的連線，只要還有一個連線答得出來，
+    那些連線上的機器就會被當成 ``NotFoundError``。
+
+    ``strict=True`` 給「NotFound 代表機器被刪了」的呼叫端（例如排程器）：
+    找不到且有連線列不出清單（含全部連線都失敗）時改丟
+    ``ProxmoxConnectionUnavailableError``，只有每個連線都列得到才回
+    ``NotFoundError``。同一 VMID 出現在多個連線時兩種模式都丟一般的
+    ``ProxmoxError``（不是連線問題，重試也不會好）。
+    """
+    if not strict:
+        found = _single_match([r for r in _pool_vms() if r["vmid"] == vmid], vmid)
+        if found is None:
+            raise NotFoundError(f"Resource {vmid} not found")
+        return found
+
+    connection_keys = _connection_keys()
+    try:
+        listed = _raw_vms_by_connection()
+    except ProxmoxError as exc:  # 全部連線都失敗
+        raise ProxmoxConnectionUnavailableError(str(exc)) from exc
+    found = _single_match(
+        [
+            vm
+            for key, vms in listed
+            for vm in _in_own_pool(key, vms)
+            if vm.get("vmid") == vmid
+        ],
+        vmid,
+    )
+    if found is not None:
+        return found
+    listed_keys = {key for key, _vms in listed}
+    unreachable = [key for key in connection_keys if key not in listed_keys]
+    if unreachable:
+        raise ProxmoxConnectionUnavailableError(
+            f"Resource {vmid} not found while Proxmox connection(s) "
+            f"{unreachable} are unavailable"
+        )
     raise NotFoundError(f"Resource {vmid} not found")
 
 
 def find_lxc(vmid: int) -> dict:
     """Find an LXC container by VMID in its connection's pool."""
-    for r in _pool_vms():
-        if r["vmid"] == vmid and r["type"] == "lxc":
-            return r
-    raise NotFoundError(f"LXC container {vmid} not found")
+    found = _single_match(
+        [r for r in _pool_vms() if r["vmid"] == vmid and r["type"] == "lxc"], vmid
+    )
+    if found is None:
+        raise NotFoundError(f"LXC container {vmid} not found")
+    return found
 
 
 def list_all_resources() -> list[dict]:
@@ -188,23 +300,24 @@ def list_all_resources() -> list[dict]:
     return _pool_vms()
 
 
+def list_all_resources_by_vmid() -> dict[int, dict]:
+    """vmid → cluster/resources 條目（單次 PVE 呼叫；治理／反挖礦掃描共用）。"""
+    return {
+        int(r["vmid"]): r
+        for r in list_all_resources()
+        if r.get("vmid") is not None
+    }
+
+
 def list_nodes() -> list[dict]:
     """Return all nodes across all connections."""
-    results: list[dict] = []
-    errors: list[str] = []
-    keys = _connection_keys()
-    for key in keys:
-        try:
-            proxmox = get_proxmox_api(key)
-            results.extend(proxmox.nodes.get())
-        except Exception as exc:
-            errors.append(str(exc))
-            logger.warning(
-                "Failed to list nodes for Proxmox connection %s: %s", key, exc
-            )
-    if errors and not results and len(errors) == len(keys):
-        raise ProxmoxError(f"All Proxmox connections are unavailable. {errors[0]}")
-    return results
+    return [
+        node
+        for _key, nodes in _gather_per_connection(
+            lambda proxmox: proxmox.nodes.get(), what="nodes"
+        )
+        for node in nodes
+    ]
 
 
 def collect_monitoring_snapshot() -> MonitoringSnapshot:
@@ -251,8 +364,11 @@ def collect_monitoring_snapshot() -> MonitoringSnapshot:
     )
 
 
-def _admin_disabled_node_names() -> set[str]:
-    """讀取被管理員停用的節點名稱；DB 讀取失敗時不過濾（fail-open）。"""
+def admin_disabled_node_names() -> set[str]:
+    """讀取被管理員停用的節點名稱；DB 讀取失敗時不過濾（fail-open）。
+
+    placement advisor 與節點挑選共用同一份判斷。
+    """
     try:
         from sqlmodel import Session
 
@@ -270,7 +386,7 @@ def get_available_nodes() -> list[dict]:
 
     管理員停用的節點一律排除（停用＝不接收新 VM）。
     """
-    disabled = _admin_disabled_node_names()
+    disabled = admin_disabled_node_names()
     nodes = [
         node for node in list_nodes()
         if str(node.get("node") or node.get("name") or "") not in disabled
@@ -532,6 +648,38 @@ def get_status(node: str, vmid: int, resource_type: ResourceType) -> dict:
     return _resource_api(node, vmid, resource_type).status.current.get()
 
 
+# 開機類 task 跑完前 QEMU 的 QMP 可能還沒就緒（GPU 直通機要先配置並鎖定整段
+# 記憶體），這時開 vncproxy 會 ``set_password`` 逾時；cluster/resources 卻早已
+# 回報 running，所以要另外看節點上進行中的 task。
+BOOT_TASK_TYPES = frozenset({"qmstart", "qmreboot", "vzstart", "vzreboot"})
+
+
+def list_booting_vmids(nodes: Iterable[str]) -> set[int]:
+    """回傳指定節點上開機 task 仍在進行中的 VMID。
+
+    查的是各節點自己的 ``tasks?source=active``（權威、即時），而不是
+    ``cluster/tasks``（經 pmxcfs 同步，剛開機的前幾秒可能還沒出現）。
+    查不到的節點記 warning 後略過，視為沒有開機中的機器。
+    """
+    booting: set[int] = set()
+    for node in sorted({n for n in nodes if n}):
+        try:
+            tasks = get_proxmox_api_for_node(node).nodes(node).tasks.get(
+                source="active"
+            )
+        except Exception as exc:
+            logger.warning("Failed to list active tasks on node %s: %s", node, exc)
+            continue
+        for task in tasks or []:
+            if task.get("type") not in BOOT_TASK_TYPES:
+                continue
+            try:
+                booting.add(int(task.get("id")))
+            except (TypeError, ValueError):
+                continue
+    return booting
+
+
 # ---------------------------------------------------------------------------
 # Disk resize
 # ---------------------------------------------------------------------------
@@ -551,6 +699,17 @@ def resize_disk(
 # Snapshots
 # ---------------------------------------------------------------------------
 
+# PVE 快照名稱格式（pve-configid，2～40 字）。名稱會被 proxmoxer 當成 URL 路徑
+# 片段，requests/urllib3 又會消去 dot segment：不先驗證的話 snapname=".." 會讓
+# DELETE .../snapshot/.. 變成 DELETE /nodes/{node}/{type}/{vmid}，直接刪掉整台機器。
+_SNAPNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,39}$")
+
+
+def _validate_snapname(snapname: object) -> None:
+    if not isinstance(snapname, str) or not _SNAPNAME_RE.fullmatch(snapname):
+        raise BadRequestError(f"Invalid snapshot name: {snapname!r}")
+
+
 def list_snapshots(node: str, vmid: int, resource_type: ResourceType) -> list:
     return _resource_api(node, vmid, resource_type).snapshot.get()
 
@@ -562,6 +721,7 @@ def create_snapshot(
     wait_timeout_seconds: float | None = None,
     **params,
 ) -> str:
+    _validate_snapname(params.get("snapname"))
     task = _resource_api(node, vmid, resource_type).snapshot.post(**params)
     basic_blocking_task_status(node, task, timeout_seconds=wait_timeout_seconds)
     return task
@@ -570,6 +730,7 @@ def create_snapshot(
 def delete_snapshot(
     node: str, vmid: int, resource_type: ResourceType, snapname: str
 ) -> str:
+    _validate_snapname(snapname)
     task = _resource_api(node, vmid, resource_type).snapshot(snapname).delete()
     basic_blocking_task_status(node, task)
     return task
@@ -578,6 +739,7 @@ def delete_snapshot(
 def rollback_snapshot(
     node: str, vmid: int, resource_type: ResourceType, snapname: str
 ) -> str:
+    _validate_snapname(snapname)
     task = _resource_api(node, vmid, resource_type).snapshot(snapname).rollback.post()
     basic_blocking_task_status(node, task)
     return task
@@ -652,24 +814,20 @@ def get_ip_address(node: str, vmid: int, resource_type: ResourceType) -> str | N
                     if _is_usable_ipv4(ip):
                         return ip
         else:
-            try:
-                network_info = (
-                    proxmox.nodes(node)
-                    .qemu(vmid)("agent")("network-get-interfaces")
-                    .get()
-                )
-                if network_info and "result" in network_info:
-                    for iface in network_info["result"]:
-                        if iface.get("name") == "lo":
-                            continue
-                        for ip_entry in iface.get("ip-addresses", []):
-                            if ip_entry.get("ip-address-type") == "ipv4":
-                                ip = ip_entry.get("ip-address", "")
-                                if _is_usable_ipv4(ip):
-                                    return ip
-            except Exception:
-                # 單一查詢來源失敗時繼續嘗試下一個
-                pass
+            network_info = (
+                proxmox.nodes(node)
+                .qemu(vmid)("agent")("network-get-interfaces")
+                .get()
+            )
+            if network_info and "result" in network_info:
+                for iface in network_info["result"]:
+                    if iface.get("name") == "lo":
+                        continue
+                    for ip_entry in iface.get("ip-addresses", []):
+                        if ip_entry.get("ip-address-type") == "ipv4":
+                            ip = ip_entry.get("ip-address", "")
+                            if _is_usable_ipv4(ip):
+                                return ip
     except Exception as e:
         logger.debug(f"Failed to get IP for VMID {vmid}: {e}")
     return None
@@ -749,17 +907,35 @@ def convert_to_template(
     _resource_api(node, vmid, resource_type).template.post()
 
 
+def _db_claimed_vmids() -> set[int]:
+    """DB 已登記但 PVE 可能看不到的 VMID（資源列、IP 預留）。
+
+    PVE 端機器被直接刪掉後 resources 列可能還在；併發 plan 也會先在
+    ip_allocation 預留 VMID 才去 PVE 建機。nextid 看不到這些，撞到就會在
+    PVE 建好機器之後才因主鍵衝突失敗。
+    """
+    from sqlmodel import Session, select
+
+    from app.core.db import engine
+    from app.models import IpAllocation, Resource
+
+    with Session(engine) as session:
+        claimed = set(session.exec(select(Resource.vmid)).all())
+        claimed.update(
+            vmid
+            for vmid in session.exec(select(IpAllocation.vmid)).all()
+            if vmid is not None
+        )
+    return {int(vmid) for vmid in claimed}
+
+
 def next_vmid() -> int:
-    """回傳一個在所有連線上都未使用的 VMID。
+    """回傳一個在所有連線上、以及 DB 登記中都未使用的 VMID。
 
     多連線架構下各入口的 ``cluster.nextid`` 彼此獨立，可能互相碰撞，
     因此取所有連線 nextid 的最大值，再對彙總的既有 VMID 遞增避讓。
     """
     keys = _connection_keys()
-    if len(keys) == 1:
-        proxmox = get_proxmox_api(keys[0])
-        return int(proxmox.cluster.nextid.get())
-
     candidates: list[int] = []
     for key in keys:
         try:
@@ -772,7 +948,9 @@ def next_vmid() -> int:
     if not candidates:
         raise ProxmoxError("All Proxmox connections are unavailable.")
 
-    used = {int(r["vmid"]) for r in _raw_vms()}
+    # nextid 回的是最小空號；被 DB 擋下往上遞增時可能踩到 PVE 已用的 VMID，
+    # 所以單連線也要一併避開 PVE 現有機器
+    used = {int(r["vmid"]) for r in _raw_vms()} | _db_claimed_vmids()
     candidate = max(candidates)
     while candidate in used:
         candidate += 1
@@ -851,19 +1029,14 @@ def get_lxc_template_node_map() -> dict[str, set[str]]:
 # Session ticket (for WebSocket auth — password-based, not API token)
 # ---------------------------------------------------------------------------
 
-def _ws_verify(cfg: "ProxmoxSettings") -> "Any":
-    """Build the httpx verify parameter for a connection's TLS settings."""
-    import ssl as _ssl
+def _ws_verify(cfg: ProxmoxSettings) -> ssl.SSLContext | bool:
+    """httpx 的 ``verify`` 參數：ticket／vncproxy 請求與後續 WebSocket 同一套 TLS 規則。
 
+    有 CA 時沿用 ``build_ws_ssl_context``（驗鏈也驗主機名，與 WebSocket 連同一個
+    active host）；沒有 CA 時直接交 bool 給 httpx（保留它內建的 certifi bundle）。
+    """
     if cfg.ca_cert:
-        # Build a custom SSL context that accepts the PVE self-signed CA cert
-        _ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
-        _ctx.check_hostname = False
-        _ctx.verify_mode = _ssl.CERT_REQUIRED
-        _ctx.load_verify_locations(cadata=cfg.ca_cert)
-        if hasattr(_ssl, "VERIFY_X509_STRICT"):
-            _ctx.verify_flags &= ~_ssl.VERIFY_X509_STRICT
-        return _ctx
+        return build_ws_ssl_context(cfg)
     return cfg.verify_ssl
 
 
@@ -931,4 +1104,51 @@ def get_terminal_ticket(node: str, vmid: int) -> dict:
     """Get termproxy ticket for an LXC container (port + ticket)."""
     proxmox = get_proxmox_api_for_node(node)
     return proxmox.nodes(node).lxc(vmid).termproxy.post()
+
+
+# ---------------------------------------------------------------------------
+# PCI resource mappings (GPU) — /cluster/mapping/pci 與 mdev 探測
+#
+# mapping id 只在單一叢集內唯一，呼叫端（gpu_service）要自己決定對哪個連線
+# 查詢／刪除，所以這些函式直接收 ``iter_connection_clients`` 給的 client。
+# ---------------------------------------------------------------------------
+
+def list_pci_mappings(proxmox: Any) -> list[dict]:
+    """GET /cluster/mapping/pci：該連線上所有 PCI mapping。"""
+    return proxmox.cluster.mapping.pci.get()
+
+
+def get_pci_mapping(proxmox: Any, mapping_id: str) -> dict:
+    """GET /cluster/mapping/pci/{id}；該連線沒有這個 id 時 PVE 會拋錯。"""
+    return proxmox.cluster.mapping.pci(mapping_id).get()
+
+
+def create_pci_mapping(
+    proxmox: Any, *, mapping_id: str, description: str, map_entries: list[str]
+) -> None:
+    """POST /cluster/mapping/pci。"""
+    proxmox.cluster.mapping.pci.post(
+        id=mapping_id, description=description, **{"map": map_entries}
+    )
+
+
+def delete_pci_mapping(proxmox: Any, mapping_id: str) -> None:
+    """DELETE /cluster/mapping/pci/{id}。"""
+    proxmox.cluster.mapping.pci(mapping_id).delete()
+
+
+def list_pci_mdev_types(node: str, pci_path: str) -> list[dict]:
+    """GET /nodes/{node}/hardware/pci/{path}/mdev：該 PCI 裝置目前可建立的 vGPU 型別。"""
+    proxmox = get_proxmox_api_for_node(node)
+    return proxmox.nodes(node).hardware.pci(pci_path).mdev.get()
+
+
+def list_cluster_vm_resources(proxmox: Any) -> list[dict]:
+    """GET /cluster/resources?type=vm（單一連線、不做 pool 過濾）。"""
+    return proxmox.cluster.resources.get(type="vm")
+
+
+def get_qemu_config_via(proxmox: Any, node: str, vmid: int) -> dict:
+    """用指定連線的 client 讀 VM 設定（批次掃描時沿用已取得的 client）。"""
+    return proxmox.nodes(node).qemu(vmid).config.get()
 

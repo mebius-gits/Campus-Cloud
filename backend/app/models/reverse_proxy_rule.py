@@ -10,7 +10,7 @@ from .base import get_datetime_utc
 
 
 class ReverseProxyRule(SQLModel, table=True):
-    """Domain-to-VM reverse proxy rule for Traefik/Cloudflare integration."""
+    """Domain-to-VM reverse proxy rule for the gateway nginx / Cloudflare integration."""
 
     __tablename__ = "reverse_proxy_rule"
 
@@ -24,16 +24,6 @@ class ReverseProxyRule(SQLModel, table=True):
             index=True,
         ),
         description="Target VM ID",
-    )
-    resource_vmid: int | None = Field(
-        default=None,
-        sa_column=sa.Column(
-            sa.Integer,
-            sa.ForeignKey("resources.vmid", ondelete="CASCADE"),
-            nullable=True,
-            index=True,
-        ),
-        description="Linked resource VMID",
     )
     vm_ip: str = Field(max_length=64, description="Target VM internal IP")
 

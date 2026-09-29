@@ -1,6 +1,5 @@
 """TaskRecord CRUD helpers."""
 
-import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -23,7 +22,7 @@ def create_task_record(
         task_type=task_type,
         user_id=user_id,
         template_id=template_id,
-        payload=json.dumps(payload, ensure_ascii=False),
+        payload=payload,
     )
     session.add(record)
     if commit:
@@ -73,7 +72,7 @@ def mark_task_finished(
     if status == TaskRecordStatus.succeeded:
         record.progress = 100
     if result is not None:
-        record.result = json.dumps(result, ensure_ascii=False)
+        record.result = result
     if error is not None:
         record.error = error[:1000]
     if resource_vmid is not None:
@@ -124,11 +123,13 @@ def reap_stale_task_records(
         ).all()
     )
     for record in stale:
+        # 先記下被收掉前的狀態，訊息才寫得出是卡在 running 還是 queued。
+        previous = record.status
+        hours = running_hours if previous == TaskRecordStatus.running else queued_hours
         record.status = TaskRecordStatus.failed
         record.finished_at = current
         record.error = (
-            f"Task lost: still {record.status.value} after "
-            f"{running_hours if record.started_at else queued_hours:g}h; "
+            f"Task lost: still {previous.value} after {hours:g}h; "
             "worker restarted or was killed"
         )
         session.add(record)

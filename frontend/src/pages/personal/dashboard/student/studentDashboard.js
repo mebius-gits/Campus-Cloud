@@ -1,8 +1,9 @@
 import { ResourcesService } from "../../../../services/resources";
 import i18n from "../../../../i18n";
-import { formatTime } from "../../../../utils/formatDate";
+import { formatMonthDay, formatTime } from "../../../../utils/formatDate";
+import { taipeiDateKey } from "../taipeiDate";
 
-/* 學生首頁與課程總覽共用的純邏輯；不含任何畫面，方便單獨測試。 */
+/* 學生課程頁（與首頁的開機流程）共用的純邏輯；不含任何畫面，方便單獨測試。 */
 
 const defaultT = (key) => i18n.t(key, { ns: "personal" });
 
@@ -27,19 +28,7 @@ export function pickInProgress(items) {
   );
 }
 
-/** 取台北時區的 YYYY-MM-DD，用來比對「是否已發布到今天」。 */
-function taipeiDateKey(value) {
-  const parts = new Intl.DateTimeFormat("en", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(value);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-/** 保留已發布到今天（含）的任務，排除未來任務，並依發布日期由舊到新排列。 */
+/** 保留已發布到今天（含，台北日曆日）的任務，排除未來任務，並依發布日期由舊到新排列。 */
 export function assignmentsUntilToday(assignments, now = new Date()) {
   const todayKey = taipeiDateKey(now);
   return [...(assignments ?? [])]
@@ -57,25 +46,17 @@ export function assignmentsUntilToday(assignments, now = new Date()) {
 
 /** 任務列上的發布日期；沒有日期或格式錯誤時退回「已發布」。 */
 export function formatAssignmentDate(value, t = defaultT) {
-  if (!value) return t("studentDashboard.published");
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return t("studentDashboard.published");
-  return new Intl.DateTimeFormat(i18n.language, { month: "numeric", day: "numeric" }).format(date);
+  return formatMonthDay(value, t("studentDashboard.published"));
 }
 
-/** 課表時間（HH:MM，24 小時制）；無法解析時回空字串。 */
-export function formatScheduleTime(value) {
-  return formatTime(value, "");
-}
-
-/** 把課表 API 的扁平欄位收進 schedule 物件，讓兩個頁面用同一組欄位名。 */
+/** 把課表 API 的扁平欄位收進 schedule 物件；時間為 HH:MM（24 小時制），無法解析時留空。 */
 export function normalizeSchedule(row) {
   return {
     ...row,
     schedule: {
       state: row.state,
       label: row.label,
-      time: `${formatScheduleTime(row.start_at)}–${formatScheduleTime(row.end_at)}`,
+      time: `${formatTime(row.start_at, "")}–${formatTime(row.end_at, "")}`,
       teacher: row.teacher,
       place: row.location,
     },
@@ -106,19 +87,20 @@ export function buildPracticeMachines(classMachines, resources) {
 /** 課堂機器按鈕的文字；學生只看到狀態，不提供手動開關機。 */
 export function practiceMachineActionLabel(machine, openingMachineId = null, t = defaultT) {
   if (machine?.vmid == null) return t("studentDashboard.actionConfiguring");
-  if (openingMachineId === machine.vmid) return t("studentDashboard.actionStarting");
+  if (openingMachineId === machine.vmid || machine.status === "starting") return t("studentDashboard.actionStarting");
   if (machine.status === "running") return t("studentDashboard.actionEnter");
   return t("studentDashboard.actionStartAndEnter");
 }
 
-/** 送出開機後輪詢資源狀態，直到 running 或次數用盡（約 20 秒）。 */
-export async function waitForPracticeMachine(vmid, attempts = 20) {
+/** 送出開機後輪詢資源狀態，直到 running 或次數用盡（約 90 秒）。
+    後端在開機 task 跑完前回報 starting；GPU 直通機開機可達 40 秒以上。 */
+export async function waitForPracticeMachine(vmid, attempts = 45) {
   let resource = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     resource = await ResourcesService.get(vmid);
     if (resource.status === "running") return resource;
     if (attempt < attempts - 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
     }
   }
   return resource;

@@ -42,11 +42,11 @@ export function JobRow({ job, onClick }) {
       disabled={!clickable}
     >
       <span
-        className={`${styles.jobRowIcon} ${styles[meta.tone]} ${meta.spin ? styles.spin : ""}`}
+        className={`${styles.jobRowIcon} ${styles[meta.tone]}`}
         title={t(meta.labelKey)}
         aria-label={t(meta.labelKey)}
       >
-        <MIcon name={meta.icon} size={16} />
+        <MIcon name={meta.icon} size={16} spin={meta.spin} />
       </span>
       <span className={styles.jobRowBody}>
         <span className={styles.jobRowHead}>
@@ -103,24 +103,23 @@ export function ReminderRow({ reminder, unread = false, onClick }) {
   );
 }
 
+/** 空清單提示；文案由呼叫端決定（任務與提醒分頁各自不同） */
 export function JobEmpty({ message }) {
-  const { t } = useTranslation("components");
   return (
     <div className={styles.jobEmpty}>
       <MIcon name="auto_awesome" size={24} />
-      <span>{message ?? t("JobRow.noJobs")}</span>
+      <span>{message}</span>
     </div>
   );
 }
 
-export function JobLoading() {
+/** 載入中列；message 省略時用通用的「載入中」（任務詳情對話框另帶自己的文案） */
+export function JobLoading({ message }) {
   const { t } = useTranslation("components");
   return (
     <div className={styles.jobLoading}>
-      <span className={styles.spin}>
-        <MIcon name="refresh" size={16} />
-      </span>
-      <span>{t("JobRow.loading")}</span>
+      <MIcon name="refresh" size={16} spin />
+      <span>{message ?? t("JobRow.loading")}</span>
     </div>
   );
 }

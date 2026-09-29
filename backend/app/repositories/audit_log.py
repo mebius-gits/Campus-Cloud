@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, and_, func, or_, select
 
-from app.models import AuditAction, AuditLog, Resource
+from app.models import AuditAction, AuditLog
+from app.repositories.resource import linked_resource_vmid
 
 #: 匯出時一次向資料庫要幾列；整批 5 萬列一次讀進記憶體會撐爆 worker
 EXPORT_BATCH_SIZE = 500
@@ -22,15 +23,12 @@ def create_audit_log(
     user_agent: str | None = None,
     commit: bool = True,
 ) -> AuditLog:
-    if isinstance(action, str):
-        action = AuditAction(action)
-    resource_vmid = (
-        vmid if vmid is not None and session.get(Resource, vmid) is not None else None
-    )
+    # 以 enum 驗證（拼錯的 action 直接報錯），存字串值
+    action = AuditAction(action).value
     db_log = AuditLog(
         user_id=user_id,
         vmid=vmid,
-        resource_vmid=resource_vmid,
+        resource_vmid=linked_resource_vmid(session, vmid),
         action=action,
         details=details,
         ip_address=ip_address,
@@ -68,11 +66,9 @@ def _build_filters(
     if user_id is not None:
         filters.append(AuditLog.user_id == user_id)
     if action is not None:
-        if isinstance(action, str):
-            action = AuditAction(action)
-        filters.append(AuditLog.action == action)
+        filters.append(AuditLog.action == AuditAction(action).value)
     if actions:
-        filters.append(AuditLog.action.in_(actions))
+        filters.append(AuditLog.action.in_([AuditAction(a).value for a in actions]))
     if start_time is not None:
         filters.append(AuditLog.created_at >= start_time)
     if end_time is not None:
@@ -207,10 +203,10 @@ def get_audit_stats(
     total = session.exec(base).one()
 
     danger_actions = [
-        AuditAction.resource_delete,
-        AuditAction.resource_reset,
-        AuditAction.snapshot_delete,
-        AuditAction.user_delete,
+        AuditAction.resource_delete.value,
+        AuditAction.resource_reset.value,
+        AuditAction.snapshot_delete.value,
+        AuditAction.user_delete.value,
     ]
     danger_stmt = (
         select(func.count())
@@ -222,7 +218,7 @@ def get_audit_stats(
         .select_from(AuditLog)
         .where(
             AuditLog.action.in_(
-                [AuditAction.login_failed, AuditAction.login_google_failed]
+                [AuditAction.login_failed.value, AuditAction.login_google_failed.value]
             )
         )
     )
@@ -246,24 +242,3 @@ def get_audit_stats(
         "login_failed": session.exec(login_failed_stmt).one(),
         "active_users": session.exec(active_users_stmt).one(),
     }
-
-
-def get_audit_logs_by_user(
-    *, session: Session, user_id: uuid.UUID, skip: int = 0, limit: int = 100
-) -> tuple[list[AuditLog], int]:
-    return get_audit_logs(session=session, user_id=user_id, skip=skip, limit=limit)
-
-
-def get_audit_logs_by_vmid(
-    *, session: Session, vmid: int, skip: int = 0, limit: int = 100
-) -> tuple[list[AuditLog], int]:
-    return get_audit_logs(session=session, vmid=vmid, skip=skip, limit=limit)
-
-
-def delete_audit_logs_by_vmid(*, session: Session, vmid: int) -> int:
-    """刪除指定 vmid 的所有操作紀錄，返回刪除筆數。"""
-    logs = list(session.exec(select(AuditLog).where(AuditLog.vmid == vmid)).all())
-    for log in logs:
-        session.delete(log)
-    session.commit()
-    return len(logs)

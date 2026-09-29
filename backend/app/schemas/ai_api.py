@@ -2,20 +2,33 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.ai_api_request import AIAPIRequestStatus
+
+# 與 ai_gateway_service.review_request 換算 expires_at 的期限一一對應
+AIAPIKeyDuration = Literal["1h", "1d", "7d", "30d", "never"]
 
 
 class AIAPIRequestCreate(BaseModel):
     purpose: str = Field(min_length=10, max_length=2000)
     api_key_name: str = Field(default="test", min_length=1, max_length=20)
-    duration: str = Field(default="never", max_length=20)
+    # 只收審核時認得的期限；其他字串會在核准時默默變成永不過期的金鑰
+    duration: AIAPIKeyDuration = "never"
 
 
 class AIAPIRequestReview(BaseModel):
+    """審核 AI API 申請：結果只能是核准或駁回"""
+
     status: AIAPIRequestStatus
     review_comment: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("status")
+    @classmethod
+    def _decision_only(cls, value: AIAPIRequestStatus) -> AIAPIRequestStatus:
+        if value not in (AIAPIRequestStatus.approved, AIAPIRequestStatus.rejected):
+            raise ValueError("審核結果只能是 approved 或 rejected")
+        return value
 
 
 class AIAPIRequestPublic(BaseModel):
@@ -59,9 +72,9 @@ class AIAPICredentialPublic(BaseModel):
 
 
 class AIAPICredentialWithSecret(AIAPICredentialPublic):
-    """核發／輪替當下的一次性回應。
+    """擁有者的單把金鑰詳細資料及輪替回應。
 
-    ``api_key`` 只在操作者本人輪替自己的金鑰時帶明文；管理員代操時留 None，
+    ``api_key`` 只對擁有者本人提供明文；管理員代操輪替時留 None，
     只回前綴——代操的目的是撤換，不是取得別人的金鑰。
     """
 

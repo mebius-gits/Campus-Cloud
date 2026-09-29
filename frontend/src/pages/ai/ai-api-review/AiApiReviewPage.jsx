@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./AiApiReviewPage.module.scss";
 import MIcon from "../../../components/MIcon";
+import Modal from "../../../components/Modal/Modal";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import SharedEmptyState from "../../../components/EmptyState/EmptyState";
 import { AiApiService } from "../../../services/aiApi";
@@ -27,16 +27,6 @@ function ReviewDialog({ open, onClose, request, action, onDone }) {
   // 關閉時先播放離場動畫再卸載
   const presence = useDialogPresence(open);
 
-  /* Esc 關閉（Dialog 標準行為）；送出中不關，跟取消鈕的 disabled 一致 */
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (e) => {
-      if (e.key === "Escape" && !submitting) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, submitting, onClose]);
-
   if (!presence.open || !request) return null;
 
   const isApprove = action === "approved";
@@ -59,35 +49,16 @@ function ReviewDialog({ open, onClose, request, action, onDone }) {
     }
   };
 
-  // Portal 到 body：此 Dialog 由表格列觸發，若直接掛在 .tableWrap（backdrop-filter）
-  // 底下，position: fixed 會以卡片為 containing block，遮罩蓋不滿整個視窗
-  return createPortal(
-    <div
-      className={`${styles.dialogOverlay} ${presence.closing ? styles.dialogOverlayOut : ""}`}
-      onClick={onClose}
-    >
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <h3 className={styles.dialogTitle}>
-          {isApprove ? t("AiApiReviewPage.approveDialogTitle") : t("AiApiReviewPage.rejectDialogTitle")}
-        </h3>
-
-        <div className={styles.dialogBody}>
-          <div className={styles.dialogInfo}>
-            <div>{t("AiApiReviewPage.dialogApplicant", { value: request.user_full_name || request.user_email })}</div>
-            <div>{t("AiApiReviewPage.dialogKeyName", { value: request.api_key_name })}</div>
-            <div>{t("AiApiReviewPage.dialogAppliedAt", { value: formatDateTime(request.created_at, t("AiApiReviewPage.notReviewed")) })}</div>
-            <div className={styles.dialogPurpose}>{t("AiApiReviewPage.dialogPurpose", { value: request.purpose })}</div>
-          </div>
-          <textarea
-            className={styles.dialogTextarea}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder={t("AiApiReviewPage.commentPlaceholder")}
-            rows={4}
-          />
-        </div>
-
-        <div className={styles.dialogFooter}>
+  /* 外框（遮罩、Esc、焦點、捲動鎖）交給共用 Modal；送出中 Esc／點遮罩都不關 */
+  return (
+    <Modal
+      closing={presence.closing}
+      onClose={onClose}
+      busy={submitting}
+      size="md"
+      title={isApprove ? t("AiApiReviewPage.approveDialogTitle") : t("AiApiReviewPage.rejectDialogTitle")}
+      actions={
+        <>
           <button type="button" className={styles.btnSecondary} onClick={onClose} disabled={submitting}>
             {t("AiApiReviewPage.cancel")}
           </button>
@@ -99,10 +70,25 @@ function ReviewDialog({ open, onClose, request, action, onDone }) {
           >
             {submitting ? t("AiApiReviewPage.processing") : isApprove ? t("AiApiReviewPage.confirmApprove") : t("AiApiReviewPage.confirmReject")}
           </button>
+        </>
+      }
+    >
+      <div className={styles.dialogBody}>
+        <div className={styles.dialogInfo}>
+          <div>{t("AiApiReviewPage.dialogApplicant", { value: request.user_full_name || request.user_email })}</div>
+          <div>{t("AiApiReviewPage.dialogKeyName", { value: request.api_key_name })}</div>
+          <div>{t("AiApiReviewPage.dialogAppliedAt", { value: formatDateTime(request.created_at, t("AiApiReviewPage.notReviewed")) })}</div>
+          <div className={styles.dialogPurpose}>{t("AiApiReviewPage.dialogPurpose", { value: request.purpose })}</div>
         </div>
+        <textarea
+          className={styles.dialogTextarea}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder={t("AiApiReviewPage.commentPlaceholder")}
+          rows={4}
+        />
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -161,12 +147,19 @@ function ReviewActions({ item, onDone }) {
 }
 
 /* ── Main ── */
+const REQUEST_TAB_KEYS = ["pending", "approved", "rejected", "all"];
+/* 後端 /ai-api/requests 的 limit 上限 */
+const REQUEST_LIST_LIMIT = 100;
+
 export default function AiApiReviewPage() {
   const { t } = useTranslation("ai");
   const toast = useToast();
   const [activeTab, setActiveTab] = useState("pending");
-  const [allRequests, setAllRequests] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
+  /* 切換分頁時舊請求可能較晚回來，只讓最新一次載入寫入畫面 */
+  const loadSeqRef = useRef(0);
 
   const TABS = [
     { key: "pending",  label: t("AiApiReviewPage.tabPending") },
@@ -183,31 +176,40 @@ export default function AiApiReviewPage() {
 
   /** silent = true 時不觸發 loading 與錯誤提示，供背景自動刷新使用 */
   const load = useCallback(async (silent = false) => {
+    const seq = ++loadSeqRef.current;
+    const isCurrent = () => seq === loadSeqRef.current;
     if (!silent) setLoading(true);
     try {
-      const res = await AiApiService.listAllRequests();
-      setAllRequests(res?.data ?? []);
+      /* 狀態篩選交給後端：清單上限 100 筆且新到舊，前端自己篩會讓
+         比最新 100 筆還舊的待審申請看不到。非目前分頁只取筆數給角標。 */
+      const pages = await Promise.all(
+        REQUEST_TAB_KEYS.map((key) => AiApiService.listAllRequests({
+          status: key === "all" ? undefined : key,
+          limit: key === activeTab ? REQUEST_LIST_LIMIT : 1,
+        })),
+      );
+      if (!isCurrent()) return;
+      const activePage = pages[REQUEST_TAB_KEYS.indexOf(activeTab)];
+      setRequests(activePage?.data ?? []);
+      setCounts(Object.fromEntries(REQUEST_TAB_KEYS.map((key, i) => [
+        key,
+        pages[i]?.count ?? pages[i]?.data?.length ?? 0,
+      ])));
     } catch (e) {
-      if (!silent) toast.error(e?.message ?? t("AiApiReviewPage.loadError"));
+      if (!silent && isCurrent()) toast.error(e?.message ?? t("AiApiReviewPage.loadError"));
     } finally {
-      if (!silent) setLoading(false);
+      /* 由最新一次載入收掉 loading（即使它是靜默刷新），避免卡在載入畫面 */
+      if (isCurrent()) setLoading(false);
     }
-  }, [toast, t]);
+  }, [activeTab, toast, t]);
 
   useEffect(() => { load(); }, [load]);
   useAutoRefresh(() => load(true));
 
   const filtered = useMemo(() => {
-    if (activeTab === "all") return allRequests;
-    return allRequests.filter((r) => r.status === activeTab);
-  }, [allRequests, activeTab]);
-
-  const stats = useMemo(() => {
-    const pending = allRequests.filter((r) => r.status === "pending").length;
-    const approved = allRequests.filter((r) => r.status === "approved").length;
-    const rejected = allRequests.filter((r) => r.status === "rejected").length;
-    return { total: allRequests.length, pending, approved, rejected };
-  }, [allRequests]);
+    if (activeTab === "all") return requests;
+    return requests.filter((r) => r.status === activeTab);
+  }, [requests, activeTab]);
 
   const COLS = [
     t("AiApiReviewPage.colApplicant"),
@@ -229,7 +231,7 @@ export default function AiApiReviewPage() {
           options={TABS.map(({ key, label }) => ({
             value: key,
             label,
-            badge: key === "all" ? stats.total : stats[key],
+            badge: counts[key] ?? 0,
           }))}
           value={activeTab}
           onChange={setActiveTab}
@@ -241,7 +243,7 @@ export default function AiApiReviewPage() {
         {loading ? (
           <LoadingState fullPage />
         ) : filtered.length === 0 ? (
-          <EmptyState tab={activeTab} />
+          <EmptyState />
         ) : (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
@@ -278,7 +280,7 @@ export default function AiApiReviewPage() {
                     <td className={styles.td}>{formatDateTime(r.created_at, t("AiApiReviewPage.notReviewed"))}</td>
                     <td className={styles.td}>{formatDateTime(r.reviewed_at, t("AiApiReviewPage.notReviewed"))}</td>
                     <td className={styles.td}>
-                      <ReviewActions item={r} onDone={load} />
+                      <ReviewActions item={r} onDone={() => load()} />
                     </td>
                   </tr>
                 ))}

@@ -19,7 +19,7 @@ def generate_password_reset_token(email: str, *, token_version: int = 0) -> str:
     now = datetime.now(timezone.utc)
     expires = now + delta
     exp = expires.timestamp()
-    encoded_jwt = jwt.encode(
+    return jwt.encode(
         {
             "exp": exp,
             "nbf": now,
@@ -30,7 +30,6 @@ def generate_password_reset_token(email: str, *, token_version: int = 0) -> str:
         settings.SECRET_KEY,
         algorithm=security.ALGORITHM,
     )
-    return encoded_jwt
 
 
 def decode_password_reset_token(token: str) -> tuple[str, int] | None:
@@ -52,14 +51,7 @@ def decode_password_reset_token(token: str) -> tuple[str, int] | None:
     return str(decoded_token["sub"]), version
 
 
-def verify_password_reset_token(token: str) -> str | None:
-    """驗證密碼重設 token，回傳 email（不檢查版本；完整檢查見 auth_service）"""
-    decoded = decode_password_reset_token(token)
-    return decoded[0] if decoded else None
-
-
 __all__ = [
     "decode_password_reset_token",
     "generate_password_reset_token",
-    "verify_password_reset_token",
 ]

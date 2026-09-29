@@ -20,10 +20,6 @@
   @include btn-secondary;
 }
 
-.btnDanger {
-  @include btn-danger;
-}
-
 .summaryGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -96,24 +92,6 @@
 
 .list {
   @include flex-column;
-  gap: $spacing-8;
-}
-
-/* 前端分頁列（樣式同 AuditPage） */
-.pagination {
-  @include flex-between;
-  flex-wrap: wrap;
-  gap: $spacing-8;
-  margin-top: $spacing-16;
-}
-
-.paginationInfo {
-  font-size: $font-size-12;
-  color: var(--color-text-muted);
-}
-
-.paginationBtns {
-  display: flex;
   gap: $spacing-8;
 }
 
@@ -290,64 +268,6 @@
   flex-shrink: 0;
 }
 
-.dialogClose {
-  @include btn-dialog-close;
-  flex-shrink: 0;
-}
-
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: $spacing-16;
-  background: var(--color-overlay);
-  animation: fadeIn 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.modalOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.modal {
-  animation: slideUp 0.18s cubic-bezier(0.25, 0.8, 0.25, 1);
-  width: min(640px, 100%);
-  @include flex-column;
-  gap: $spacing-16;
-  padding: $spacing-24;
-  @include glass-surface($shadow: var(--shadow-lg));
-  border-radius: $radius-16;
-}
-
-.modalHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: $spacing-16;
-
-  h2 {
-    margin: 0;
-    font-size: $font-size-16;
-    font-weight: $font-weight-700;
-    color: var(--color-text-primary);
-  }
-}
-
 .formGrid {
   display: grid;
   grid-template-columns: 1fr;
@@ -404,9 +324,30 @@
   }
 }
 
-.modalActions {
+/* 編輯視窗的兩步驟驗證列：狀態文字靠左、重設按鈕靠右 */
+.totpRow {
   display: flex;
-  justify-content: flex-end;
-  gap: $spacing-8;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-16;
+  padding: $spacing-8 $spacing-16;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-8;
 }
 
+.totpRowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    font-size: $font-size-14;
+    color: var(--color-text-primary);
+  }
+
+  span {
+    font-size: $font-size-12;
+    color: var(--color-text-secondary);
+  }
+}

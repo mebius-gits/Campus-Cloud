@@ -49,18 +49,23 @@ class _FakeSession:
         self._user = user
         self.closed = False
 
-    def get(self, model: Any, key: Any) -> Any:  # noqa: ARG002 — signature parity
+    def get(self, model: Any, key: Any) -> Any:
         return self._user
 
     def close(self) -> None:
         self.closed = True
 
 
+def _fake_request(path: str = "/api/v1/users/me") -> Any:
+    """get_current_user 只讀 request.url.path（強制 2FA 的端點白名單）"""
+    return SimpleNamespace(url=SimpleNamespace(path=path))
+
+
 def _patch_redis(monkeypatch: pytest.MonkeyPatch, *, revoked: bool) -> None:
     async def fake_get_redis() -> None:
         return None
 
-    async def fake_is_jti_revoked(redis: Any, jti: str) -> bool:  # noqa: ARG001
+    async def fake_is_jti_revoked(redis: Any, jti: str) -> bool:
         return revoked
 
     monkeypatch.setattr(auth_module, "get_redis", fake_get_redis)
@@ -113,7 +118,11 @@ async def test_ws_accepts_valid_access_token(
 ) -> None:
     _patch_redis(monkeypatch, revoked=False)
     fake_user = SimpleNamespace(
-        email="user@example.com", is_active=True, token_version=0
+        email="user@example.com",
+        is_active=True,
+        token_version=0,
+        totp_required=False,
+        totp_enabled=False,
     )
     fake_session = _FakeSession(fake_user)
     _patch_session(monkeypatch, fake_session)
@@ -156,4 +165,8 @@ async def test_http_get_current_user_rejects_non_access_tokens(
         _make_token(token_type=None),
     ):
         with pytest.raises(AuthenticationError):
-            await auth_module.get_current_user(session=None, token=bad)
+            # token type 檢查在任何 DB／request 存取之前就會拒絕，
+            # request 只需要有 get_current_user 會讀的 url.path
+            await auth_module.get_current_user(
+                session=None, token=bad, request=_fake_request()
+            )

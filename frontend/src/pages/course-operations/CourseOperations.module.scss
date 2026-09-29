@@ -294,13 +294,13 @@
 }
 
 .memberPanelHead strong {
-  font-size: $font-size-14;
+  font-size: $font-size-16;
   font-weight: $font-weight-700;
 }
 
 .memberPanelHead span {
   color: var(--color-text-muted);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
   font-variant-numeric: tabular-nums;
 }
 
@@ -309,6 +309,17 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 20px 18px;
+}
+
+/* 欄位標題：跟每列同一組欄寬；左右內距 = 列的內距 14 + 邊框 1，字才對得齊 */
+.memberColumns {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(120px, .8fr) 110px 110px 34px;
+  gap: 16px;
+  padding: 0 15px;
+  color: var(--color-text-muted);
+  font-size: $font-size-12;
+  font-weight: $font-weight-500;
 }
 
 .memberRow {
@@ -342,21 +353,23 @@
 .memberRow>span {
   overflow: hidden;
   color: var(--color-text-muted);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.memberMachineState {
+/* 機器狀態：全站 badge 尺寸；選擇器帶上 .memberRow>span 才壓得過上面的灰字規則，不必 !important */
+.memberRow>span.memberMachineState {
+  @include badge-base;
   justify-self: start;
-  padding: 4px 8px;
-  border-radius: $radius-pill;
-  background: var(--color-hover);
+  padding: 2px 10px;
+  color: var(--color-status-neutral);
+  background: color-mix(in srgb, var(--color-status-neutral) 12%, transparent);
 }
 
-.memberReady {
-  color: var(--color-success) !important;
-  background: color-mix(in srgb, var(--color-success) 8%, var(--color-surface));
+.memberRow>span.memberReady {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 
 .memberRemove {
@@ -468,242 +481,12 @@
   background: var(--color-surface);
 }
 
+/* 班級票券：寬度比照學生端的課程票券格線（最窄 280） */
 .classCardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 16px;
   align-items: stretch;
-}
-
-.classCard {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  overflow: hidden;
-  @include glass-surface($shadow: var(--shadow-sm));
-  border-radius: $radius-16;
-  transition: border-color $transition-base, box-shadow $transition-base, transform $transition-base;
-}
-
-.classCard:hover {
-  box-shadow: 0 7px 24px color-mix(in srgb, var(--color-text-primary) 8%, transparent);
-  transform: translateY(-1px);
-}
-
-.classCardAlert {
-  border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
-}
-
-.classCardAlert:hover {
-  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
-}
-
-.classCardMain {
-  display: flex;
-  flex: 1;
-  width: 100%;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px 18px 16px;
-  border: 0;
-  color: inherit;
-  text-align: left;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-}
-
-.classCardTop {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.classCardTop>div {
-  min-width: 0;
-}
-
-.classCardTop>div>span {
-  color: var(--color-text-muted);
-  font-size: $font-size-12;
-  font-weight: $font-weight-500;
-  letter-spacing: .04em;
-}
-
-.classCardTop h2 {
-  overflow: hidden;
-  margin: 4px 0 0;
-  font-size: $font-size-18;
-  font-weight: $font-weight-700;
-  letter-spacing: -.015em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.classMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.classMeta>strong,
-.classMeta>span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.classMeta>strong {
-  color: var(--color-text-primary);
-  font-size: $font-size-14;
-  font-weight: $font-weight-500;
-}
-
-.classMeta>span {
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-size: $font-size-12;
-  text-overflow: ellipsis;
-}
-
-.classMeta>strong>span:first-child {
-  color: var(--color-primary);
-}
-
-.classMeta>span>span:first-child {
-  color: var(--color-text-muted);
-}
-
-.classProgress {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: auto;
-}
-
-.classProgress>div {
-  display: flex;
-  justify-content: space-between;
-  color: var(--color-text-secondary);
-  font-size: $font-size-12;
-}
-
-.classProgress>div strong {
-  color: var(--color-text-primary);
-  font-weight: $font-weight-500;
-  font-variant-numeric: tabular-nums;
-}
-
-.classProgress>i {
-  height: 5px;
-  overflow: hidden;
-  border-radius: $radius-pill;
-  background: var(--color-hover);
-}
-
-.classProgress>i>b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-primary);
-  transition: width $transition-slow;
-}
-
-.classCardAlert .classProgress>i>b {
-  background: var(--color-danger);
-}
-
-.classStats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--color-divider);
-}
-
-.classStats>div {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 5px;
-  min-height: 42px;
-  padding: 9px 6px;
-}
-
-.classStats>div+div {
-  border-left: 1px solid var(--color-divider);
-}
-
-.classStats strong {
-  color: var(--color-text-primary);
-  font-size: $font-size-16;
-  font-weight: $font-weight-700;
-  font-variant-numeric: tabular-nums;
-}
-
-.classStats span {
-  color: var(--color-text-muted);
-  font-size: $font-size-12;
-  white-space: nowrap;
-}
-
-.classCardAction {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 52px;
-  gap: 12px;
-  padding: 8px 10px 8px 18px;
-  border-top: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-hover) 35%, var(--color-surface));
-}
-
-.classCardAction>span {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: $font-size-12;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.classCardAction button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: $radius-8;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  font: inherit;
-  font-size: $font-size-12;
-  font-weight: $font-weight-500;
-  cursor: pointer;
-  transition: background $transition-base;
-}
-
-.classCardAction button:hover {
-  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-}
-
-.classCardAlert .classCardAction {
-  background: color-mix(in srgb, var(--color-danger) 5%, var(--color-surface));
-}
-
-.classCardAlert .classCardAction>span {
-  color: var(--color-danger);
-}
-
-.classCardAlert .classCardAction button {
-  color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 9%, transparent);
-}
-
-.classCardAlert .classCardAction button:hover {
-  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
 
 .heatmapCard {
@@ -715,28 +498,21 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px 22px 18px;
+  padding: 16px 20px;
 }
 
 .heatmapHeader h2 {
-  margin: 3px 0 0;
+  margin: 0;
   color: var(--color-text-primary);
-  font-size: $font-size-18;
-  letter-spacing: -.02em;
+  font-size: $font-size-16;
+  font-weight: $font-weight-700;
 }
 
 .heatmapHeader p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--color-text-secondary);
-  font-size: $font-size-14;
+  font-size: $font-size-12;
   line-height: 1.5;
-}
-
-.heatmapEyebrow {
-  color: var(--color-primary);
-  font-size: $font-size-10;
-  font-weight: $font-weight-700;
-  letter-spacing: .12em;
 }
 
 .prototypeBadge {
@@ -773,7 +549,7 @@
   justify-content: space-between;
   gap: 12px 16px;
   flex-wrap: wrap;
-  padding: 0 22px 18px;
+  padding: 0 20px 16px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -832,9 +608,7 @@
 
 .machineTabs small {
   color: var(--color-text-muted);
-  font-size: $font-size-10;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  font-size: $font-size-12;
 }
 
 .machineTabs strong {
@@ -856,35 +630,10 @@
   background: color-mix(in srgb, var(--color-primary) 13%, var(--color-surface));
 }
 
-.metricTabs {
-  display: flex;
+/* CPU／RAM 切換（共用 SegmentedControl）：靠右 */
+.metricSwitch {
   flex: 0 0 auto;
-  gap: 3px;
   margin-left: auto;
-  padding: 3px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-8;
-  background: var(--color-hover);
-}
-
-.metricTabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 0 13px;
-  border: 0;
-  border-radius: $radius-8;
-  color: var(--color-text-secondary);
-  background: transparent;
-  font-size: $font-size-12;
-  font-weight: $font-weight-500;
-}
-
-.metricTabs button.metricTabActive {
-  color: var(--color-text-primary);
-  background: var(--color-surface);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text-primary) 12%, transparent);
 }
 
 .heatmapSummary {
@@ -893,7 +642,7 @@
   justify-content: space-between;
   gap: 14px 20px;
   flex-wrap: wrap;
-  padding: 16px 22px;
+  padding: 16px 20px;
 }
 
 .heatmapSummary>div:first-child {
@@ -923,7 +672,7 @@
 .heatmapSummary small {
   overflow: hidden;
   color: var(--color-text-muted);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -954,7 +703,7 @@
 
 .heatmapSummary dt {
   color: var(--color-text-muted);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
 }
 
 .heatmapSummary dd {
@@ -973,7 +722,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
   gap: 7px;
-  padding: 0 22px 18px;
+  padding: 0 20px 18px;
 }
 
 .heatCell {
@@ -1125,7 +874,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 13px;
-  padding: 12px 22px 16px;
+  padding: 12px 20px 16px;
   border-top: 1px solid var(--color-divider);
   color: var(--color-text-muted);
   font-size: $font-size-10;
@@ -1180,35 +929,6 @@
 
 .createNameField {
   grid-column: span 2;
-}
-
-.createDialogOverlay {
-  position: fixed;
-  z-index: 300;
-  inset: 0;
-  display: grid;
-  padding: 24px;
-  place-items: center;
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  animation: fadeIn 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.createDialogOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes slideUp {
@@ -1278,100 +998,6 @@
 .workspaceContent {
   min-width: 0;
   overflow: hidden;
-}
-
-/* 班級管理流程列：對齊教學環境 stepper 的箭頭分段（chevron）樣式——
-   外框膠囊、段與段以斜切縫相接（縫隙色 = 外框 background 的 border 色）、
-   選中分頁主色填滿；首末段各留平邊，外圓角交給外框 overflow */
-.workflowTabsBar {
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-  overflow: hidden;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-pill;
-  background: var(--color-border);
-  box-shadow: var(--shadow-sm);
-}
-
-.workflowTabsBar .workspaceTabs {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-wrap: nowrap;
-  gap: 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0;
-  border: 0;
-  scrollbar-width: thin;
-}
-
-.workflowTabsBar .workspaceTabs button {
-  display: flex;
-  flex: 1 0 max-content;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-width: 126px;
-  min-height: 48px;
-  padding: 0 $spacing-24;
-  border: 0;
-  border-radius: 0;
-  color: var(--color-text-secondary);
-  background: var(--color-surface);
-  font: inherit;
-  cursor: pointer;
-  transition: background $transition-base, color $transition-base;
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%);
-}
-
-/* 首末段的外側圓角畫在自己身上（背景先被 border-radius 圓角、再與 clip-path 取交集），
-   不依賴外框的 overflow 圓角裁切——內層是捲動容器時 Chromium 會漏裁，方角會蓋到灰框上 */
-.workflowTabsBar .workspaceTabs button:first-child {
-  padding-left: $spacing-16;
-  border-radius: $radius-pill 0 0 $radius-pill;
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
-}
-
-.workflowTabsBar .workspaceTabs button:last-child {
-  padding-right: $spacing-16;
-  border-radius: 0 $radius-pill $radius-pill 0;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 14px 50%);
-}
-
-/* clip-path 會裁掉 outline，鍵盤焦點與 hover 一律以底色呈現 */
-.workflowTabsBar .workspaceTabs button:hover:not(:disabled),
-.workflowTabsBar .workspaceTabs button:focus-visible {
-  color: var(--color-text-primary);
-  background: var(--color-hover);
-}
-
-.workflowTabsBar .workspaceTabs button strong {
-  display: inline-flex;
-  align-items: center;
-  gap: $spacing-4;
-  color: inherit;
-  font-size: $font-size-14;
-  font-weight: $font-weight-500;
-  white-space: nowrap;
-}
-
-/* 完成的分頁：編號換 ✓，配色同 envStepDone；選中規則在後，選中時仍反白 */
-.workflowTabsBar .workspaceTabs button.workspaceTabDone .envStepNum {
-  color: var(--color-primary-on-surface);
-}
-
-.workflowTabsBar .workspaceTabs button.workspaceTabActive,
-.workflowTabsBar .workspaceTabs button.workspaceTabActive:hover {
-  color: var(--color-text-on-primary);
-  background: var(--color-primary);
-}
-
-.workflowTabsBar .workspaceTabs button.workspaceTabActive .envStepNum {
-  color: var(--color-text-on-primary);
 }
 
 .readinessPanel {
@@ -1512,8 +1138,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 56px;
-  padding: 14px 18px;
+  min-height: 52px;
+  padding: 12px 18px;
   border: 0;
   color: inherit;
   background: transparent;
@@ -1529,7 +1155,7 @@
   gap: 9px;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: $font-size-12;
+  font-size: $font-size-14;
   font-weight: $font-weight-500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1560,18 +1186,18 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 56px;
-  padding: 14px 18px;
+  min-height: 52px;
+  padding: 12px 18px;
   list-style: none;
   cursor: pointer;
 }
 
+/* 跟「目前週次」同一種卡片標題（16/700），不再是灰色小字 */
 .classInfoFold>summary>b {
   flex: 0 0 auto;
-  color: var(--color-text-muted);
-  font-size: $font-size-10;
+  color: var(--color-text-primary);
+  font-size: $font-size-16;
   font-weight: $font-weight-700;
-  letter-spacing: .04em;
 }
 
 .classInfoFold>summary::-webkit-details-marker {
@@ -1692,14 +1318,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 48px;
-  padding: 10px 18px;
+  min-height: 52px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--color-border);
 }
 
 .overviewCardHeader h2 {
   margin: 0;
-  font-size: $font-size-14;
+  font-size: $font-size-16;
   font-weight: $font-weight-700;
 }
 
@@ -1741,12 +1367,12 @@
 
 .classFacts span {
   color: var(--color-text-muted);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
 }
 
 .classFacts strong {
   overflow: hidden;
-  font-size: $font-size-12;
+  font-size: $font-size-14;
   font-weight: $font-weight-500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1796,7 +1422,7 @@
   border-radius: $radius-8;
   color: var(--color-text-secondary);
   background: var(--color-hover);
-  font-size: $font-size-10;
+  font-size: $font-size-12;
   white-space: nowrap;
 }
 
@@ -2050,6 +1676,11 @@
   box-shadow: 0 4px 24px var(--color-flow-shadow);
 }
 
+/* 已發布的版本不能拉線：連接點一律不顯示（同班級上課環境的唯讀圖） */
+.topologyCanvasFrozen :global(.react-flow__handle) {
+  visibility: hidden;
+}
+
 /* 自訂節點已畫自己的選中外圈，壓掉 xyflow 預設在 wrapper 上的那層 2px 框 */
 .topologyCanvas :global(.react-flow__node.selected),
 .topologyCanvas :global(.react-flow__node:focus),
@@ -2149,12 +1780,21 @@
   font-weight: $font-weight-700;
 }
 
+/* 底色、框線、陰影跟其他拓撲畫布同一組 flow token（防火牆頁、課程環境編輯器、資源詳情），
+   不套玻璃卡內容區塊的白底規則：畫布是圖，不是資訊欄位 */
 .readonlyTopology {
   margin: 16px;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-flow-border);
   border-radius: $radius-12;
-  background: var(--color-surface);
+  background: var(--color-flow-bg);
+  box-shadow: 0 4px 24px var(--color-flow-shadow);
+}
+
+/* 唯讀不能拉線，連接點一律不顯示（共用節點樣式滑過時會把它亮出來，網際網路節點也是）。
+   用 visibility 而非 opacity：蓋得過 hover 規則，連接點仍佔位、線照樣接得上 */
+.readonlyTopology :global(.react-flow__handle) {
+  visibility: hidden;
 }
 
 .readonlyTopology :global(.react-flow) svg {
@@ -2165,6 +1805,25 @@
   stroke-opacity: 1 !important;
 }
 
+/* 課程機器節點（教學環境編輯器、班級上課環境的唯讀圖）：沿用防火牆的 .vmNode，但沒有
+   上緣的「機器來源」徽章，上下內距改成一樣，文字才會置中；加寬到 220px、規格縮到 14px，
+   「2 CPU · 4 GB · 16 GB」才放得下（更長時滑過看完整規格）。
+   重複 class 提高權重，蓋過另一個樣式檔裡的 .vmNode／.vmMeta */
+.courseMachineNode.courseMachineNode {
+  width: 220px;
+  padding-block: 12px;
+}
+
+.courseMachineMeta.courseMachineMeta {
+  font-size: $font-size-14;
+}
+
+/* 已發布的教學環境：節點拖不動，只能點選看細節，游標不要顯示抓手 */
+.courseMachineNodeFrozen.courseMachineNodeFrozen,
+.courseMachineNodeFrozen.courseMachineNodeFrozen:active {
+  cursor: pointer;
+}
+
 /* 上課環境的唯讀拓撲：外觀是防火牆頁的 .vmNode，只是不能拖曳 */
 .flowMachineNodeStatic {
   cursor: default;
@@ -2172,10 +1831,6 @@
 
 .flowMachineNodeStatic:active {
   cursor: default;
-}
-
-.flowMachineNodeStatic :global(.react-flow__handle) {
-  opacity: 0.45;
 }
 
 /* 對外服務清單（上課環境）：一行一條，與課程環境側欄的摘要同一套說法 */
@@ -2287,19 +1942,12 @@
   overflow-wrap: break-word;
 }
 
-/* 標題列右側的文字刪除鈕（如移除節點）：無框危險色文字，hover 淡紅底 */
 /* 標題列右側的文字刪除鈕（如移除節點）：標準 ghost 危險款，縮小配窄側欄 */
 .inspectorTitleAction {
   @include btn-ghost($danger: true);
   min-height: 28px;
   padding: 4px 8px;
   font-size: $font-size-12;
-}
-
-.inspectorSplit {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
 }
 
 .inspectorSliders {
@@ -2349,137 +1997,9 @@
   line-height: 1.5;
 }
 
-.publicationSection {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
-}
-
-.publicationHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.publicationHead>span {
-  color: var(--color-text);
-  font-size: $font-size-14;
-  font-weight: $font-weight-500;
-}
-
-.publicationAddBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 9px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-pill;
-  color: var(--color-primary);
-  background: var(--color-surface);
-  font-size: $font-size-12;
-  cursor: pointer;
-}
-
-.publicationAddBtn:hover {
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
-}
-
-.publicationList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.publicationList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 4px;
-}
-
-.publicationItem {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-8;
-  color: inherit;
-  background: color-mix(in srgb, var(--color-hover) 26%, var(--color-surface));
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.publicationItem:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-}
-
-.publicationItem:disabled {
-  cursor: default;
-}
-
-.publicationItem strong {
-  font-size: $font-size-12;
-  font-weight: $font-weight-500;
-}
-
-.publicationItem small {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: $font-size-10;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 對外服務彈窗：規範的簡易卡款——padding 24 + 間距交給 gap、
-   小型單欄表單寬 640，去掉 header/footer 分隔帶（玻璃底繼承 .createDialog） */
-.publicationDialog {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-16;
-  width: 100%;
-  max-width: 640px;
-  padding: $spacing-24;
-}
-
-.publicationDialog .createDialogHeader {
-  min-height: 0;
-  padding: 0;
-  border-bottom: 0;
-}
-
-.publicationDialog .createDialogHeader h2 {
-  font-size: $font-size-16;
-}
-
-.publicationDialog .createDialogFooter {
-  min-height: 0;
-  padding: 0;
-  border-top: 0;
-  background: none;
-}
-
-/* 內文含主機名等連續長字串，規範要求 overflow-wrap: anywhere */
-.publicationDialogBody {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 0;
-  overflow-wrap: anywhere;
-}
-
 .rowActions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -2489,47 +2009,6 @@
 
 .rowActions button {
   white-space: nowrap;
-}
-
-.audienceClassList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 8px;
-}
-
-.audienceClassItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 9px 11px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-8;
-  background: var(--color-surface);
-  font-weight: $font-weight-400;
-  cursor: pointer;
-}
-
-.audienceClassItem input {
-  width: auto;
-  margin-top: 2px;
-}
-
-.audienceClassItem span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  font-size: $font-size-14;
-}
-
-.audienceClassItem small {
-  color: var(--color-text-muted);
-  font-size: $font-size-10;
-}
-
-.inspectorDanger {
-  @include btn-danger-outline;
-  margin-top: auto;
 }
 
 /* ── 每週內容列表 ── */
@@ -2638,46 +2117,30 @@
   gap: 6px;
 }
 
-/* 學生可見與否的切換：草稿是安靜的中性色，已發布才亮起來。 */
-.weekPublishButton {
-  display: inline-flex;
-  width: 100%;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 10px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-pill;
-  color: var(--color-text-muted);
-  background: var(--color-surface);
-  font: inherit;
-  font-size: $font-size-12;
-  font-weight: $font-weight-500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color $transition-base, border-color $transition-base, background $transition-base;
+/* 草稿｜發布 切換：置中在「學生可見」欄。固定跟欄寬一樣、兩段平分，
+   內距收小一點，英日文的選項字才放得下；高度 36px 與同列的輸入框一致 */
+.weekVisible {
+  display: flex;
+  justify-self: center;
 }
 
-.weekPublishButton:hover:not(:disabled) {
-  color: var(--color-text-primary);
-  background: var(--color-hover);
-}
+.weekStatusControl {
+  width: 124px;
 
-.weekPublishButton:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
+  button {
+    flex: 1;
+    justify-content: center;
+    padding-inline: $spacing-8;
+  }
 
-.weekPublished {
-  border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border));
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface));
-}
-
-.weekPublished:hover:not(:disabled) {
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 15%, var(--color-surface));
+  /* 還沒填主題的「發布」：看起來淡一點但點得下去（點了會提示缺什麼）；
+     權重要壓過分段切換器的 hover 變色 */
+  button[aria-disabled="true"],
+  button[aria-disabled="true"]:hover {
+    color: var(--color-text-secondary);
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .weekVisibleCount {
@@ -2763,7 +2226,7 @@
     grid-area: 1 / 3;
   }
 
-  .weekRows article>.weekPublishButton {
+  .weekRows article>.weekVisible {
     grid-area: 1 / 4;
   }
 
@@ -2771,11 +2234,14 @@
     grid-area: 2 / 2 / auto / -1;
   }
 
-  .memberRow {
+  .memberRow,
+  .memberColumns {
     grid-template-columns: minmax(200px, 1.3fr) minmax(100px, .7fr) 100px 34px;
   }
 
-  .memberRow>span:nth-of-type(3) {
+  /* 加入日期收起：列裡是第 3 個 span，欄位標題裡是第 4 個 */
+  .memberRow>span:nth-of-type(3),
+  .memberColumns>span:nth-of-type(4) {
     display: none;
   }
 }
@@ -2783,11 +2249,6 @@
 @include respond-below(md) {
   .page {
     gap: 16px;
-  }
-
-  .workflowTabsBar .workspaceTabs button {
-    min-width: 112px;
-    padding-inline: 12px 20px;
   }
 
   .setupSummary {
@@ -2847,7 +2308,7 @@
     min-width: 0;
   }
 
-  .metricTabs {
+  .metricSwitch {
     align-self: flex-start;
   }
 
@@ -2879,6 +2340,11 @@
     padding: 10px 12px 14px;
   }
 
+  /* 手機版每列改成上下疊排，欄位對不起來，標題列收起 */
+  .memberColumns {
+    display: none;
+  }
+
   .memberRow {
     grid-template-columns: minmax(0, 1fr) auto 30px;
     gap: 8px 12px;
@@ -2905,22 +2371,6 @@
   .classToolbar .searchInput {
     flex-basis: auto;
     width: 100%;
-  }
-
-  .classCardGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .classCardTop h2 {
-    white-space: normal;
-  }
-
-  .classCardMain {
-    padding: 16px 16px 14px;
-  }
-
-  .classCardAction {
-    padding-left: 16px;
   }
 
   .classFacts {
@@ -2953,11 +2403,6 @@
 
   .compactFormSection {
     padding: 18px;
-  }
-
-  .createDialogOverlay {
-    align-items: end;
-    padding: 0;
   }
 
   .createDialog {
@@ -3012,9 +2457,14 @@
   .weekRows article>.weekDate,
   .weekRows article>.weekTitleInput,
   .weekRows article>.weekMachineSelect,
-  .weekRows article>.weekPublishButton,
+  .weekRows article>.weekVisible,
   .weekRows article>.weekFileList {
     grid-area: auto;
+  }
+
+  /* 單欄直排時切換器靠左 */
+  .weekRows article>.weekVisible {
+    justify-self: start;
   }
 }
 
@@ -3169,110 +2619,6 @@
 }
 
 
-/* ── 教學環境編輯頁 Stepper：箭頭分段（chevron）——外框膠囊、段與段以
-   斜切縫相接（縫隙色 = 外框 background 的 border 色），選中段主色填滿 ── */
-.envStepper {
-  display: flex;
-  flex: none;
-  width: 100%;
-  min-width: 0;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: $radius-pill;
-  background: var(--color-border);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-.envStep {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  min-height: 48px;
-  padding: $spacing-8 $spacing-16 $spacing-8 $spacing-24;
-  border: 0;
-  background: var(--color-surface);
-  font: inherit;
-  cursor: pointer;
-  transition: background $transition-base;
-  /* 中段：右尖角 + 左凹口（14px 斜切）；首末段各留平邊，外圓角交給外框 overflow */
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%);
-
-  /* 首末段的外側圓角畫在自己身上（背景先圓角、再與 clip-path 取交集），
-     確保外框灰底完整包住內容，不依賴外框的 overflow 圓角裁切 */
-  &:first-child {
-    padding-left: $spacing-16;
-    border-radius: $radius-pill 0 0 $radius-pill;
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
-  }
-
-  &:last-child {
-    padding-right: $spacing-16;
-    border-radius: 0 $radius-pill $radius-pill 0;
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 14px 50%);
-  }
-
-  /* clip-path 會裁掉 outline，鍵盤焦點改以底色呈現 */
-  &:hover,
-  &:focus-visible {
-    background: var(--color-hover);
-  }
-}
-
-.envStepActive,
-.envStepActive:hover,
-.envStepActive:focus-visible {
-  background: var(--color-primary);
-  cursor: default;
-}
-
-.envStepNum {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-text-muted);
-  font-size: $font-size-12;
-  font-weight: $font-weight-700;
-  font-variant-numeric: tabular-nums;
-}
-
-.envStepDone .envStepNum {
-  color: var(--color-primary-on-surface);
-}
-
-.envStepText {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-}
-
-.envStepText strong {
-  display: inline-flex;
-  align-items: center;
-  gap: $spacing-4;
-  color: var(--color-text-secondary);
-  font-size: $font-size-14;
-  font-weight: $font-weight-500;
-  white-space: nowrap;
-}
-
-.envStepDone .envStepText strong {
-  color: var(--color-text);
-}
-
-.envStepActive .envStepText strong,
-.envStepActive .envStepNum {
-  color: var(--color-text-on-primary);
-  font-weight: $font-weight-700;
-}
-
 /* ── 機器配置步驟鎖定視口高度：stepper 固定、工作區吃滿剩餘、畫布自適應，
    儲存列不必捲動就看得到；視窗太矮退回自然捲動（比照申請審核頁的鎖高條件） ── */
 .editorPageLocked {
@@ -3395,11 +2741,28 @@
     border: 1px solid var(--color-border);
     background: var(--color-surface);
 
+    > .fileLink,
     > a {
       @include text-truncate;
       flex: 1;
-      color: var(--color-primary);
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      font: inherit;
       font-size: $font-size-14;
+      color: var(--color-primary);
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
     }
 
     > small {
@@ -3423,17 +2786,4 @@
 
   &:hover:not(:disabled) { color: var(--color-danger); background: var(--color-surface); }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
-}
-
-/* 學生看到的對外入口（host:port） */
-.forwardEndpoint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: $radius-8;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: $font-size-12;
-  font-family: var(--font-mono, monospace);
 }

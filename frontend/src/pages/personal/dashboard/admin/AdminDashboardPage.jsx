@@ -17,9 +17,9 @@ import {
   buildFyiStats,
   buildTodayRows,
   buildUrgentRows,
-  formatCheckedAt,
   mergeInfraProblems,
 } from "./adminAttention";
+import { formatTime } from "../../../../utils/formatDate";
 import styles from "./AdminDashboardPage.module.scss";
 import PageHeader from "../../../../components/PageHeader/PageHeader";
 
@@ -37,7 +37,7 @@ export function normalizeAssistantPrompt(value) {
 }
 
 export default function AdminDashboardPage() {
-  const { t, i18n } = useTranslation("personal");
+  const { t } = useTranslation("personal");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { overview, loading: overviewLoading, error: overviewError } = usePveOverview();
@@ -61,28 +61,28 @@ export default function AdminDashboardPage() {
         VmRequestsService.listAll("pending"),
         SpecChangeRequestsService.listAll({ status: "pending" }),
         BatchProvisionService.listPending(),
-        AiApiService.listAllRequests(),
+        /* 待審數量交給後端依狀態過濾後回 count；不帶條件只會拿到最新一頁（上限 100），
+           較舊的待審件會被擠出去而漏算 */
+        AiApiService.listAllRequests({ status: "pending", limit: 1 }),
         JobsService.list({ statuses: ["failed", "blocked"], historyDays: 7, limit: 50 }),
         MonitoringService.listAlerts({ active: true, limit: 100 }),
-        MiningIncidentsService.list({ limit: 200 }),
+        /* 只算還沒被管理員定奪的事件（detected 待判斷、suspended 已凍結待處置）；
+           由後端依狀態過濾，不在全部事件的前幾筆裡找，才不會漏掉較舊的未結事件 */
+        MiningIncidentsService.list({ status: "detected", limit: 1000 }),
+        MiningIncidentsService.list({ status: "suspended", limit: 1000 }),
       ]);
       const ok = (index) => settled[index].status === "fulfilled";
       const value = (index) => ok(index) ? settled[index].value : null;
-      const aiPending = value(3)?.data?.filter((request) => request.status === "pending").length ?? 0;
       const alertRows = value(5);
-      /* 只算還沒被管理員定奪的事件（detected 待判斷、suspended 已凍結待處置） */
-      const miningRows = value(6);
-      const miningActive = (Array.isArray(miningRows) ? miningRows : miningRows?.data ?? [])
-        .filter((incident) => incident.status === "detected" || incident.status === "suspended").length;
       setChecks((prev) => {
         const pick = (fresh, next, previous) => (silent && !fresh ? previous : next);
         return {
           requests: pick(ok(0) && ok(1), countRows(value(0)) + countRows(value(1)), prev.requests),
           batches: pick(ok(2), countRows(value(2)), prev.batches),
-          aiRequests: pick(ok(3), aiPending, prev.aiRequests),
+          aiRequests: pick(ok(3), countRows(value(3)), prev.aiRequests),
           failedJobs: pick(ok(4), countRows(value(4)), prev.failedJobs),
           alerts: pick(ok(5), Array.isArray(alertRows) ? alertRows : alertRows?.data ?? [], prev.alerts),
-          miningIncidents: pick(ok(6), miningActive, prev.miningIncidents),
+          miningIncidents: pick(ok(6) && ok(7), countRows(value(6)) + countRows(value(7)), prev.miningIncidents),
           unavailable: settled.filter((result) => result.status === "rejected").length,
         };
       });
@@ -114,6 +114,20 @@ export default function AdminDashboardPage() {
   const incomplete = overviewError || !overview || overview.data_status === "stale"
     || overview.data_status === "partial" || checks.unavailable > 0;
   const name = user?.full_name?.trim() || user?.email?.split("@")[0] || t("AdminDashboardPage.defaultName");
+  /* 資料不完整的原因：頁首狀態籤顯示短句，滑過看完整說明 */
+  const incompleteReason = !overview ? "noData"
+    : overview.data_status === "partial" ? "partial"
+      : overviewError || overview.data_status === "stale" ? "stale"
+        : "checks";
+  const INCOMPLETE_TEXT = {
+    noData: { chip: "AdminDashboardPage.chipNoData", full: "AdminDashboardPage.emptyUnavailable" },
+    partial: { chip: "AdminDashboardPage.chipPartial", full: "AdminDashboardPage.pvePartialMessage" },
+    stale: { chip: "AdminDashboardPage.chipStale", full: "AdminDashboardPage.pveStaleMessage" },
+    checks: { chip: "AdminDashboardPage.chipChecksUnavailable", full: "AdminDashboardPage.issueUnavailableTitle" },
+  }[incompleteReason];
+  const updatedAtText = overview
+    ? t("AdminDashboardPage.pveUpdatedAt", { time: formatTime(overview.collected_at, "—", { seconds: true }) })
+    : t("AdminDashboardPage.pveNotChecked");
 
   function resetAssistant() {
     setConversationPrompt("");
@@ -136,11 +150,15 @@ export default function AdminDashboardPage() {
 
   return <div className={`${styles.page} ${focusMode ? styles.pageFocused : ""}`}>
     <PageHeader title={t("AdminDashboardPage.greeting", { name })}>
-      {!focusMode && <span className={styles.checkedAt}>
-        {overview
-          ? t("AdminDashboardPage.pveUpdatedAt", { time: formatCheckedAt(overview.collected_at, i18n.language) })
-          : t("AdminDashboardPage.pveNotChecked")}
-      </span>}
+      {/* 資料新舊與完整度集中在這裡：正常時是灰字更新時間，不完整時前面加上橘色的連線狀態、更新時間轉藍 */}
+      {!focusMode && (!busy && incomplete
+        ? <span className={styles.checkedAtWarn} role="status" title={t(INCOMPLETE_TEXT.full)}>
+          <MIcon name="sync_problem" size={15} />
+          <span>{t(INCOMPLETE_TEXT.chip)}</span>
+          {overview && <span className={styles.checkedAtTime}>{updatedAtText}</span>}
+          <span className={styles.srOnly}>{t(INCOMPLETE_TEXT.full)}</span>
+        </span>
+        : <span className={styles.checkedAt}>{updatedAtText}</span>)}
     </PageHeader>
 
     {!focusMode && stats.length > 0 && <section className={styles.statsGrid} aria-label={t("AdminDashboardPage.resourceOverview")}>
@@ -195,7 +213,7 @@ export default function AdminDashboardPage() {
     </section>
 
     {!focusMode && <section className={styles.attention} aria-label={t("AdminDashboardPage.attentionTitle")} aria-busy={busy}>
-      {busy ? <div className={styles.checking} role="status"><MIcon name="sync" size={18} className={styles.spin} />{t("AdminDashboardPage.checking")}</div> : <>
+      {busy ? <div className={styles.checking} role="status"><MIcon name="sync" size={18} spin />{t("AdminDashboardPage.checking")}</div> : <>
         <div className={styles.tiers}>
         <section className={`${styles.tier} ${urgent.length ? styles.tierNow : ""}`} aria-labelledby="admin-urgent-title">
           <div className={styles.tierHead}>
@@ -241,13 +259,6 @@ export default function AdminDashboardPage() {
         </div>
       </>}
 
-      {!busy && incomplete && <div className={styles.staleNote} role="status">
-        <MIcon name="sync_problem" size={16} />
-        <span>{t(!overview ? "AdminDashboardPage.emptyUnavailable"
-          : overview?.data_status === "partial" ? "AdminDashboardPage.pvePartialMessage"
-            : overviewError || overview?.data_status === "stale" ? "AdminDashboardPage.pveStaleMessage"
-              : "AdminDashboardPage.issueUnavailableTitle")}</span>
-      </div>}
     </section>}
   </div>;
 }

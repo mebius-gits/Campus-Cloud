@@ -98,6 +98,99 @@ class MonitoringOverview(BaseModel):
     issues: list[MonitoringIssue] = Field(default_factory=list)
 
 
+# ─── 平台健康（DB／Redis／worker／PVE 連線／Gateway／AI／排程心跳） ──────────
+
+# attention：服務還在但需要人處理（例如 Gateway 憑證快到期）
+# pending：還沒有結果（例如 LiteLLM 背景健康檢查尚未跑完），不影響整體
+ComponentStatus = Literal["ok", "down", "disabled", "unknown", "attention", "pending"]
+
+
+class SystemComponentHealth(BaseModel):
+    """單一依賴元件；name 為 database／redis／worker／pve:<connection_id>／gateway
+    ／ai_gateway／ai_model:<alias>。"""
+
+    name: str
+    label: str
+    status: ComponentStatus
+    latency_ms: float | None = None
+    detail: str | None = None
+
+
+# ─── 登入檢查（每次登入後的服務檢查畫面） ─────────────────────────────────
+
+
+class LoginPreflightComponent(BaseModel):
+    """管理員才看得到：這一項底下的實際元件（例如每個 PVE 連線一筆）。"""
+
+    label: str
+    status: ComponentStatus
+    latency_ms: float | None = None
+    detail: str | None = None
+
+
+class LoginPreflightCheck(BaseModel):
+    key: Literal["database", "redis", "worker", "pve", "gateway", "ai"]
+    # skipped：沒設定（Gateway／AI 未啟用），不擋登入
+    status: Literal["ok", "fail", "skipped"]
+    components: list[LoginPreflightComponent] | None = None
+
+
+class LoginPreflight(BaseModel):
+    """ok 為 False 時學生／老師停在「請通知管理員」，管理員可以略過繼續。
+
+    detailed 為 False（非管理員）時 checks 只有 key／status，不含元件名稱與錯誤細節。
+    """
+
+    ok: bool
+    detailed: bool
+    checks: list[LoginPreflightCheck]
+
+
+class SchedulerLoopHealth(BaseModel):
+    """背景迴圈（scheduler／web_push／wireguard）；時間皆為 unix 秒。"""
+
+    loop: str
+    status: Literal["ok", "stale", "pending"]
+    interval_seconds: float | None = None
+    last_tick_at: float | None = None
+    leader_last_tick_at: float | None = None
+    leader_instance: str | None = None
+
+
+class SchedulerTaskHealth(BaseModel):
+    """排程任務心跳；時間皆為 unix 秒。"""
+
+    loop: str
+    task: str
+    status: Literal["ok", "warning", "failing", "stale", "pending"]
+    interval_seconds: float | None = None
+    last_run_at: float | None = None
+    last_success_at: float | None = None
+    last_failure_at: float | None = None
+    last_duration_ms: float | None = None
+    consecutive_failures: int = 0
+    total_runs: int = 0
+    total_failures: int = 0
+    last_error: str | None = None
+
+
+class SystemHealth(BaseModel):
+    status: Literal["ok", "degraded", "down"]
+    generated_at: datetime
+    components: list[SystemComponentHealth]
+    loops: list[SchedulerLoopHealth]
+    tasks: list[SchedulerTaskHealth]
+    # 心跳資料來源：redis＝跨行程一致；memory＝Redis 不可用，只有本行程的資料
+    heartbeat_source: Literal["redis", "memory"]
+
+
+class GrafanaLink(BaseModel):
+    """監控 stack 的 Grafana 是否啟用；enabled 為 False 時 url 為 None。"""
+
+    enabled: bool
+    url: str | None = None
+
+
 class AlertEventPublic(BaseModel):
     """警告事件（open = resolved_at 為 None）。"""
 
@@ -141,8 +234,6 @@ class GovernanceConfigPublic(BaseModel):
     snapshot_cleanup_enabled: bool
     snapshot_retention_days: int
     student_snapshot_max_count: int
-    course_ttl_hours: int
-    course_max_active_per_user: int
     updated_at: datetime
 
 
@@ -175,5 +266,3 @@ class GovernanceConfigUpdate(BaseModel):
     snapshot_cleanup_enabled: bool | None = None
     snapshot_retention_days: int | None = Field(default=None, ge=1, le=90)
     student_snapshot_max_count: int | None = Field(default=None, ge=1, le=10)
-    course_ttl_hours: int | None = Field(default=None, ge=1, le=24)
-    course_max_active_per_user: int | None = Field(default=None, ge=1, le=5)

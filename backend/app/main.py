@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 # uvicorn 0.36+ 使用 loop_factory 參數直接建立 event loop，繞過 asyncio policy。
 # 其 asyncio_loop_factory 在 Windows 單 worker 模式下固定回傳 ProactorEventLoop，
@@ -17,14 +17,15 @@ if sys.platform == "win32":
     _uvicorn_asyncio_loop.asyncio_loop_factory = _win_selector_factory
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.main import api_router
+from app.api.prometheus_sd import gateway_targets_endpoint
 from app.api.websocket import vnc_proxy
 from app.api.websocket.classroom import (
     classroom_presence_proxy,
@@ -34,14 +35,22 @@ from app.api.websocket.course_progress import course_progress_proxy
 from app.api.websocket.jobs import jobs_ws_proxy
 from app.api.websocket.terminal import terminal_proxy
 from app.core.config import settings
+from app.core.i18n import resolve_language, t, translate
 from app.core.logging import configure_logging
-from app.core.metrics import PrometheusMiddleware, metrics_endpoint
+from app.core.metrics import (
+    PrometheusMiddleware,
+    metrics_endpoint,
+    register_collect_hook,
+    track_websocket,
+)
 from app.core.request_context import RequestContextMiddleware
+from app.core.sentry import init_sentry
 from app.exceptions import AppError
 from app.infrastructure.ai import close_ai_clients
 from app.infrastructure.queue import close_arq_pool, init_arq_pool
 from app.infrastructure.redis import close_redis, init_redis
 from app.infrastructure.worker import init_background_runner, shutdown_background_runner
+from app.services.monitoring import system_health_service
 from app.services.network import wireguard_service
 from app.services.notification import web_push_service
 from app.services.scheduling import vm_request_schedule_service
@@ -109,6 +118,15 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
+async def _cancel_and_wait(task: asyncio.Task[None] | None) -> None:
+    """關機時取消背景迴圈並等它收尾；CancelledError 是預期結果。"""
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging(
@@ -141,27 +159,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop_event.set()
-        if scheduler_task is not None:
-            scheduler_task.cancel()
-            try:
-                await scheduler_task
-            except asyncio.CancelledError:
-                # 排程器取消屬預期的關閉流程
-                pass
-        if wireguard_task is not None:
-            wireguard_task.cancel()
-            try:
-                await wireguard_task
-            except asyncio.CancelledError:
-                # 關機時主動取消 reconciler，CancelledError 是預期結果
-                pass
-        if push_task is not None:
-            push_task.cancel()
-            try:
-                await push_task
-            except asyncio.CancelledError:
-                # 推播迴圈取消屬預期的關閉流程
-                pass
+        for task in (scheduler_task, wireguard_task, push_task):
+            await _cancel_and_wait(task)
         await shutdown_background_runner()
         await close_ai_clients()
         await close_arq_pool()
@@ -172,12 +171,7 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return f"{route.tags[0]}-{route.name}"
 
 
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=str(settings.SENTRY_DSN),
-        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
-        send_default_pii=False,
-    )
+init_sentry("backend")
 
 # 正式環境不對外掛 /docs、/redoc、openapi.json：schema 等於把所有端點、參數
 # 與權限缺口攤開給未登入的人看。nginx 不知道 ENVIRONMENT，所以在這裡關。
@@ -208,6 +202,10 @@ if settings.all_cors_origins:
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+# Prometheus http_sd：Gateway 上 node／nginx exporter 的位址（依閘道頁的連線設定）
+app.add_route("/metrics/gateway-targets", gateway_targets_endpoint, methods=["GET"])
+# 抓取當下才更新的 gauge：DB／Redis 是否可用、arq 佇列長度、任務紀錄統計
+register_collect_hook(system_health_service.collect_metrics_hook)
 
 
 @app.exception_handler(AppError)
@@ -215,6 +213,33 @@ async def app_error_handler(request: Request, exc: AppError):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """未知路徑等框架自己丟的 404 預設 detail 是英文 "Not Found"，換成多語統一訊息；
+    各路由自帶 detail 的 HTTPException 照原樣回傳。"""
+    detail = exc.detail
+    if exc.status_code == 404 and detail == "Not Found":
+        detail = t("error.not_found")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """未捕捉例外不再回 FastAPI 預設的純文字 "Internal Server Error"，統一為
+    JSON＋統一錯誤句。這一層在 RequestContextMiddleware 之外（ContextVar 已
+    reset），語言直接從 Accept-Language 解析。Starlette 送出回應後仍會
+    re-raise，server log 與 Sentry 照常收到 traceback。"""
+    lang = resolve_language(request.headers.get("accept-language"))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": translate("error.internal", lang)},
     )
 
 
@@ -226,35 +251,41 @@ async def websocket_vnc_proxy(
     vnc_ticket: str = "",
     vnc_port: str = "",
 ):
-    await vnc_proxy(
-        websocket, vmid, token=token, vnc_ticket=vnc_ticket, vnc_port=vnc_port
-    )
+    with track_websocket("vnc"):
+        await vnc_proxy(
+            websocket, vmid, token=token, vnc_ticket=vnc_ticket, vnc_port=vnc_port
+        )
 
 
 @app.websocket("/ws/terminal/{vmid}")
 async def websocket_terminal_proxy(websocket: WebSocket, vmid: int, token: str = ""):
-    await terminal_proxy(websocket, vmid, token=token)
+    with track_websocket("terminal"):
+        await terminal_proxy(websocket, vmid, token=token)
 
 
 @app.websocket("/ws/jobs")
 async def websocket_jobs_proxy(websocket: WebSocket, token: str = ""):
-    await jobs_ws_proxy(websocket, token=token)
+    with track_websocket("jobs"):
+        await jobs_ws_proxy(websocket, token=token)
 
 
 @app.websocket("/ws/classroom")
 async def websocket_classroom_presence(websocket: WebSocket, token: str = ""):
-    await classroom_presence_proxy(websocket, token=token)
+    with track_websocket("classroom"):
+        await classroom_presence_proxy(websocket, token=token)
 
 
 @app.websocket("/ws/classroom/{session_id}/watch")
 async def websocket_classroom_watch(
     websocket: WebSocket, session_id: str, token: str = ""
 ):
-    await classroom_watch_proxy(websocket, session_id, token=token)
+    with track_websocket("classroom_watch"):
+        await classroom_watch_proxy(websocket, session_id, token=token)
 
 
 @app.websocket("/ws/courses/paths/{path_id}/progress")
 async def websocket_course_progress(
     websocket: WebSocket, path_id: str, token: str = ""
 ):
-    await course_progress_proxy(websocket, path_id, token=token)
+    with track_websocket("course_progress"):
+        await course_progress_proxy(websocket, path_id, token=token)

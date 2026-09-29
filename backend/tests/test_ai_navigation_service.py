@@ -11,11 +11,15 @@ from app.models.user import UserRole
 
 
 def _user(role: UserRole, *, is_superuser: bool = False) -> SimpleNamespace:
-    return SimpleNamespace(role=role, is_superuser=is_superuser)
+    # 真實 User 一定有 id；service 會把它交給用量紀錄（沒有 session 時只記指標）
+    return SimpleNamespace(id=None, role=role, is_superuser=is_superuser)
 
 
 def _model_reply(payload_json: str):
-    async def _fake_create_chat_completion(_payload, *, timeout: float):
+    async def _fake_create_chat_completion(
+        _payload, *, timeout: float, request_id: str | None = None
+    ):
+        assert request_id
         return {"choices": [{"message": {"content": payload_json}}]}
 
     return _fake_create_chat_completion
@@ -25,7 +29,8 @@ def _use_model(monkeypatch: pytest.MonkeyPatch, payload_json: str) -> list[dict[
     """Point the service at a stub model and capture the payloads it sends."""
     seen: list[dict[str, Any]] = []
 
-    async def _capture(payload, *, timeout: float):
+    async def _capture(payload, *, timeout: float, request_id: str | None = None):
+        assert request_id
         seen.append(payload)
         return {"choices": [{"message": {"content": payload_json}}]}
 

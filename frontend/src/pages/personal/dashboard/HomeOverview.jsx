@@ -1,33 +1,54 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import MIcon from "../../../components/MIcon";
 import PageHeader from "../../../components/PageHeader/PageHeader";
-import CourseCard from "../courses/CourseCard";
+import { RECENT_MACHINES_EVENT, readRecentMachines } from "../../../services/recentMachines";
 import QuickTemplateCards from "../quick-practice/QuickTemplateCards";
+import CourseTicket from "./CourseTicket";
+import MachineCard from "./MachineCard";
 import styles from "./HomeOverview.module.scss";
 
-function SectionHeading({ id, icon, title, action, onAction }) {
+function SectionHeading({ id, title, action, onAction }) {
   return <header className={styles.sectionHeading}>
-    <div className={styles.headingCopy}>
-      <span className={styles.sectionIcon}><MIcon name={icon} size={22} /></span>
-      <h2 id={id}>{title}</h2>
-    </div>
-    {action && <button type="button" className={styles.textButton} onClick={onAction}>{action}<MIcon name="arrow_forward" size={17} /></button>}
+    <h2 id={id}>{title}</h2>
+    {action && <button type="button" className={styles.headingAction} onClick={onAction}>{action}<MIcon name="arrow_forward" size={16} /></button>}
   </header>;
 }
 
 function EmptyPanel({ icon, title, action, onAction }) {
   return <div className={styles.emptyPanel}>
     <MIcon name={icon} size={20} /><span>{title}</span>
-    {action && <button type="button" className={styles.textButton} onClick={onAction}>{action}<MIcon name="add" size={17} /></button>}
+    {action && <button type="button" className={styles.textButton} onClick={onAction}>{action}<MIcon name="add" size={16} /></button>}
   </div>;
 }
 
+/* 這個瀏覽器的連線紀錄（主控台連上時 recordMachineUse 會寫入並發事件），vmid → usedAt */
+function useRecentUse(userId) {
+  const [history, setHistory] = useState(() => readRecentMachines(userId));
+  useEffect(() => {
+    const sync = () => setHistory(readRecentMachines(userId));
+    sync();
+    window.addEventListener(RECENT_MACHINES_EVENT, sync);
+    return () => window.removeEventListener(RECENT_MACHINES_EVENT, sync);
+  }, [userId]);
+  return useMemo(() => new Map(history.map((entry) => [entry.vmid, entry.usedAt])), [history]);
+}
+
+/**
+ * 學生首頁：機器用單層玻璃卡（MachineCard：狀態、名稱、終端與動作列），
+ * 快速練習用資料夾（QuickTemplateFolder：一台機器一張紙，構圖取自複刻的 folder-card），
+ * 課堂用票券（CourseTicket）：票面寫上課時間地點，票根的條碼是練習進度。
+ */
 export default function HomeOverview({ paths, resources, resourcesError, coursesError, templates,
-  templatesLoading, templatesError, openingMachineId, onOpenMachine, todayLabel }) {
+  templatesLoading, templatesError, openingMachineId, onOpenMachine, todayLabel, userId = null,
+  shuttingDownId = null, onShutdownMachine }) {
   const { t } = useTranslation("personal");
   const navigate = useNavigate();
-  const displayedMachines = resources.slice(0, 4);
+  const usedAt = useRecentUse(userId);
+  /* 順序維持資源順序；連線紀錄只拿來印終端裡的「last」 */
+  const displayedMachines = resources.slice(0, 4)
+    .map((machine) => ({ ...machine, usedAt: usedAt.get(Number(machine.vmid)) }));
   const goToCourses = () => navigate("/courses");
   return <>
     <PageHeader title={t("StudentHomePage.title")} subtitle={todayLabel}>
@@ -37,52 +58,37 @@ export default function HomeOverview({ paths, resources, resourcesError, courses
     </PageHeader>
 
     <section className={styles.section} aria-labelledby="recent-machines-title">
-      <SectionHeading id="recent-machines-title" icon="history" title={t("HomeOverview.recentMachines")} />
+      <SectionHeading id="recent-machines-title" title={t("HomeOverview.recentMachines")} />
       {resourcesError ? <EmptyPanel icon="cloud_off" title={t("HomeOverview.resourcesFailed")} />
         : displayedMachines.length ? <div className={styles.machineGrid}>
-          {displayedMachines.map((machine) => <article className={styles.machineCard} key={machine.vmid}>
-            <div className={styles.machineTop}>
-              <span className={styles.machineIcon}><MIcon name={machine.type === "lxc" ? "terminal" : "desktop_windows"} size={20} /></span>
-              <h3>{machine.name}</h3>
-              <span className={`${styles.machineStatus} ${machine.status === "running" ? styles.running : ""}`}>
-                {t(`HomeOverview.machineStatus.${["running", "stopped", "provisioning", "failed", "expired"].includes(machine.status) ? machine.status : "unknown"}`)}
-              </span>
-            </div>
-            <div className={styles.machineMeta}>
-              <span>{machine.type === "lxc" ? "LXC" : "VM"} · #{machine.vmid}</span>
-            </div>
-            <div className={styles.machineActions}>
-              <button type="button" className={styles.launchButton} onClick={() => onOpenMachine(machine)}
-                disabled={openingMachineId !== null || !["running", "stopped"].includes(machine.status)}>
-                <MIcon name={openingMachineId === machine.vmid ? "hourglass_top" : "play_arrow"} size={18} />
-                {t(openingMachineId === machine.vmid ? "StudentHomePage.actionStarting" : machine.status === "running" ? "StudentHomePage.actionEnter" : machine.status === "stopped" ? "StudentHomePage.actionStartAndEnter" : "HomeOverview.unavailable")}
-              </button>
-              <button type="button" className={styles.detailButton} onClick={() => navigate(`/my-resources/${machine.vmid}`)}
-                aria-label={t("StudentHomePage.machineInfoAria", { name: machine.name })}><MIcon name="info" size={20} /></button>
-            </div>
-          </article>)}
+          {displayedMachines.map((machine) => <MachineCard key={machine.vmid} machine={machine}
+            openingMachineId={openingMachineId} onOpen={onOpenMachine}
+            onShutdown={onShutdownMachine} shuttingDown={shuttingDownId === machine.vmid}
+            onInfo={(target) => navigate(`/my-resources/${target.vmid}`)} />)}
         </div> : <EmptyPanel icon="computer" title={t("HomeOverview.noMachines")}
           action={t("HomeOverview.createMachine")} onAction={() => navigate("/my-requests", { state: { create: true } })} />}
     </section>
 
     <section className={styles.section} aria-labelledby="joined-courses-title" data-guide="home-schedule">
-      <SectionHeading id="joined-courses-title" icon="school" title={t("HomeOverview.joinedCourses")}
+      <SectionHeading id="joined-courses-title" title={t("HomeOverview.joinedCourses")}
         action={t("HomeOverview.allCourses")} onAction={goToCourses} />
       {coursesError ? <EmptyPanel icon="cloud_off" title={t("StudentHomePage.errorTitle")} />
         : paths.length ? <div className={styles.courseGrid}>
-          {paths.map((path) => <CourseCard key={path.id} path={path}
+          {paths.map((path) => <CourseTicket key={path.id} path={path}
             onOpen={() => navigate(`/courses/${path.id}`, { state: { from: "/dashboard" } })} />)}
         </div> : <EmptyPanel icon="school" title={t("StudentHomePage.noPublishedCoursesTitle")} />}
     </section>
 
     <section className={styles.section} aria-labelledby="quick-template-title" data-guide="home-quick-templates">
-      <SectionHeading id="quick-template-title" icon="bolt" title={t("StudentHomePage.quickPracticeEnv")} />
+      <SectionHeading id="quick-template-title" title={t("StudentHomePage.quickPracticeEnv")} />
       <QuickTemplateCards templates={templates} loading={templatesLoading} error={templatesError} from="/dashboard" />
     </section>
 
-    <aside className={styles.researchLink} data-guide="home-other-needs" data-student-tour="research">
-      <div><MIcon name="science" size={22} /><span>{t("StudentHomePage.buildResearchEnv")}</span></div>
-      <button type="button" className={styles.textButton} onClick={() => navigate("/my-requests")}>{t("StudentHomePage.goToMyRequests")}<MIcon name="arrow_forward" size={17} /></button>
+    <aside data-guide="home-other-needs">
+      <button type="button" className={styles.researchLink} onClick={() => navigate("/my-requests")}>
+        <span className={styles.researchLabel}><MIcon name="science" size={22} />{t("StudentHomePage.buildResearchEnv")}</span>
+        <span className={styles.researchGo}>{t("StudentHomePage.goToMyRequests")}<MIcon name="arrow_forward" size={16} /></span>
+      </button>
     </aside>
   </>;
 }

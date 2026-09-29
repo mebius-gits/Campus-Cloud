@@ -1,8 +1,9 @@
 from sqlmodel import Session, create_engine, select
 
 from app.core.config import settings
-from app.models import User
+from app.models import SystemSetup, User
 from app.repositories import user as user_repo
+from app.repositories.system_setup import SYSTEM_SETUP_ID
 from app.schemas import UserCreate
 
 engine = create_engine(
@@ -31,14 +32,26 @@ engine = create_engine(
 
 
 def init_db(session: Session) -> None:
-    # Tables should be created with Alembic migrations
-    # But if you don't want to use migrations, create
-    # the tables un-commenting the next lines
-    # from sqlmodel import SQLModel
+    """建立 .env 指定的初始超級使用者（資料表由 Alembic migration 建立）。
 
-    # This works because the models are already imported and registered from app.models
-    # SQLModel.metadata.create_all(engine)
+    初始化精靈完成後就不再碰這個帳號：精靈會刻意停用 .env 的
+    FIRST_SUPERUSER（密碼寫在 .env），之後管理員把它刪掉或改 email，
+    若每次啟動都補建，就會重新冒出一個密碼已知的有效超級使用者。
+    這裡直接讀 singleton，不走會自動插入列的 repository。
+    """
+    setup_state = session.get(SystemSetup, SYSTEM_SETUP_ID)
+    if setup_state is not None and setup_state.completed:
+        return
 
+    ensure_first_superuser(session)
+
+
+def ensure_first_superuser(session: Session) -> None:
+    """不論初始化精靈狀態，確保 .env 的 FIRST_SUPERUSER 帳號存在。
+
+    正式啟動一律走 init_db（精靈完成後不補建）；這支只給測試等
+    明確需要該帳號的地方直接呼叫。
+    """
     user = session.exec(
         select(User).where(User.email == settings.FIRST_SUPERUSER)
     ).first()
@@ -47,7 +60,6 @@ def init_db(session: Session) -> None:
             email=settings.FIRST_SUPERUSER,
             password=settings.FIRST_SUPERUSER_PASSWORD,
             role="admin",
-            is_superuser=True,
         )
         user_repo.create_user(session=session, user_create=user_in)
         session.commit()

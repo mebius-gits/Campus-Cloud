@@ -258,6 +258,44 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* ── 兩步驟驗證 ── */
+.twoFactorStatus {
+  display: flex;
+  align-items: center;
+  gap: $spacing-16;
+}
+
+.twoFactorText {
+  @include flex-column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    font-size: $font-size-14;
+    color: var(--color-text-primary);
+  }
+
+  span {
+    font-size: $font-size-12;
+    color: var(--color-text-secondary);
+    line-height: $line-height-base;
+  }
+}
+
+.twoFactorHint {
+  margin: 0;
+  font-size: $font-size-12;
+  color: var(--color-text-secondary);
+}
+
+/* 停用對話框的驗證碼欄：數字置中拉字距（沿用 .confirmInput 的框線／聚焦色） */
+.otpInput.otpInput {
+  text-align: center;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 22px;
+  letter-spacing: 0.35em;
+}
+
 /* ── 危險區域 ── */
 .dangerCard {
   border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-surface-glass-border));
@@ -270,74 +308,11 @@
   max-width: 480px;
 }
 
-/* ── Modal ── */
-@keyframes confirmIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0)   scale(1); }
-}
-
-.modalOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
+/* ── 對話框內容（外框由共用 Modal 提供）── */
+/* 危險確認的標題圖示：紅色 warning（同共用確認框） */
+.confirmTitleIcon {
   @include flex-center;
-  padding: $spacing-16;
-  /* 淺色背景下 --color-overlay 對深色元件（如選中的 tab）幾乎沒有壓暗效果，
-     這裡疊一層額外的暗化，並加大模糊半徑，確保 popup 後方完全看不清內容 */
-  background: color-mix(in srgb, var(--color-overlay) 70%, rgba(10, 14, 28, 0.45));
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  animation: fadeIn 0.15s ease;
-  transition: opacity 0.15s ease;
-}
-
-.modalOverlayOut {
-  animation: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-.confirm {
-  width: min(420px, 100%);
-  @include flex-column;
-  gap: $spacing-16;
-  padding: $spacing-24;
-  @include glass-surface($shadow: var(--shadow-lg));
-  border-radius: $radius-12;
-  animation: confirmIn 0.18s cubic-bezier(0.25, 0.8, 0.25, 1);
-
-  h2 {
-    margin: 0;
-    color: var(--color-text-primary);
-  }
-
-  p {
-    margin: 0;
-    color: var(--color-text-secondary);
-    line-height: $line-height-base;
-
-    code {
-      padding: 1px 6px;
-      border-radius: $radius-8;
-      background: var(--color-hover);
-      color: var(--color-danger);
-      font-weight: $font-weight-700;
-    }
-  }
-}
-
-.confirmIcon {
-  width: 44px;
-  height: 44px;
-  border-radius: $radius-8;
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
   color: var(--color-danger);
-  @include flex-center;
 }
 
 .confirmInput {
@@ -356,8 +331,9 @@
   }
 }
 
-.modalActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: $spacing-8;
+/* 刪除帳號時要輸入的確認字：紅字粗體就夠醒目，不鋪底色 */
+.confirmWord {
+  color: var(--color-danger);
+  font-family: inherit;
+  font-weight: $font-weight-700;
 }

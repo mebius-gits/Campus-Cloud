@@ -180,7 +180,7 @@ def test_archived_class_member_cannot_use_assigned_resource(monkeypatch):
         status=TeachingClassStatus.archived,
     )
     monkeypatch.setattr(
-        "app.api.deps.proxmox.resource_repo.get_resource_by_vmid",
+        "app.services.resource.access.resource_repo.get_resource_by_vmid",
         lambda **_kwargs: resource,
     )
 
@@ -201,7 +201,7 @@ def test_orphaned_class_resource_never_becomes_student_owned(monkeypatch):
         allocation_scope="teaching_class",
     )
     monkeypatch.setattr(
-        "app.api.deps.proxmox.resource_repo.get_resource_by_vmid",
+        "app.services.resource.access.resource_repo.get_resource_by_vmid",
         lambda **_kwargs: resource,
     )
 
@@ -440,7 +440,6 @@ def test_retry_recovers_existing_resource_instead_of_cloning(monkeypatch):
         user_id=user_id,
         status=BatchProvisionTaskStatus.failed,
         vmid=None,
-        resource_vmid=None,
         error="worker interrupted",
         finished_at=None,
     )

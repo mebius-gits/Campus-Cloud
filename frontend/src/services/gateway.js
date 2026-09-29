@@ -26,12 +26,17 @@ export const GatewayService = {
     return apiPost("/api/v1/gateway/reset-host-key");
   },
 
-  /** 套用 Cloudflare DNS Challenge 到 Traefik */
-  syncTraefikDnsChallenge() {
-    return apiPost("/api/v1/gateway/traefik/dns-challenge/sync");
+  /** 讀取一鍵安裝的狀態、日誌、Gateway 網卡與建議參數（經 SSH） */
+  getInstallStatus() {
+    return apiGet("/api/v1/gateway/install");
   },
 
-  /** 讀取可安全編輯的服務設定檔（haproxy / traefik） */
+  /** 以已綁定的 SSH 金鑰在 Gateway 背景執行 install.sh，回傳啟動後的狀態 */
+  startInstall(options) {
+    return apiPost("/api/v1/gateway/install", options);
+  },
+
+  /** 讀取可安全編輯的服務設定檔（nginx） */
   readServiceConfig(service) {
     return apiGet(`/api/v1/gateway/services/${service}/config`);
   },
@@ -44,11 +49,6 @@ export const GatewayService = {
   /** 取得服務狀態 */
   getServiceStatus(service) {
     return apiGet(`/api/v1/gateway/services/${service}/status`);
-  },
-
-  /** 取得所有服務版本資訊 */
-  getServiceVersions() {
-    return apiGet("/api/v1/gateway/services/versions");
   },
 
   /** Return a WireGuard runtime summary without private or peer keys. */

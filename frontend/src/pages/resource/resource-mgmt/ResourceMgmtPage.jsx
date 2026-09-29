@@ -9,12 +9,14 @@ import PowerMenu from "../../../components/PowerMenu/PowerMenu";
 import TemplateConvertDialog from "../../../components/TemplateConvertDialog/TemplateConvertDialog";
 import useDialogPresence from "../../../hooks/useDialogPresence";
 import SharedEmptyState from "../../../components/EmptyState/EmptyState";
+import ErrorState from "../../../components/ErrorState/ErrorState";
 import { useToast } from "../../../hooks/useToast";
 import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import { ResourcesService } from "../../../services/resources";
 import TerminalDialog from "../../personal/resources/TerminalDialog";
 import VncDialog from "../../personal/resources/VncDialog";
+import { BOOTING_POLL_INTERVAL, LIVE_STATUSES, machineSpecLabel, resourceRowKey, statusAfterAction } from "../../personal/resources/resourceRows";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import { QuickPracticeService } from "../../../services/quickPractice";
@@ -27,6 +29,7 @@ function useStatusMap() {
   return {
     scheduled:    { label: t("ResourceMgmtPage.statusScheduled"),    color: "info"    },
     provisioning: { label: t("ResourceMgmtPage.statusProvisioning"), color: "info"    },
+    starting:     { label: t("ResourceMgmtPage.statusStarting"),     color: "info"    },
     running:      { label: t("ResourceMgmtPage.statusRunning"),      color: "success" },
     stopped:      { label: t("ResourceMgmtPage.statusStopped"),      color: "muted"   },
     paused:       { label: t("ResourceMgmtPage.statusPaused"),       color: "muted"   },
@@ -80,30 +83,6 @@ function useBatchActions() {
   ];
 }
 
-const LIVE_STATUSES = new Set(["running", "stopped", "paused"]);
-
-/* ── Helpers ── */
-function resourceRowKey(resource, index) {
-  const parts = [
-    resource.type || "resource",
-    resource.node || "unknown-node",
-    resource.vmid ?? resource.request_id ?? resource.name ?? "unknown",
-  ];
-  return `${parts.join(":")}:${index}`;
-}
-
-/** 電源操作後的樂觀狀態：start/reboot/reset 後仍為執行中，stop/shutdown 後為已關機 */
-function statusAfterAction(action) {
-  return action === "stop" || action === "shutdown" ? "stopped" : "running";
-}
-
-function machineSpecLabel(machine) {
-  const parts = [];
-  if (machine.cpu) parts.push(`${machine.cpu} CPU`);
-  if (machine.memoryBytes) parts.push(`${Math.round(machine.memoryBytes / 1024 ** 3)} GB`);
-  return parts.join(" · ");
-}
-
 /* ── Primitive sub-components ── */
 function StatusBadge({ status }) {
   const statusMap = useStatusMap();
@@ -124,18 +103,13 @@ function EnvironmentMachineRow({ machine, onUpdated }) {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuClosing, setMenuClosing] = useState(false);
+  const menu = useDialogPresence(menuOpen, 130);
   const menuBtnRef = useRef(null);
   const resource = machine.resource;
   const isLxc = machine.type === "lxc";
   const canControl = Boolean(resource?.vmid && resource.can_control !== false);
   const canOpen = canControl && resource.status === "running";
   const specLabel = machineSpecLabel(machine);
-
-  function closeMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
 
   // 與單機列同一組電源控制；環境內的機器差別只在不能單台刪除。
   async function handleControl(action) {
@@ -193,14 +167,14 @@ function EnvironmentMachineRow({ machine, onUpdated }) {
       <td className={styles.td}><span className={styles.noAction}>{t("ResourceMgmtPage.unifiedManagement")}</span></td>
       <td className={styles.td}>{machine.node}</td>
       <td className={styles.td}><div className={styles.actions}>
-        <button type="button" className={styles.consoleBtn} disabled={!canOpen} title={canOpen ? (isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")) : t("ResourceMgmtPage.machineNotReadyTitle")} onClick={() => setConsoleOpen(true)}>
+        <button type="button" className={styles.consoleBtn} disabled={!canOpen} title={canOpen ? (isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")) : resource?.status === "starting" ? t("ResourceMgmtPage.consoleBootingTitle") : t("ResourceMgmtPage.machineNotReadyTitle")} onClick={() => setConsoleOpen(true)}>
           <MIcon name={isLxc ? "terminal" : "desktop_windows"} size={14} />
           {isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")}
         </button>
-        {actionLoading && <MIcon name="hourglass_empty" size={16} />}
+        {actionLoading && <MIcon name="hourglass_empty" size={16} spin />}
         {canControl && <div className={styles.menuWrap}>
-          {menuOpen && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onClose={closeMenu} anchorRef={menuBtnRef} closing={menuClosing} />}
-          <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)} title={t("ResourceMgmtPage.powerControlTitle")} aria-label={t("ResourceMgmtPage.powerControlTitle")}><MIcon name="more_vert" size={18} /></button>
+          {menu.open && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onClose={() => setMenuOpen(false)} anchorRef={menuBtnRef} closing={menu.closing} />}
+          <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} onClick={() => setMenuOpen((value) => !value)} title={t("ResourceMgmtPage.powerControlTitle")} aria-label={t("ResourceMgmtPage.powerControlTitle")}><MIcon name="more_vert" size={18} /></button>
         </div>}
       </div></td>
     </tr>
@@ -212,10 +186,11 @@ function EnvironmentMachineRow({ machine, onUpdated }) {
 function EnvironmentGroupRows({ group, onUpdated, onRefresh }) {
   const { t } = useTranslation("resource");
   const toast = useToast();
+  const actionLabel = useActionLabel();
   const [expanded, setExpanded] = useState(true);
   const [groupAction, setGroupAction] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuClosing, setMenuClosing] = useState(false);
+  const menu = useDialogPresence(menuOpen, 130);
   const menuBtnRef = useRef(null);
   const running = group.machines.filter((machine) => machine.status === "running").length;
   const allRunning = running === group.machines.length;
@@ -223,17 +198,21 @@ function EnvironmentGroupRows({ group, onUpdated, onRefresh }) {
     .filter((machine) => machine.resource?.vmid && machine.resource.can_control !== false)
     .map((machine) => machine.resource.vmid);
 
-  function closeGroupMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
-
   async function runGroupAction(action) {
     if (!controllableVmids.length || groupAction) return;
     setGroupAction(action);
     try {
-      await ResourcesService.batchAction(controllableVmids, action);
-      toast.success(t("ResourceMgmtPage.groupCommandSent"));
+      const res = await ResourcesService.batchActionInChunks(controllableVmids, action);
+      /* 分批送出；部分失敗也不會丟例外，要看 failed 才知道有沒有機器沒動 */
+      if ((res?.failed ?? 0) > 0) {
+        toast.error(t("ResourceMgmtPage.batchPartialFailToast", {
+          label: actionLabel[action] ?? action,
+          succeeded: res?.succeeded ?? 0,
+          failed: res.failed,
+        }));
+      } else {
+        toast.success(t("ResourceMgmtPage.groupCommandSent"));
+      }
       onRefresh?.();
     } catch (error) {
       toast.error(error?.message ?? t("ResourceMgmtPage.groupCommandFailed"));
@@ -285,9 +264,9 @@ function EnvironmentGroupRows({ group, onUpdated, onRefresh }) {
         <td className={styles.td}>{group.nodeLabel}</td>
         <td className={styles.td}>{controllableVmids.length > 0
           ? <div className={styles.actions}>
-              {groupAction && <MIcon name="hourglass_empty" size={16} />}
+              {groupAction && <MIcon name="hourglass_empty" size={16} spin />}
               <div className={styles.menuWrap}>
-                {menuOpen && <PowerMenu
+                {menu.open && <PowerMenu
                   title={t("ResourceMgmtPage.groupPowerTitle")}
                   items={[
                     { action: "start", label: t("ResourceMgmtPage.startAll"), icon: "play_arrow", tone: "ok", disabled: allRunning },
@@ -295,11 +274,11 @@ function EnvironmentGroupRows({ group, onUpdated, onRefresh }) {
                   ]}
                   actionLoading={groupAction}
                   onControl={runGroupAction}
-                  onClose={closeGroupMenu}
+                  onClose={() => setMenuOpen(false)}
                   anchorRef={menuBtnRef}
-                  closing={menuClosing}
+                  closing={menu.closing}
                 />}
-                <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`} onClick={() => menuOpen ? closeGroupMenu() : setMenuOpen(true)} title={t("ResourceMgmtPage.groupPowerTitle")} aria-label={t("ResourceMgmtPage.groupPowerTitle")}><MIcon name="more_vert" size={18} /></button>
+                <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} onClick={() => setMenuOpen((value) => !value)} title={t("ResourceMgmtPage.groupPowerTitle")} aria-label={t("ResourceMgmtPage.groupPowerTitle")}><MIcon name="more_vert" size={18} /></button>
               </div>
             </div>
           : <span className={styles.noAction}>—</span>}</td>
@@ -324,7 +303,7 @@ function BatchActionBar({ selectedVmids, onDone, onClear }) {
   async function run(action) {
     setPending(action);
     try {
-      const res = await ResourcesService.batchAction(selectedVmids, action);
+      const res = await ResourcesService.batchActionInChunks(selectedVmids, action);
       const label = action === "delete" ? t("ResourceMgmtPage.delete") : actionLabel[action];
       if ((res?.failed ?? 0) === 0) {
         toast.success(t("ResourceMgmtPage.batchSuccessToast", { count: res?.succeeded ?? count, label }));
@@ -417,7 +396,7 @@ function ResourceRow({ resource, onUpdated, onDeleted, selected = false, onToggl
   const [actionLoading, setActionLoading] = useState(null);
   const [deleting, setDeleting]           = useState(false);
   const [menuOpen, setMenuOpen]           = useState(false);
-  const [menuClosing, setMenuClosing]     = useState(false);
+  const menu = useDialogPresence(menuOpen, 130);
   const [consoleOpen, setConsoleOpen]     = useState(false);
   const [convertOpen, setConvertOpen]     = useState(false);
   const convertDialog = useDialogPresence(convertOpen);
@@ -426,11 +405,7 @@ function ResourceRow({ resource, onUpdated, onDeleted, selected = false, onToggl
     && !resource.is_placeholder
     && resource.vmid > 0;
   const menuBtnRef = useRef(null);
-
-  function closeMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
+  const closeMenu = () => setMenuOpen(false);
 
   const type  = typeMap[resource.type] ?? { label: resource.type, icon: "computer" };
   const isLxc = resource.type === "lxc";
@@ -563,16 +538,16 @@ function ResourceRow({ resource, onUpdated, onDeleted, selected = false, onToggl
               <button
                 type="button"
                 className={styles.consoleBtn}
-                title={isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")}
+                title={resource.status === "starting" ? t("ResourceMgmtPage.consoleBootingTitle") : isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")}
                 disabled={resource.status !== "running"}
                 onClick={() => setConsoleOpen(true)}
               >
                 <MIcon name={isLxc ? "terminal" : "desktop_windows"} size={14} />
                 {isLxc ? t("ResourceMgmtPage.terminalTitle") : t("ResourceMgmtPage.consoleTitle")}
               </button>
-              {actionLoading && <MIcon name="hourglass_empty" size={16} />}
+              {actionLoading && <MIcon name="hourglass_empty" size={16} spin />}
               <div className={styles.menuWrap}>
-                {menuOpen && (
+                {menu.open && (
                   <PowerMenu
                     resource={resource}
                     actionLoading={actionLoading}
@@ -581,14 +556,14 @@ function ResourceRow({ resource, onUpdated, onDeleted, selected = false, onToggl
                     onConvertTemplate={canConvertTemplate ? () => { closeMenu(); setConvertOpen(true); } : undefined}
                     onClose={closeMenu}
                     anchorRef={menuBtnRef}
-                    closing={menuClosing}
+                    closing={menu.closing}
                   />
                 )}
                 <button
                   ref={menuBtnRef}
                   type="button"
-                  className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`}
-                  onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}
+                  className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`}
+                  onClick={() => setMenuOpen((value) => !value)}
                   title={t("ResourceMgmtPage.powerControlTitle")}
                   aria-label={t("ResourceMgmtPage.powerControlTitle")}
                 >
@@ -629,22 +604,6 @@ function ResourceRow({ resource, onUpdated, onDeleted, selected = false, onToggl
 function EmptyState() {
   const { t } = useTranslation("resource");
   return <SharedEmptyState icon="dns" title={t("ResourceMgmtPage.emptyTitle")} />;
-}
-
-function ErrorState({ onRetry }) {
-  const { t } = useTranslation("resource");
-  return (
-    <EmptyState
-      icon="error_outline"
-      title={t("ResourceMgmtPage.loadErrorTitle")}
-      action={
-        <button type="button" className={styles.btnSecondary} onClick={onRetry}>
-          <MIcon name="refresh" size={16} />
-          {t("ResourceMgmtPage.retry")}
-        </button>
-      }
-    />
-  );
 }
 
 /* ── Page ── */
@@ -694,6 +653,8 @@ export default function ResourceMgmtPage() {
       ]);
       setResources(data ?? []);
       setQuickSessions(sessions ?? []);
+      /* 背景刷新成功也要能把先前的錯誤畫面收掉 */
+      setError(false);
     } catch (err) {
       if (!silent && !err?.cancelled) setError(true);
     } finally {
@@ -706,7 +667,8 @@ export default function ResourceMgmtPage() {
     fetchResources(false, controller.signal);
     return () => controller.abort();
   }, [fetchResources]);
-  useAutoRefresh(() => fetchResources(true));
+  const anyBooting = resources.some((r) => r.status === "starting");
+  useAutoRefresh(() => fetchResources(true), anyBooting ? BOOTING_POLL_INTERVAL : undefined);
 
   function handleUpdated(updated) {
     setResources((prev) => prev.map((r) => r.vmid === updated.vmid ? updated : r));
@@ -749,7 +711,7 @@ export default function ResourceMgmtPage() {
       {/* ── 內容 ── */}
       <div className={styles.content}>
         {error ? (
-          <ErrorState onRetry={fetchResources} />
+          <ErrorState onRetry={() => fetchResources()} />
         ) : loading ? (
           <LoadingState fullPage />
         ) : visibleResources.length === 0 && environmentGroups.length === 0 ? (

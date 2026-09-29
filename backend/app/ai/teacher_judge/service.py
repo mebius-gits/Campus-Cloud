@@ -20,6 +20,7 @@ from app.ai.teacher_judge._types import VLLMMetrics
 from app.ai.teacher_judge.automation_support import (
     get_script_generation_blockers,
     missing_step_information,
+    non_empty_argv,
 )
 from app.ai.teacher_judge.config import settings
 from app.ai.teacher_judge.machine_context import (
@@ -89,6 +90,15 @@ class TeacherJudgeItemwiseResult:
     error: str | None = None
 
 
+def _as_text_list(value: Any) -> list[Any]:
+    """Coerce a model-emitted list field: a bare string is one entry, junk is none."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return value
+    return []
+
+
 def _conversation_focus_from_content(
     content: str,
     *,
@@ -111,8 +121,8 @@ def _conversation_focus_from_content(
         focus_key = str(raw.get("focus_key") or "").strip()[:40]
         if not focus_key:
             continue
-        known = raw.get("known_information")
-        missing = raw.get("missing_information")
+        known = _as_text_list(raw.get("known_information"))
+        missing = _as_text_list(raw.get("missing_information"))
         target_item_id = str(raw.get("target_item_id") or "").strip() or None
         requirements.append(
             {
@@ -121,20 +131,16 @@ def _conversation_focus_from_content(
                     "ready"
                     if proposal and raw.get("status") == "ready"
                     else "needs_information"
-                    if isinstance(missing, list) and any(str(value).strip() for value in missing)
+                    if any(str(value).strip() for value in missing)
                     else "unsupported"
                     if raw.get("status") == "unsupported"
                     else "none"
                 ),
                 "known_information": [
-                    str(value).strip()[:80]
-                    for value in known or []
-                    if str(value).strip()
+                    str(value).strip()[:80] for value in known if str(value).strip()
                 ][:3],
                 "missing_information": [
-                    str(value).strip()[:80]
-                    for value in missing or []
-                    if str(value).strip()
+                    str(value).strip()[:80] for value in missing if str(value).strip()
                 ][:3],
                 **({"target_item_id": target_item_id} if target_item_id else {}),
             }
@@ -166,7 +172,10 @@ def _structured_requirement_needs_candidate(content: str) -> bool:
     return any(
         isinstance(item, dict)
         and item.get("status") not in {"needs_information", "unsupported"}
-        and not any(str(value).strip() for value in item.get("missing_information") or [])
+        and not any(
+            str(value).strip()
+            for value in _as_text_list(item.get("missing_information"))
+        )
         for item in requirements
     )
 
@@ -179,7 +188,10 @@ def _structured_requirement_target_item(content: str) -> str | None:
     focus = payload.get("conversation_focus")
     if not isinstance(focus, dict):
         return None
-    for requirement in focus.get("requirements") or []:
+    requirements = focus.get("requirements")
+    if not isinstance(requirements, list):
+        return None
+    for requirement in requirements:
         if not isinstance(requirement, dict):
             continue
         target = str(requirement.get("target_item_id") or "").strip()
@@ -213,7 +225,9 @@ _KNOWN_TOOL_NAMES = frozenset(
     }
 )
 
-_TOOL_CALL_FENCE_RE = re.compile(
+# One fenced-JSON matcher shared by tool-call recovery and reply-payload
+# extraction; group 1 is the object body.
+_JSON_FENCE_RE = re.compile(
     r"```(?:json|tool_code)?\s*(\{.*?\})\s*```",
     re.DOTALL,
 )
@@ -304,7 +318,10 @@ _TYPED_ASSERTION_SCHEMA: dict[str, Any] = {
     "anyOf": [
         {
             "type": "object",
-            "properties": {"type": {"const": "returncode_equals"}, "expected": {"type": "integer"}},
+            "properties": {
+                "type": {"const": "returncode_equals"},
+                "expected": {"type": "integer"},
+            },
             "required": ["type", "expected"],
             "additionalProperties": False,
         },
@@ -340,13 +357,20 @@ _TYPED_ASSERTION_SCHEMA: dict[str, Any] = {
         },
         {
             "type": "object",
-            "properties": {"type": {"const": "json_path_equals"}, "path": {"type": "string"}, "expected": {}},
+            "properties": {
+                "type": {"const": "json_path_equals"},
+                "path": {"type": "string"},
+                "expected": {},
+            },
             "required": ["type", "path", "expected"],
             "additionalProperties": False,
         },
         {
             "type": "object",
-            "properties": {"type": {"const": "exists"}, "expected": {"type": "boolean"}},
+            "properties": {
+                "type": {"const": "exists"},
+                "expected": {"type": "boolean"},
+            },
             "required": ["type", "expected"],
             "additionalProperties": False,
         },
@@ -572,6 +596,7 @@ def _build_proposal_tools(
                     field["description"] = f"{field.get('description', '')}；{aliases}"
     return tools
 
+
 _READY_REMINDER_INSTRUCTION = (
     "你在上一則回覆宣稱 Ready 或已建立提案，但沒有成功呼叫任何提案工具。"
     "若需求資料完整，請立即呼叫 create_checklist_item（新增）或 "
@@ -689,12 +714,7 @@ def _normalize_check_steps(
                 dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
             )
             argv = recovered_parameters.get("argv")
-            has_valid_argv = (
-                isinstance(argv, list)
-                and bool(argv)
-                and all(isinstance(part, str) and part.strip() for part in argv)
-            )
-            if not has_valid_argv:
+            if not non_empty_argv(argv):
                 continue
             for key in ("path", "file_path", "target"):
                 recovered_parameters.pop(key, None)
@@ -742,7 +762,9 @@ def _normalize_check_steps(
             continue
 
         command_key = str(raw_step.get("command_key") or "").strip()
-        step_template_key = str(raw_step.get("template_key") or template_key or "").strip()
+        step_template_key = str(
+            raw_step.get("template_key") or template_key or ""
+        ).strip()
         raw_parameters = raw_step.get("parameters")
         parameters = dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
         for key in ("argv", "cwd", "timeout_seconds"):
@@ -752,11 +774,7 @@ def _normalize_check_steps(
 
         if not command_key and "argv" in parameters:
             argv = parameters.get("argv")
-            if not (
-                isinstance(argv, list)
-                and bool(argv)
-                and all(isinstance(part, str) and part.strip() for part in argv)
-            ):
+            if not non_empty_argv(argv):
                 continue
             timeout = coerce_timeout_seconds(parameters.get("timeout_seconds"))
             normalized.append(
@@ -768,9 +786,7 @@ def _normalize_check_steps(
                         and parameters.get("cwd").strip()
                         else None
                     ),
-                    timeout_seconds=(
-                        timeout or DEFAULT_SYSTEM_COMMAND_TIMEOUT_SECONDS
-                    ),
+                    timeout_seconds=(timeout or DEFAULT_SYSTEM_COMMAND_TIMEOUT_SECONDS),
                 )
             )
             continue
@@ -912,9 +928,7 @@ def _normalize_rubric_items(
             if missing_information:
                 detectable = "partial"
         if detectable == "partial" and not missing_information:
-            missing_information.append(
-                "完整的服務名稱、程式位置、連接埠或取證範圍"
-            )
+            missing_information.append("完整的服務名稱、程式位置、連接埠或取證範圍")
         missing_information = list(dict.fromkeys(missing_information))
         if strip_auto_fallback and detectable == "auto":
             fallback = None
@@ -931,12 +945,8 @@ def _normalize_rubric_items(
                 else None,
                 fallback=str(fallback) if fallback is not None else None,
                 missing_information=missing_information,
-                target_node_key=(
-                    str(raw.get("target_node_key") or "").strip() or None
-                ),
-                peer_node_key=(
-                    str(raw.get("peer_node_key") or "").strip() or None
-                ),
+                target_node_key=(str(raw.get("target_node_key") or "").strip() or None),
+                peer_node_key=(str(raw.get("peer_node_key") or "").strip() or None),
                 check_steps=check_steps,
             )
         )
@@ -1051,14 +1061,17 @@ def _duplicate_title_owner(
 def _allowed_command_text(
     template_commands: list[TeacherJudgeTemplateCommand] | None,
 ) -> str:
-    return "、".join(
-        sorted(
-            {
-                f"{command.template_key}/{command.command_key}"
-                for command in template_commands or []
-            }
+    return (
+        "、".join(
+            sorted(
+                {
+                    f"{command.template_key}/{command.command_key}"
+                    for command in template_commands or []
+                }
+            )
         )
-    ) or "（目前沒有可用 command）"
+        or "（目前沒有可用 command）"
+    )
 
 
 _PARAMETER_GAP_FIELD_HINTS: dict[str, str] = {
@@ -1100,11 +1113,8 @@ def _proposal_candidate_rejection(
             "這份清單不是提案限制；若要使用其他唯讀診斷工具，請改用"
             " system.run_command，提供單一非空 argv list，並補齊必要執行參數。"
         )
-    if (
-        capability_declared
-        and _manual_candidates_needing_capability_review(
-            [normalized], [raw], template_commands
-        )
+    if capability_declared and _manual_candidates_needing_capability_review(
+        [normalized], [raw], template_commands
     ):
         return (
             f"「{normalized.title}」被標成 manual 且沒有列出缺口，"
@@ -1153,10 +1163,28 @@ def _proposal_item_value(item: dict[str, Any]) -> dict[str, Any]:
     return {key: item.get(key) for key in _PROPOSAL_COMPARE_FIELDS}
 
 
-def _proposal_status_claims_ready(status: Any, reply: str) -> bool:
+def _proposal_status_claims_ready(status: Any) -> bool:
     """Use only the structured machine field; teacher-facing prose is not control flow."""
-    del reply
     return str(status or "").strip().lower() == "ready"
+
+
+def _raw_items_by_id(raw_items: Any) -> dict[str, dict[str, Any]]:
+    """Index model-emitted raw items by id.
+
+    Missing ids fall back to ``item-<n>`` exactly like
+    ``_normalize_rubric_items`` so raw rows line up with normalized items.
+    """
+    if not isinstance(raw_items, list):
+        return {}
+    return {
+        str(raw.get("id") or f"item-{index + 1}"): raw
+        for index, raw in enumerate(raw_items)
+        if isinstance(raw, dict)
+    }
+
+
+def _raw_detectable(raw: dict[str, Any] | None) -> str:
+    return str((raw or {}).get("detectable") or "").strip().lower()
 
 
 def _invalid_auto_item_titles(
@@ -1164,24 +1192,12 @@ def _invalid_auto_item_titles(
     raw_items: Any,
 ) -> list[str]:
     """Return model-declared auto items rejected by command/schema validation."""
-    raw_detectability_by_id = (
-        {
-            str(raw.get("id") or f"item-{index + 1}"): str(
-                raw.get("detectable") or ""
-            )
-            .strip()
-            .lower()
-            for index, raw in enumerate(raw_items)
-            if isinstance(raw, dict)
-        }
-        if isinstance(raw_items, list)
-        else {}
-    )
+    raw_by_id = _raw_items_by_id(raw_items)
     return [
         item.title
         for item in normalized_items
         if item.detectable == "manual"
-        and raw_detectability_by_id.get(item.id) == "auto"
+        and _raw_detectable(raw_by_id.get(item.id)) == "auto"
     ]
 
 
@@ -1196,25 +1212,14 @@ def _manual_candidates_needing_capability_review(
         for command in template_commands or []
     ):
         return []
-    raw_by_id = (
-        {
-            str(raw.get("id") or f"item-{index + 1}"): raw
-            for index, raw in enumerate(raw_items)
-            if isinstance(raw, dict)
-        }
-        if isinstance(raw_items, list)
-        else {}
-    )
+    raw_by_id = _raw_items_by_id(raw_items)
     return [
         item.title
         for item in normalized_items
         if item.detectable == "manual"
         and not item.check_steps
         and not item.missing_information
-        and str(raw_by_id.get(item.id, {}).get("detectable") or "")
-        .strip()
-        .lower()
-        == "manual"
+        and _raw_detectable(raw_by_id.get(item.id)) == "manual"
     ]
 
 
@@ -1229,27 +1234,28 @@ def _recovered_catalog_item_titles(
     ``template_key`` is documented prompt behavior (後端會依唯一的
     command_key 補齊) and must not replace the model's teacher-facing reply.
     """
-    raw_by_id = (
-        {
-            str(raw.get("id") or f"item-{index + 1}"): raw
-            for index, raw in enumerate(raw_items)
-            if isinstance(raw, dict)
-        }
-        if isinstance(raw_items, list)
-        else {}
-    )
+    raw_by_id = _raw_items_by_id(raw_items)
     recovered: list[str] = []
     for item in normalized_items:
         if item.detectable != "auto" or not item.check_steps:
             continue
         raw = raw_by_id.get(item.id, {})
+        raw_steps = raw.get("check_steps")
+        # Flat argv / typed collector steps carry no command_key on either
+        # side (raw "" vs normalized None); only real keys can be recovered.
         raw_command_keys = {
-            str(step.get("command_key") or "").strip()
-            for step in raw.get("check_steps") or []
-            if isinstance(step, dict)
+            key
+            for key in (
+                str(step.get("command_key") or "").strip()
+                for step in (raw_steps if isinstance(raw_steps, list) else [])
+                if isinstance(step, dict)
+            )
+            if key
         }
-        normalized_command_keys = {step.command_key for step in item.check_steps}
-        if not normalized_command_keys.issubset(raw_command_keys):
+        normalized_command_keys = {
+            step.command_key for step in item.check_steps if step.command_key
+        }
+        if normalized_command_keys - raw_command_keys:
             recovered.append(item.title)
     return recovered
 
@@ -1436,20 +1442,24 @@ def _proposal_unavailable_reply(
                     str(raw_step.get("command_key") or "").strip(),
                 )
                 if reference not in valid_command_keys:
-                    invalid_references.append("/".join(value or "未提供" for value in reference))
+                    invalid_references.append(
+                        "/".join(value or "未提供" for value in reference)
+                    )
         invalid_details = "、".join(f"「{title}」" for title in invalid_auto_items)
         reason = "AI 沒有提供可轉成單一受控指令的完整執行參數"
         if invalid_references:
-            reason += "（原始工具名稱：" + "、".join(
-                dict.fromkeys(invalid_references)
-            ) + "）"
+            reason += (
+                "（原始工具名稱：" + "、".join(dict.fromkeys(invalid_references)) + "）"
+            )
         return (
             f"這次未建立提案：{invalid_details}缺少可執行的檢查內容；{reason}。"
             "已確認工具清單只是優先建議，不會限制提案；這次是 AI 沒有提供完整 argv，"
             "不是老師需要補充答案。請重新產生；若持續發生，請由管理員檢查 AI 輸出。"
         )
 
-    unsupported = [item.title for item in normalized_items if item.detectable == "manual"]
+    unsupported = [
+        item.title for item in normalized_items if item.detectable == "manual"
+    ]
     if unsupported:
         return (
             "這次仍未建立提案：AI 重新核查後，仍未替"
@@ -1597,6 +1607,9 @@ def _merge_vllm_metrics(first: VLLMMetrics, second: VLLMMetrics) -> VLLMMetrics:
         "tokens_per_second": completion_tokens / elapsed_seconds
         if elapsed_seconds > 0
         else 0.0,
+        "usage_reported": bool(first.get("usage_reported", True))
+        and bool(second.get("usage_reported", False)),
+        "response_model": second.get("response_model") or first.get("response_model"),
     }
 
 
@@ -1616,7 +1629,9 @@ async def _call_vllm_message(
         )
 
         elapsed = max(perf_counter() - started, 0.0)
-        usage = data.get("usage") or {}
+        raw_usage = data.get("usage")
+        usage_reported = isinstance(raw_usage, dict)
+        usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         completion_tokens = int(usage.get("completion_tokens") or 0)
         total_tokens = int(
@@ -1647,13 +1662,13 @@ async def _call_vllm_message(
             "total_tokens": total_tokens,
             "elapsed_seconds": round(elapsed, 3),
             "tokens_per_second": round(tps, 2),
+            "usage_reported": usage_reported,
+            "response_model": str(data.get("model") or "")[:255] or None,
         }
         return message, cast("VLLMMetrics", metrics)
     except httpx.TimeoutException as exc:
         logger.error(f"vLLM API timeout after {timeout}s")
-        raise HTTPException(
-            status_code=504, detail=t("service.vllm_timeout")
-        ) from exc
+        raise HTTPException(status_code=504, detail=t("service.vllm_timeout")) from exc
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         logger.error(f"vLLM API returned status {status}")
@@ -1766,7 +1781,7 @@ def _extract_fenced_tool_calls(content: str) -> tuple[str, list[dict[str, Any]]]
         calls.append(_fenced_tool_call(name, arguments))
         return ""
 
-    cleaned = _TOOL_CALL_FENCE_RE.sub(_from_fence, content)
+    cleaned = _JSON_FENCE_RE.sub(_from_fence, content)
     cleaned = _TOOL_CALL_MARKER_RE.sub(_from_marker, cleaned)
     # Broken ```json {"tool_call" ...} blocks that failed to parse are still
     # tool-call noise, not teacher-facing prose.
@@ -1781,10 +1796,6 @@ _PROPOSAL_STATUS_VALUES = {"ready", "needs_information", "unsupported", "none"}
 
 _REPLY_PAYLOAD_KEYS_RE = re.compile(
     r'"(?:reply|proposal_status|conversation_focus)"\s*:'
-)
-_REPLY_PAYLOAD_FENCE_RE = re.compile(
-    r"```(?:json|tool_code)?\s*(\{.*?\})\s*```",
-    re.DOTALL,
 )
 
 
@@ -1820,7 +1831,7 @@ def _reply_payload_object(content: str) -> tuple[str, dict[str, Any] | None]:
         return "", parsed
     payload: dict[str, Any] | None = None
     leftover = text
-    for match in _REPLY_PAYLOAD_FENCE_RE.finditer(text):
+    for match in _JSON_FENCE_RE.finditer(text):
         try:
             parsed = json.loads(match.group(1))
         except (json.JSONDecodeError, TypeError):
@@ -1843,12 +1854,13 @@ def _reply_payload_object(content: str) -> tuple[str, dict[str, Any] | None]:
             index = brace + 1
             continue
         if _is_reply_payload_object(parsed):
-            leftover = (text[:brace] + text[brace + end :]).strip()
+            # raw_decode returns an absolute end index, not a length.
+            leftover = (text[:brace] + text[end:]).strip()
             return leftover, parsed
         index = end
     # Unparseable fence bodies still carrying internal payload keys are
     # contract noise, not teacher-facing prose; drop them as a safety net.
-    for match in _REPLY_PAYLOAD_FENCE_RE.finditer(text):
+    for match in _JSON_FENCE_RE.finditer(text):
         if _REPLY_PAYLOAD_KEYS_RE.search(match.group(1)):
             leftover = leftover.replace(match.group(0), "")
     return leftover.strip(), None
@@ -1867,7 +1879,10 @@ def _parse_chat_reply_payload(content: str) -> tuple[str, str | None]:
         and raw_status.strip().lower() in _PROPOSAL_STATUS_VALUES
         else None
     )
-    reply = str(payload.get("reply") or "").strip() or leftover or text
+    # Once a payload is recognized never fall back to the raw JSON text: that
+    # would leak proposal_status / conversation_focus to the teacher. The
+    # caller substitutes a neutral sentence when the reply ends up empty.
+    reply = str(payload.get("reply") or "").strip() or leftover
     return reply, status
 
 
@@ -2104,11 +2119,9 @@ def _execute_checklist_tool(
             template_commands=template_commands,
             strip_auto_fallback=False,
         )
-        if (
-            current_normalized
-            and _proposal_item_value(current_normalized[0].model_dump())
-            == _proposal_item_value(candidate.model_dump())
-        ):
+        if current_normalized and _proposal_item_value(
+            current_normalized[0].model_dump()
+        ) == _proposal_item_value(candidate.model_dump()):
             tool_calls.append(
                 {
                     "tool": name,
@@ -2227,6 +2240,8 @@ async def _run_proposal_tool_loop(
         "total_tokens": 0,
         "elapsed_seconds": 0.0,
         "tokens_per_second": 0.0,
+        "usage_reported": True,
+        "response_model": None,
     }
 
     max_rounds = max(int(settings.VLLM_CHAT_MAX_TOOL_ROUNDS), 1)
@@ -2469,9 +2484,7 @@ async def summarize_conversation(
         },
         settings.VLLM_ENABLE_THINKING,
     )
-    content, metrics = await _call_vllm(
-        payload, timeout=float(settings.VLLM_TIMEOUT)
-    )
+    content, metrics = await _call_vllm(payload, timeout=float(settings.VLLM_TIMEOUT))
     return content.strip(), metrics
 
 
@@ -2486,7 +2499,7 @@ async def chat_with_rubric(
     machine_entries: list[dict[str, Any]] | None = None,
     attachment_context: str | None = None,
     analysis_revision: int | None = None,
-    rubric_available: bool | None = None,
+    rubric_available: bool = False,
 ) -> TeacherJudgeChatResult:
     """
     Multi-turn chat with a request-scoped rubric exposed through tools.
@@ -2499,8 +2512,6 @@ async def chat_with_rubric(
     if not settings.VLLM_MODEL_NAME:
         raise HTTPException(status_code=503, detail=t("service.model_not_configured"))
 
-    if rubric_available is None:
-        rubric_available = False
     situation = SITUATION_REFINE if is_refine else SITUATION_NORMAL
     has_attachments = bool(
         attachment_context and attachment_context != "（本次訊息沒有附件）"
@@ -2613,21 +2624,33 @@ async def chat_with_rubric(
         for entry in staged_ops
     ] or ([] if is_refine else None)
 
+    # A recognized payload with an empty reply must not become an empty chat
+    # bubble; the branches below can still override this neutral sentence.
+    if not reply_text:
+        if staged_ops:
+            staged_titles = "、".join(
+                f"「{title}」"
+                for title in dict.fromkeys(entry["item"].title for entry in staged_ops)
+            )
+            reply_text = (
+                f"我已把{staged_titles}整理成提案。請先查看提案內容，確認後再套用。"
+            )
+        elif is_refine:
+            reply_text = "檢查完畢，檢查表目前狀態良好。"
+        else:
+            reply_text = _proposal_unavailable_reply([], [], template_commands)
+
     recovered_titles = list(
         dict.fromkeys(
-            [
-                *_recovered_catalog_item_titles(
-                    [entry["item"] for entry in staged_ops],
-                    [entry["raw"] for entry in staged_ops],
-                ),
-            ]
+            _recovered_catalog_item_titles(
+                [entry["item"] for entry in staged_ops],
+                [entry["raw"] for entry in staged_ops],
+            )
         )
     )
     if not is_refine and updated_items is not None and recovered_titles:
         titles = "、".join(f"「{title}」" for title in recovered_titles)
-        reply_text = (
-            f"我已把{titles}整理成提案。請先查看提案內容，確認後再套用。"
-        )
+        reply_text = f"我已把{titles}整理成提案。請先查看提案內容，確認後再套用。"
 
     # Partial success: when some proposals staged but others were rejected,
     # the teacher must see why; the model's own reply often claims full success.
@@ -2649,7 +2672,7 @@ async def chat_with_rubric(
     # without any server-side staged/rejected outcome is false by definition,
     # so the teacher reply is replaced with the actual outcome explanation.
     claims_ready = _proposal_status_claims_ready(
-        proposal_status, reply_text
+        proposal_status
     ) or _reply_claims_created(reply_text)
     if not is_refine and updated_items is None and claims_ready:
         logger.warning(
@@ -2665,9 +2688,7 @@ async def chat_with_rubric(
             logger.warning(
                 "Teacher Judge rejected %s proposal candidates after validation: %s",
                 len(rejected_ops),
-                "; ".join(
-                    f"{entry[0].title}: {entry[2]}" for entry in rejected_ops
-                ),
+                "; ".join(f"{entry[0].title}: {entry[2]}" for entry in rejected_ops),
             )
             reply_text = _proposal_unavailable_reply(
                 [entry[0] for entry in rejected_ops],
@@ -2697,10 +2718,6 @@ async def chat_with_rubric(
 
 _ITEMWISE_MAX_ITEMS = 50
 _ITEMWISE_CONCURRENCY = 2
-# P3: fixed chunk size for batching multiple source items into one AI request.
-# Currently used as a pure helper + contract; orchestration still runs per-item
-# to preserve isolation, chunked execution lands in P3-b.
-_ITEMWISE_CHUNK_SIZE = 5
 
 
 def _parse_attachment_extraction(
@@ -2797,7 +2814,9 @@ async def analyze_requirement_item(
     rubric_available: bool = False,
 ) -> TeacherJudgeChatResult:
     """Phase B core: reuse the single-requirement chat check for one source item."""
-    parts = [f"請核查以下單一檢查需求：{str(source.get('title') or '未命名項目').strip()}"]
+    parts = [
+        f"請核查以下單一檢查需求：{str(source.get('title') or '未命名項目').strip()}"
+    ]
     if str(source.get("description") or "").strip():
         parts.append(f"說明：{str(source['description']).strip()}")
     if str(source.get("evidence_hint") or "").strip():
@@ -2912,7 +2931,9 @@ def _itemwise_reply(item_results: list[dict[str, Any]], total: int) -> str:
             lines.append(f"{label}會收集檢查結果供你自行判斷，請在提案清單確認後套用。")
         elif status == "needs_information":
             missing = result["missing_information"]
-            gap = "、".join(missing) if missing else (result["detail"] or "缺少必要資訊")
+            gap = (
+                "、".join(missing) if missing else (result["detail"] or "缺少必要資訊")
+            )
             lines.append(f"{label}還缺少資訊：{gap}")
         elif status == "unsupported":
             lines.append(
@@ -2995,12 +3016,6 @@ async def analyze_attachments_itemwise(
         (pair[0] for pair in pairs),
         key=lambda result: result["source_index"],
     )
-    if len(item_results) != len(sources):
-        logger.warning(
-            "Teacher Judge itemwise count mismatch: %s sources, %s results",
-            len(sources),
-            len(item_results),
-        )
     for _, item_metrics in pairs:
         if item_metrics:
             metrics = _merge_vllm_metrics(metrics, item_metrics)

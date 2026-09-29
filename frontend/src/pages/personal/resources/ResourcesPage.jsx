@@ -10,8 +10,10 @@ import PowerMenu from "../../../components/PowerMenu/PowerMenu";
 import TemplateConvertDialog from "../../../components/TemplateConvertDialog/TemplateConvertDialog";
 import useDialogPresence from "../../../hooks/useDialogPresence";
 import SharedEmptyState from "../../../components/EmptyState/EmptyState";
+import ErrorState from "../../../components/ErrorState/ErrorState";
 import LoadingState from "../../../components/LoadingState/LoadingState";
 import { ResourcesService } from "../../../services/resources";
+import { VmRequestsService } from "../../../services/vmRequests";
 import {
   PENDING_POLL_INTERVAL,
   cancelVmRequest,
@@ -22,17 +24,20 @@ import { useToast } from "../../../hooks/useToast";
 import useAutoRefresh from "../../../hooks/useAutoRefresh";
 import TerminalDialog from "./TerminalDialog";
 import VncDialog from "./VncDialog";
-import QuotaUsageBar from "../../../components/Teaching/QuotaUsageBar";
+import { BOOTING_POLL_INTERVAL, LIVE_STATUSES, isRowBackgroundClick, machineSpecLabel, resourceRowKey, statusAfterAction } from "./resourceRows";
+import QuotaUsageBar from "../../../components/QuotaUsageBar/QuotaUsageBar";
 import PageHeader from "../../../components/PageHeader/PageHeader";
 import { useConfirm } from "../../../components/ConfirmDialog/ConfirmProvider";
 import { QuickPracticeService } from "../../../services/quickPractice";
 import { buildEnvironmentGroups, groupedResourceKeys } from "../../../utils/environmentGroups";
 import * as fmt from "../../../utils/formatDate";
+import { canTeachUser } from "../../../utils/roles";
 
 /* ── Constants ── */
 const STATUS_MAP = {
   scheduled:    { labelKey: "ResourcesPage.statusScheduled",     color: "info",    icon: "event"          },
   provisioning: { labelKey: "ResourcesPage.statusProvisioning",  color: "info",    icon: "settings"       },
+  starting:     { labelKey: "ResourcesPage.statusStarting",      color: "info",    icon: "hourglass_top"  },
   partial_failed:{ labelKey: "ResourcesPage.statusPartialFailed",color: "danger",  icon: "error_outline"  },
   running:      { labelKey: "ResourcesPage.statusRunning",       color: "success", icon: "play_circle"    },
   stopping:     { labelKey: "ResourcesPage.statusStopping",      color: "muted",   icon: "power_settings_new" },
@@ -41,6 +46,8 @@ const STATUS_MAP = {
   paused:       { labelKey: "ResourcesPage.statusPaused",        color: "muted",   icon: "pause_circle"   },
   deleting:     { labelKey: "ResourcesPage.statusDeleting",      color: "danger",  icon: "hourglass_empty"},
   failed:       { labelKey: "ResourcesPage.statusFailed",        color: "danger",  icon: "error_outline"  },
+  /* 前端衍生：failed 佔位列已有 vmid ＝ 機器建好了、是之後開機失敗 */
+  start_failed: { labelKey: "ResourcesPage.statusStartFailed",   color: "danger",  icon: "error_outline"  },
   deleted:      { labelKey: "ResourcesPage.statusDeleted",       color: "danger",  icon: "delete_forever" },
   unknown:      { labelKey: "ResourcesPage.statusUnknown",       color: "muted",   icon: "help_outline"   },
 };
@@ -63,11 +70,6 @@ function formatDatetime(isoStr) {
 }
 
 /* ── Primitive sub-components ── */
-/* reboot / reset 之後機器仍是開著的；原本一律當成 stopped 會讓列上的狀態說謊。 */
-function statusAfterAction(action) {
-  return action === "stop" || action === "shutdown" ? "stopped" : "running";
-}
-
 function StatusBadge({ status }) {
   const { t } = useTranslation("personal");
   const s = STATUS_MAP[status] ?? { label: status, color: "muted", icon: "help_outline" };
@@ -78,7 +80,6 @@ function StatusBadge({ status }) {
   );
 }
 
-/* ── Confirm Modal ── */
 /* ── Creating placeholder row ── */
 
 /** 依申請階段決定 placeholder 的狀態顯示（開通中 / 超時 / 失敗…） */
@@ -157,7 +158,7 @@ function CreatingRow({ request, onCancelled }) {
       <td className={styles.td}><div className={styles.envPrimary}>{t("CreatingRow.resourceRequestLabel")}</div><div className={styles.envSub}>{t("CreatingRow.creating")}</div></td>
       <td className={styles.td}>
         <span className={`${styles.badge} ${styles[`badge_${display.color}`]} ${styles.creatingBadge}`}>
-          <span className={display.spin ? styles.spin : styles.badgeIcon}><MIcon name={display.spin ? "autorenew" : "error_outline"} size={12} /></span>{display.label}
+          <span className={styles.badgeIcon}><MIcon name={display.spin ? "autorenew" : "error_outline"} size={12} spin={display.spin} /></span>{display.label}
         </span>
       </td>
       <td className={styles.td}><span className={styles.muted}>N/A</span></td>
@@ -172,24 +173,13 @@ function CreatingRow({ request, onCancelled }) {
   </>;
 }
 
-const LIVE_STATUSES = new Set(["running", "stopped", "paused"]);
-
-function resourceRowKey(resource, index) {
-  const parts = [
-    resource.type || "resource",
-    resource.node || "unknown-node",
-    resource.vmid ?? resource.request_id ?? resource.name ?? "unknown",
-  ];
-  return `${parts.join(":")}:${index}`;
-}
-
 /* ── Resource row ── */
-function ResourceRow({ resource, onUpdated, onDeleted }) {
+function ResourceRow({ resource, onUpdated, onDeleted, onRefresh }) {
   const { t } = useTranslation("personal");
   const navigate = useNavigate();
   const { user } = useAuth();
   /* VMID 是系統內部編號，僅管理員／老師看得到 */
-  const showVmid = user?.is_superuser || user?.role === "admin" || user?.role === "teacher";
+  const showVmid = canTeachUser(user);
   /* 轉成範本只給老師／管理員，且只有自己能管理的個人機器 */
   const canConvertTemplate = showVmid
     && resource.can_manage !== false
@@ -201,16 +191,13 @@ function ResourceRow({ resource, onUpdated, onDeleted }) {
   const [actionLoading, setActionLoading] = useState(null);
   const [deleting, setDeleting]            = useState(false);
   const [menuOpen, setMenuOpen]            = useState(false);
-  const [menuClosing, setMenuClosing]      = useState(false);
+  /* 選單先播 130ms 離場動畫再卸載 */
+  const menu = useDialogPresence(menuOpen, 130);
   const [consoleOpen, setConsoleOpen]      = useState(false);
   const [convertOpen, setConvertOpen]      = useState(false);
   const convertDialog = useDialogPresence(convertOpen);
   const menuBtnRef = useRef(null);
-
-  function closeMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
+  const closeMenu = () => setMenuOpen(false);
 
   const type    = TYPE_MAP[resource.type] ?? { label: resource.type, icon: "computer" };
   const isLxc   = resource.type === "lxc";
@@ -252,10 +239,55 @@ function ResourceRow({ resource, onUpdated, onDeleted }) {
     }
   }
 
+  /* 失敗的佔位列（已核准但 Proxmox 上看不到機器）：可重試或刪除。
+     沒有 vmid＝clone 失敗，重試會重新建立；有 vmid＝機器建好了、之後開機失敗，重試只會重新開機。
+     操作完重新抓列表，不能用 vmid 比對更新（會連帶命中其他 vmid 為 null 的列） */
+  const isFailedPlaceholder = Boolean(
+    resource.is_placeholder && resource.status === "failed" && resource.request_id,
+  );
+  const isStartFailure = isFailedPlaceholder && Boolean(resource.vmid);
+  const displayStatus = isStartFailure ? "start_failed" : resource.status;
+  const [failedAction, setFailedAction] = useState(null);
+
+  async function handleRebuild() {
+    setFailedAction("rebuild");
+    try {
+      await VmRequestsService.retry(resource.request_id);
+      toast.success(t(isStartFailure ? "ResourceRow.restartQueued" : "ResourceRow.rebuildQueued", { name: resource.name }));
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.message ?? t("Error.generic", { ns: "common" }));
+    } finally {
+      setFailedAction(null);
+    }
+  }
+
+  async function handleDiscardFailed() {
+    const ok = await confirm({
+      title: t("ResourceRow.confirmDeleteTitle"),
+      message: t("ResourceRow.confirmDeleteFailedDesc", { name: resource.name }),
+      confirmText: t("ResourceRow.confirmDeleteLabel"),
+      danger: true,
+    });
+    if (!ok) return;
+    setFailedAction("delete");
+    try {
+      /* 沒有 vmid：取消這張申請即可；少數已分到 vmid 的走資源刪除（後端會清掉 Proxmox 上不存在的孤兒紀錄） */
+      if (resource.vmid) await ResourcesService.delete(resource.vmid);
+      else await cancelVmRequest(resource.request_id);
+      toast.success(t("ResourceRow.failedDeleted", { name: resource.name }));
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.message ?? t("ResourceRow.deleteFailed"));
+    } finally {
+      setFailedAction(null);
+    }
+  }
+
   const canOpenDetail = resource.vmid > 0;
   /* 整列可點進詳情；列內按鈕／連結／選單的點擊不觸發導頁 */
   const openDetail = (event) => {
-    if (event.target.closest("button, a, input, select, label")) return;
+    if (!isRowBackgroundClick(event)) return;
     navigate(`/my-resources/${resource.vmid}`);
   };
 
@@ -285,7 +317,7 @@ function ResourceRow({ resource, onUpdated, onDeleted }) {
         />
       </td>
       <td className={styles.td}><div className={styles.envPrimary}>{resource.environment_type || "Custom"}</div><div className={styles.envSub}>{resource.os_info || "—"}</div></td>
-      <td className={styles.td}><StatusBadge status={resource.status} /></td>
+      <td className={styles.td}><StatusBadge status={displayStatus} /></td>
       <td className={styles.td}>
         <span className={styles.mono}>{resource.ip_address ?? "N/A"}</span>
         {/* 反向代理發布的對外網址：和環境機器列一樣直接可點，不必進詳情頁 */}
@@ -299,17 +331,47 @@ function ResourceRow({ resource, onUpdated, onDeleted }) {
           </div>
         )}
       </td>
-      <td className={styles.td}>{resource.expiry_date ? formatDate(resource.expiry_date) : <span className={styles.cardPeriodUnlimited}>{t("ResourceRow.unlimited")}</span>}</td>
+      {/* 期限：有到期日照舊；沒有到期日但有申請的使用時段，顯示時段結束日（已結束標紅），不再誤寫「無期限」 */}
+      <td className={styles.td}>
+        {resource.expiry_date ? formatDate(resource.expiry_date)
+          : resource.window_end_at ? (
+            <span className={resource.start_blocked_reason === "window_ended" ? styles.periodEnded : undefined}>
+              {formatDate(resource.window_end_at)}
+              {resource.start_blocked_reason === "window_ended" && <small>{t("ResourceRow.windowEnded")}</small>}
+            </span>
+          ) : <span className={styles.cardPeriodUnlimited}>{t("ResourceRow.unlimited")}</span>}
+      </td>
       <td className={styles.td}>{resource.node ?? "—"}</td>
       <td className={styles.td}>
         {isLive ? <div className={styles.rowActions}>
-          <button type="button" className={styles.terminalBtn} disabled={resource.status !== "running"} onClick={() => setConsoleOpen(true)} data-guide="resource-console">
+          <button type="button" className={styles.terminalBtn} disabled={resource.status !== "running"} title={resource.status === "starting" ? t("ResourceRow.consoleBootingTitle") : undefined} onClick={() => setConsoleOpen(true)} data-guide="resource-console">
             <MIcon name={isLxc ? "terminal" : "desktop_windows"} size={14} />{isLxc ? t("ResourceRow.terminal") : t("ResourceRow.console")}
           </button>
-          {actionLoading && <MIcon name="hourglass_empty" size={16} />}
+          {actionLoading && <MIcon name="hourglass_empty" size={16} spin />}
           <div className={styles.menuWrap}>
-            {menuOpen && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onDeleteClick={resource.can_delete === false ? undefined : () => { closeMenu(); handleDelete(); }} onConvertTemplate={canConvertTemplate ? () => { closeMenu(); setConvertOpen(true); } : undefined} onClose={closeMenu} anchorRef={menuBtnRef} closing={menuClosing} />}
-            <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)} title={t("ResourceRow.moreActions")} aria-label={t("ResourceRow.moreActions")} data-guide="resource-more-actions"><MIcon name="more_vert" size={18} /></button>
+            {menu.open && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onDeleteClick={resource.can_delete === false ? undefined : () => { closeMenu(); handleDelete(); }} onConvertTemplate={canConvertTemplate ? () => { closeMenu(); setConvertOpen(true); } : undefined} onClose={closeMenu} anchorRef={menuBtnRef} closing={menu.closing} />}
+            <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} onClick={() => setMenuOpen((value) => !value)} title={t("ResourceRow.moreActions")} aria-label={t("ResourceRow.moreActions")} data-guide="resource-more-actions"><MIcon name="more_vert" size={18} /></button>
+          </div>
+        </div> : isFailedPlaceholder ? <div className={styles.rowActions}>
+          {/* 動作欄只有 160px，兩顆文字按鈕會擠出欄外：收進與一般列同位置的 ⋮ 選單 */}
+          {failedAction && <MIcon name="hourglass_empty" size={16} spin />}
+          <div className={styles.menuWrap}>
+            {menu.open && <PowerMenu
+              title={t("ResourceRow.moreActions")}
+              items={[{
+                action: "retry",
+                label: t(isStartFailure ? "ResourceRow.restart" : "ResourceRow.rebuild"),
+                icon: isStartFailure ? "power_settings_new" : "autorenew",
+                tone: "ok",
+              }]}
+              actionLoading={failedAction}
+              onControl={handleRebuild}
+              onDeleteClick={resource.can_delete === false ? undefined : () => { closeMenu(); handleDiscardFailed(); }}
+              onClose={closeMenu}
+              anchorRef={menuBtnRef}
+              closing={menu.closing}
+            />}
+            <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} disabled={failedAction !== null} onClick={() => setMenuOpen((value) => !value)} title={t("ResourceRow.moreActions")} aria-label={t("ResourceRow.moreActions")}><MIcon name="more_vert" size={18} /></button>
           </div>
         </div> : <span className={styles.deletedNote}>{STATUS_MAP[resource.status]?.labelKey ? t(STATUS_MAP[resource.status].labelKey) : resource.status}</span>}
       </td>
@@ -320,13 +382,6 @@ function ResourceRow({ resource, onUpdated, onDeleted }) {
   </>;
 }
 
-function machineSpecLabel(machine) {
-  const parts = [];
-  if (machine.cpu) parts.push(`${machine.cpu} CPU`);
-  if (machine.memoryBytes) parts.push(`${Math.round(machine.memoryBytes / 1024 ** 3)} GB`);
-  return parts.join(" · ");
-}
-
 function EnvironmentMachineRow({ machine, groupStatus, onUpdated }) {
   const { t } = useTranslation("personal");
   const toast = useToast();
@@ -335,7 +390,7 @@ function EnvironmentMachineRow({ machine, groupStatus, onUpdated }) {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuClosing, setMenuClosing] = useState(false);
+  const menu = useDialogPresence(menuOpen, 130);
   const menuBtnRef = useRef(null);
   const resource = machine.resource;
   const isLxc = machine.type === "lxc";
@@ -345,11 +400,6 @@ function EnvironmentMachineRow({ machine, groupStatus, onUpdated }) {
   );
   const canOpen = canControl && resource.status === "running";
   const specLabel = machineSpecLabel(machine);
-
-  function closeMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
 
   // 與單機列同一組電源控制；環境內的機器差別只在不能單台刪除。
   async function handleControl(action) {
@@ -369,7 +419,7 @@ function EnvironmentMachineRow({ machine, groupStatus, onUpdated }) {
   const canOpenDetail = resource?.vmid > 0;
   /* 整列可點進詳情；列內按鈕／連結／選單的點擊不觸發導頁 */
   const openDetail = (event) => {
-    if (event.target.closest("button, a, input, select, label")) return;
+    if (!isRowBackgroundClick(event)) return;
     navigate(`/my-resources/${resource.vmid}`);
   };
 
@@ -390,11 +440,11 @@ function EnvironmentMachineRow({ machine, groupStatus, onUpdated }) {
     <td className={styles.td}><span className={styles.muted}>{t("EnvironmentMachineRow.managedByEnvironment")}</span></td>
     <td className={styles.td}>{machine.node}</td>
     <td className={styles.td}><div className={styles.rowActions}>
-      <button type="button" className={styles.terminalBtn} disabled={!canOpen} title={canOpen ? (isLxc ? t("EnvironmentMachineRow.terminal") : t("EnvironmentMachineRow.console")) : t("EnvironmentMachineRow.notReadyTitle")} onClick={() => setConsoleOpen(true)} data-guide="resource-console"><MIcon name={isLxc ? "terminal" : "desktop_windows"} size={14} />{isLxc ? t("EnvironmentMachineRow.terminal") : t("EnvironmentMachineRow.console")}</button>
-      {actionLoading && <MIcon name="hourglass_empty" size={16} />}
+      <button type="button" className={styles.terminalBtn} disabled={!canOpen} title={canOpen ? (isLxc ? t("EnvironmentMachineRow.terminal") : t("EnvironmentMachineRow.console")) : resource?.status === "starting" ? t("ResourceRow.consoleBootingTitle") : t("EnvironmentMachineRow.notReadyTitle")} onClick={() => setConsoleOpen(true)} data-guide="resource-console"><MIcon name={isLxc ? "terminal" : "desktop_windows"} size={14} />{isLxc ? t("EnvironmentMachineRow.terminal") : t("EnvironmentMachineRow.console")}</button>
+      {actionLoading && <MIcon name="hourglass_empty" size={16} spin />}
       {canControl && <div className={styles.menuWrap}>
-        {menuOpen && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onClose={closeMenu} anchorRef={menuBtnRef} closing={menuClosing} />}
-        <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`} onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)} title={t("ResourceRow.moreActions")} aria-label={t("ResourceRow.moreActions")} data-guide="resource-more-actions"><MIcon name="more_vert" size={18} /></button>
+        {menu.open && <PowerMenu resource={resource} actionLoading={actionLoading} onControl={handleControl} onClose={() => setMenuOpen(false)} anchorRef={menuBtnRef} closing={menu.closing} />}
+        <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} onClick={() => setMenuOpen((value) => !value)} title={t("ResourceRow.moreActions")} aria-label={t("ResourceRow.moreActions")} data-guide="resource-more-actions"><MIcon name="more_vert" size={18} /></button>
       </div>}
     </div></td>
     </tr>
@@ -410,14 +460,10 @@ function EnvironmentGroupRows({ group, onUpdated, onEnded }) {
   const [ending, setEnding] = useState(false);
   const [groupAction, setGroupAction] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuClosing, setMenuClosing] = useState(false);
+  const menu = useDialogPresence(menuOpen, 130);
   const menuBtnRef = useRef(null);
   const toast = useToast();
 
-  function closeGroupMenu() {
-    setMenuClosing(true);
-    setTimeout(() => { setMenuOpen(false); setMenuClosing(false); }, 130);
-  }
   const canEnd = group.kind === "quick_practice" && !["reclaiming", "reclaimed"].includes(group.status);
   const controllableVmids = group.machines
     .filter((machine) => machine.resource?.vmid && machine.resource.can_control !== false)
@@ -428,8 +474,12 @@ function EnvironmentGroupRows({ group, onUpdated, onEnded }) {
     if (!controllableVmids.length || groupAction) return;
     setGroupAction(action);
     try {
-      await ResourcesService.batchAction(controllableVmids, action);
-      toast.success(t("EnvironmentGroupRows.groupCommandSent"));
+      const result = await ResourcesService.batchActionInChunks(controllableVmids, action);
+      if (result.failed) {
+        toast.error(t("EnvironmentGroupRows.groupCommandPartial", { succeeded: result.succeeded, failed: result.failed }));
+      } else {
+        toast.success(t("EnvironmentGroupRows.groupCommandSent"));
+      }
       onEnded?.();
     } catch (error) {
       toast.error(error?.message ?? t("EnvironmentGroupRows.groupCommandFailed"));
@@ -463,7 +513,7 @@ function EnvironmentGroupRows({ group, onUpdated, onEnded }) {
       className={`${styles.tr} ${styles.environmentGroupRow}`}
       onClick={(event) => {
         /* 整列都可以開合，但列內的按鈕（結束練習、名稱區的 toggle）各自處理自己的點擊 */
-        if (event.target.closest("button")) return;
+        if (!isRowBackgroundClick(event, "button")) return;
         setExpanded((value) => !value);
       }}
     >
@@ -480,9 +530,9 @@ function EnvironmentGroupRows({ group, onUpdated, onEnded }) {
       <td className={styles.td}><strong className={styles.environmentTiming}>{group.timingLabel}</strong></td>
       <td className={styles.td}>{group.nodeLabel}</td>
       <td className={styles.td}><div className={styles.rowActions}>
-        {(groupAction || ending) && <MIcon name="hourglass_empty" size={16} />}
+        {(groupAction || ending) && <MIcon name="hourglass_empty" size={16} spin />}
         {(controllableVmids.length > 0 || canEnd) && <div className={styles.menuWrap}>
-          {menuOpen && <PowerMenu
+          {menu.open && <PowerMenu
             title={t("EnvironmentGroupRows.groupPowerTitle")}
             items={[
               ...(controllableVmids.length > 0 ? [
@@ -493,15 +543,40 @@ function EnvironmentGroupRows({ group, onUpdated, onEnded }) {
             ]}
             actionLoading={groupAction || (ending ? "end" : null)}
             onControl={(action) => action === "end" ? endPractice() : runGroupAction(action)}
-            onClose={closeGroupMenu}
+            onClose={() => setMenuOpen(false)}
             anchorRef={menuBtnRef}
-            closing={menuClosing}
+            closing={menu.closing}
           />}
-          <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menuOpen ? styles.menuBtnActive : ""}`} onClick={() => menuOpen ? closeGroupMenu() : setMenuOpen(true)} title={t("EnvironmentGroupRows.groupPowerTitle")} aria-label={t("EnvironmentGroupRows.groupPowerTitle")}><MIcon name="more_vert" size={18} /></button>
+          <button ref={menuBtnRef} type="button" className={`${styles.menuBtn} ${menu.open ? styles.menuBtnActive : ""}`} onClick={() => setMenuOpen((value) => !value)} title={t("EnvironmentGroupRows.groupPowerTitle")} aria-label={t("EnvironmentGroupRows.groupPowerTitle")}><MIcon name="more_vert" size={18} /></button>
         </div>}
       </div></td>
     </tr>
     {expanded && group.machines.map((machine) => <EnvironmentMachineRow key={machine.id} machine={machine} groupStatus={group.status} onUpdated={onUpdated} />)}
+  </>;
+}
+
+/* ── Table head ──
+   導覽示範表與真正的資源表共用同一組欄位，兩張表的欄寬與標題才不會各改各的 */
+const TABLE_COLUMNS = [
+  { col: "colName", labelKey: "ResourcesPage.colName" },
+  { col: "colKind", labelKey: "ResourcesPage.colKind" },
+  { col: "colEnv", labelKey: "ResourcesPage.colEnvironment" },
+  { col: "colStatus", labelKey: "ResourcesPage.colStatus" },
+  { col: "colIp", labelKey: "ResourcesPage.colIp" },
+  { col: "colExpiry", labelKey: "ResourcesPage.colExpiry" },
+  { col: "colNode", labelKey: "ResourcesPage.colNode" },
+  { col: "colActions", labelKey: "ResourcesPage.colActions" },
+];
+
+function ResourceTableHead() {
+  const { t } = useTranslation("personal");
+  return <>
+    <colgroup>
+      {TABLE_COLUMNS.map(({ col }) => <col key={col} className={styles[col]} />)}
+    </colgroup>
+    <thead>
+      <tr>{TABLE_COLUMNS.map(({ col, labelKey }) => <th key={col} className={styles.th}>{t(labelKey)}</th>)}</tr>
+    </thead>
   </>;
 }
 
@@ -555,22 +630,6 @@ function ResourceGuideDemoRow() {
         </td>
       </tr>
     </>
-  );
-}
-
-function ErrorState({ onRetry }) {
-  const { t } = useTranslation("personal");
-  return (
-    <EmptyState
-      icon="error_outline"
-      title={t("ResourcesPage.errorTitle")}
-      action={
-        <button type="button" className={styles.btnSecondary} onClick={onRetry}>
-          <MIcon name="refresh" size={16} />
-          {t("ResourcesPage.retry")}
-        </button>
-      }
-    />
   );
 }
 
@@ -633,7 +692,8 @@ export default function ResourcesPage() {
     return () => clearInterval(timer);
   }, [refreshPending]);
 
-  useAutoRefresh(() => fetchResources(true));
+  const anyBooting = resources.some((r) => r.status === "starting");
+  useAutoRefresh(() => fetchResources(true), anyBooting ? BOOTING_POLL_INTERVAL : undefined);
 
   useEffect(() => {
     const handleGuideState = (event) => {
@@ -649,6 +709,12 @@ export default function ResourcesPage() {
 
   function handleDeleted(vmid) {
     setResources((prev) => prev.filter((r) => r.vmid !== vmid));
+  }
+
+  /* 建立失敗的列重建／刪除後：兩份清單都可能變（重建會回到建立中），直接重抓 */
+  function refreshAfterFailedAction() {
+    fetchResources(true);
+    refreshPending();
   }
 
   // 建立中申請會同時出現在 pending 與資源 API；先移除 placeholder，避免重複列。
@@ -707,11 +773,7 @@ export default function ResourcesPage() {
               </div>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
-                  <colgroup>
-                    <col className={styles.colName} /><col className={styles.colKind} /><col className={styles.colEnv} /><col className={styles.colStatus} />
-                    <col className={styles.colIp} /><col className={styles.colExpiry} /><col className={styles.colNode} /><col className={styles.colActions} />
-                  </colgroup>
-                  <thead><tr><th className={styles.th}>{t("ResourcesPage.colName")}</th><th className={styles.th}>{t("ResourcesPage.colKind")}</th><th className={styles.th}>{t("ResourcesPage.colEnvironment")}</th><th className={styles.th}>{t("ResourcesPage.colStatus")}</th><th className={styles.th}>{t("ResourcesPage.colIp")}</th><th className={styles.th}>{t("ResourcesPage.colExpiry")}</th><th className={styles.th}>{t("ResourcesPage.colNode")}</th><th className={styles.th}>{t("ResourcesPage.colActions")}</th></tr></thead>
+                  <ResourceTableHead />
                   <tbody><ResourceGuideDemoRow /></tbody>
                 </table>
               </div>
@@ -720,23 +782,11 @@ export default function ResourcesPage() {
         ) : (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <colgroup>
-                <col className={styles.colName} />
-                <col className={styles.colKind} />
-                <col className={styles.colEnv} />
-                <col className={styles.colStatus} />
-                <col className={styles.colIp} />
-                <col className={styles.colExpiry} />
-                <col className={styles.colNode} />
-                <col className={styles.colActions} />
-              </colgroup>
-              <thead>
-                <tr><th className={styles.th}>{t("ResourcesPage.colName")}</th><th className={styles.th}>{t("ResourcesPage.colKind")}</th><th className={styles.th}>{t("ResourcesPage.colEnvironment")}</th><th className={styles.th}>{t("ResourcesPage.colStatus")}</th><th className={styles.th}>{t("ResourcesPage.colIp")}</th><th className={styles.th}>{t("ResourcesPage.colExpiry")}</th><th className={styles.th}>{t("ResourcesPage.colNode")}</th><th className={styles.th}>{t("ResourcesPage.colActions")}</th></tr>
-              </thead>
+              <ResourceTableHead />
               <tbody>
                 {environmentGroups.map((group) => <EnvironmentGroupRows key={group.id} group={group} onUpdated={handleUpdated} onEnded={() => fetchResources(true)} />)}
                 {visiblePending.map((req) => <CreatingRow key={`creating:${req.id}`} request={req} onCancelled={refreshPending} />)}
-                {visibleResources.map((r, index) => <ResourceRow key={resourceRowKey(r, index)} resource={r} onUpdated={handleUpdated} onDeleted={handleDeleted} />)}
+                {visibleResources.map((r, index) => <ResourceRow key={resourceRowKey(r, index)} resource={r} onUpdated={handleUpdated} onDeleted={handleDeleted} onRefresh={refreshAfterFailedAction} />)}
               </tbody>
             </table>
           </div>

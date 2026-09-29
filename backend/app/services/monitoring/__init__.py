@@ -3,11 +3,22 @@ from __future__ import annotations
 from importlib import import_module
 from types import ModuleType
 
-__all__ = ["monitoring_service", "alert_service"]
+__all__ = [
+    "ai_metrics",
+    "alert_service",
+    "health_policy",
+    "heartbeat_service",
+    "monitoring_service",
+    "system_health_service",
+]
 
 _MODULES = {
+    "ai_metrics": "app.services.monitoring.ai_metrics",
     "monitoring_service": "app.services.monitoring.monitoring_service",
     "alert_service": "app.services.monitoring.alert_service",
+    "health_policy": "app.services.monitoring.health_policy",
+    "heartbeat_service": "app.services.monitoring.heartbeat_service",
+    "system_health_service": "app.services.monitoring.system_health_service",
 }
 
 
