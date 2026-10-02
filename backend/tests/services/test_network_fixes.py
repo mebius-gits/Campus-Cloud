@@ -250,7 +250,7 @@ def test_sync_nginx_http_rereads_rules_under_the_lock(
     monkeypatch.setattr(
         nginx,
         "build_http_config",
-        lambda rules, cert_names: built.append(list(rules)) or "",
+        lambda rules, cert_names, **_kwargs: built.append(list(rules)) or "",
     )
 
     reverse_proxy_service._sync_nginx(object())
@@ -447,8 +447,8 @@ def test_enrich_edges_does_not_label_udp_as_domain(
 ) -> None:
     monkeypatch.setattr(
         rp_repo,
-        "list_rules",
-        lambda _s: [
+        "list_rules_by_vmids",
+        lambda _s, _vmids: [
             SimpleNamespace(
                 vmid=150, internal_port=8080, domain="web.example.com", enable_https=True
             )
@@ -456,8 +456,8 @@ def test_enrich_edges_does_not_label_udp_as_domain(
     )
     monkeypatch.setattr(
         nat_repo,
-        "list_rules",
-        lambda _s: [
+        "list_rules_by_vmids",
+        lambda _s, _vmids: [
             SimpleNamespace(vmid=150, internal_port=8080, protocol="udp", external_port=30080)
         ],
     )

@@ -23,6 +23,12 @@ from app.core.config import settings
 # init_sentry）之前關掉；env_ignore_empty=True 讓空字串環境變數蓋不掉 .env。
 settings.SENTRY_DSN = None
 
+# 本機 .env 填了 Cloudflare Turnstile 金鑰時，登入／註冊端點會要求機器人驗證
+# token，直接打這些端點的測試會一律拿到 400（CI 沒有 .env 所以不受影響）。
+# 測試預設關閉；要測驗證本身的案例自己用 monkeypatch 開（test_turnstile_service）。
+settings.TURNSTILE_SITE_KEY = None
+settings.TURNSTILE_SECRET_KEY = None
+
 from app.core.db import engine, ensure_first_superuser, init_db
 from app.main import app
 from app.models import (
@@ -36,6 +42,33 @@ from app.models import (
 )
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
+
+
+@pytest.fixture(autouse=True)
+def _clear_proxmox_caches() -> Generator[None, None, None]:
+    """PVE 設定、叢集清單與近期任務是行程內 TTL 快取：每個測試各自 mock，不能吃到上一個測試的結果。"""
+    from app.infrastructure.proxmox.operations import invalidate_cluster_resources_cache
+    from app.infrastructure.proxmox.settings import invalidate_proxmox_settings_cache
+    from app.services.jobs.jobs_service import clear_recent_jobs_cache
+
+    invalidate_proxmox_settings_cache()
+    invalidate_cluster_resources_cache()
+    clear_recent_jobs_cache()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_backup_purge_on_delete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resource_service.delete 成功後會順手清掉機器的備份（要查連線設定、打 PVE）。
+
+    一般測試只 mock 刪除本身，不該因此多連一次資料庫或 PVE；要測這個掛鉤的案例
+    自己再換一個替身（見 test_delete_running_resource）。
+    """
+    from app.services.resource import resource_service
+
+    monkeypatch.setattr(
+        resource_service, "_purge_backups_best_effort", lambda **kwargs: None
+    )
 
 
 def _is_truthy_env(value: str | None) -> bool:

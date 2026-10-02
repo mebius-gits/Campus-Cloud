@@ -301,6 +301,11 @@ export default function TemplatesPage() {
     let cancelled = false;
 
     const tick = async () => {
+      // 分頁隱藏時不打 API，只排下一輪
+      if (document.hidden) {
+        timerRef.current = setTimeout(tick, 4_000);
+        return;
+      }
       const list = await load();
       if (cancelled) return;
       const active = list.some((tpl) => tpl.status === "creating" || tpl.status === "updating");
@@ -407,6 +412,7 @@ export default function TemplatesPage() {
         <EmptyState
           icon="widgets"
           title={t("TemplatesPage.emptyTitle")}
+          action={<button type="button" className={styles.btnPrimary} onClick={() => setCreateOpen(true)}><MIcon name="add" size={16} />{t("TemplatesPage.createFromVm")}</button>}
         />
       ) : (
         <div className={styles.card}>

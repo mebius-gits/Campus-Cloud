@@ -3,13 +3,16 @@ import math
 import time
 import uuid
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from sqlmodel import Session, col, select
 
 from app.core.authorizers import can_bypass_resource_ownership
+from app.core.db import end_read_transaction
 from app.core.i18n import t
 from app.core.security import decrypt_value
 from app.domain.resource_markers import (
@@ -20,6 +23,8 @@ from app.domain.resource_markers import (
 from app.exceptions import BadRequestError, PermissionDeniedError, ProxmoxError
 from app.models import (
     BatchProvisionJob,
+    CourseEnvironment,
+    CourseEnvironmentVersion,
     Resource,
     TeachingClass,
     TeachingClassMachineNode,
@@ -29,7 +34,7 @@ from app.models import (
     VMTemplate,
     VMTemplateStatus,
 )
-from app.models.quick_practice import QuickPracticeSessionMachine
+from app.models.quick_practice import QuickPracticeSession, QuickPracticeSessionMachine
 from app.models.vm_request import VMProvisioningStatus, VMRequest, VMRequestStatus
 from app.repositories import batch_provision as batch_provision_repo
 from app.repositories import resource as resource_repo
@@ -45,6 +50,7 @@ from app.schemas.resource import (
     ResourceStatus,
     SessionStatusResponse,
 )
+from app.services.governance.lifecycle_policy import expiry_datetime
 from app.services.network import firewall_service
 from app.services.proxmox import proxmox_service
 from app.services.resource import kind as resource_kind
@@ -92,22 +98,34 @@ def _enforce_start_window(*, session: Session, vmid: int) -> None:
 StartBlockReason = Literal["window_not_started", "window_ended"]
 
 
+_UNSET: Any = object()
+
+
 def start_window_state(
-    *, session: Session, vmid: int, db_resource: Any | None = None,
+    *,
+    session: Session,
+    vmid: int,
+    db_resource: Any | None = None,
+    latest_request: Any = _UNSET,
 ) -> tuple[StartBlockReason | None, datetime | None, datetime | None]:
     """個人申請機器的核准使用時段：回傳（不能開機的原因, 時段起, 時段迄）。
 
     開機檢查（_enforce_start_window）與機器資料（ResourcePublic.start_blocked_reason）
     共用這一份判斷，卡片上「能不能開」才會跟實際按下去的結果一致。
     課堂機器不受申請時段限制（上課時段只管自動開關機），一律回 (None, None, None)。
+    ``latest_request`` 給清單頁傳入批次查好的結果（None 表示查過、沒有）。
     """
     if db_resource is None:
         db_resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
     if db_resource is not None and getattr(db_resource, "teaching_class_id", None):
         return None, None, None
-    request = vm_request_repo.get_latest_approved_vm_request_by_vmid(
-        session=session,
-        vmid=vmid,
+    request = (
+        vm_request_repo.get_latest_approved_vm_request_by_vmid(
+            session=session,
+            vmid=vmid,
+        )
+        if latest_request is _UNSET
+        else latest_request
     )
     if not request or not request.start_at or not request.end_at:
         return None, None, None
@@ -438,6 +456,153 @@ def _teaching_display_names(
     return display
 
 
+# 清單頁同時查即時 IP 的數量（guest agent 一台可能卡好幾秒，串行時幾十台就逾時）
+_LIST_IP_WORKERS = 8
+
+
+@dataclass
+class _ListPrefetch:
+    """清單頁一次批次查好的資料，_build_resource_public 逐台組裝時直接取用。"""
+
+    ips: dict[int, str | None] = field(default_factory=dict)
+    teaching_classes: dict[uuid.UUID, TeachingClass] = field(default_factory=dict)
+    source_requests: dict[uuid.UUID, VMRequest] = field(default_factory=dict)
+    window_requests: dict[int, VMRequest] = field(default_factory=dict)
+    environment_names: dict[int, str] = field(default_factory=dict)
+
+
+def _live_ip(entry: dict) -> str | None:
+    # 關機的機器 guest agent／interfaces 一定查不到，省一次 PVE 呼叫
+    if entry.get("status") != "running":
+        return None
+    try:
+        return proxmox_service.get_ip_address(
+            entry.get("node", ""), entry.get("vmid"), entry.get("type", "")
+        )
+    except Exception as exc:
+        logger.debug("VMID=%s 即時 IP 查詢失敗（改用快取）: %s", entry.get("vmid"), exc)
+        return None
+
+
+def _prefetch_list(
+    session: Session, pairs: list[tuple[dict, Any]]
+) -> _ListPrefetch:
+    entries = [entry for entry, _db in pairs if entry.get("vmid") is not None]
+    live: dict[int, str | None] = {}
+    if entries:
+        workers = min(_LIST_IP_WORKERS, len(entries))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="res-ip") as pool:
+            live = dict(
+                zip(
+                    (entry["vmid"] for entry in entries),
+                    pool.map(_live_ip, entries),
+                    strict=True,
+                )
+            )
+    db_rows = [db for _entry, db in pairs if db is not None]
+    class_ids = {
+        db.teaching_class_id
+        for db in db_rows
+        if db.allocation_scope == "teaching_class" and db.teaching_class_id
+    }
+    request_ids = {db.request_id for db in db_rows if db.request_id}
+    window_vmids = [
+        db.vmid for db in db_rows if not getattr(db, "teaching_class_id", None)
+    ]
+    teaching_classes = (
+        {
+            tc.id: tc
+            for tc in session.exec(
+                select(TeachingClass).where(col(TeachingClass.id).in_(class_ids))
+            ).all()
+        }
+        if class_ids
+        else {}
+    )
+    return _ListPrefetch(
+        ips=resource_repo.sync_ip_cache_many(session=session, live_ips=live),
+        teaching_classes=teaching_classes,
+        source_requests=(
+            {
+                req.id: req
+                for req in session.exec(
+                    select(VMRequest).where(col(VMRequest.id).in_(request_ids))
+                ).all()
+            }
+            if request_ids
+            else {}
+        ),
+        window_requests=vm_request_repo.get_latest_approved_vm_requests_by_vmids(
+            session=session, vmids=window_vmids
+        ),
+        environment_names=_course_environment_names(session, db_rows, teaching_classes),
+    )
+
+
+def _course_environment_names(
+    session: Session,
+    db_rows: list,
+    teaching_classes: dict[uuid.UUID, TeachingClass],
+) -> dict[int, str]:
+    """機器依據的課程環境名稱（vmid → 名稱），清單頁整批查，最多兩次查詢。
+
+    班級機看班級釘選的版本，快速練習機看練習場次的版本；個人申請、共享機器沒有課程環境。
+    環境沒取名的不放進結果，呼叫端維持主機名。
+    """
+    version_by_vmid: dict[int, uuid.UUID] = {}
+    practice_vmid_by_request: dict[uuid.UUID, int] = {}
+    for db in db_rows:
+        if db.vmid is None:
+            continue
+        teaching_class = (
+            teaching_classes.get(db.teaching_class_id)
+            if db.allocation_scope == "teaching_class" and db.teaching_class_id
+            else None
+        )
+        if teaching_class is not None:
+            if teaching_class.course_version_id:
+                version_by_vmid[db.vmid] = teaching_class.course_version_id
+        elif db.request_id:
+            # 只有快速練習的申請單在練習場次裡有對應，其他申請單查不到就沒有環境名稱
+            practice_vmid_by_request[db.request_id] = db.vmid
+    if practice_vmid_by_request:
+        for request_id, version_id in session.exec(
+            select(
+                QuickPracticeSessionMachine.vm_request_id,
+                QuickPracticeSession.environment_version_id,
+            )
+            .join(
+                QuickPracticeSession,
+                QuickPracticeSessionMachine.session_id == QuickPracticeSession.id,
+            )
+            .where(
+                col(QuickPracticeSessionMachine.vm_request_id).in_(
+                    list(practice_vmid_by_request)
+                )
+            )
+        ).all():
+            if version_id is not None:
+                version_by_vmid[practice_vmid_by_request[request_id]] = version_id
+    if not version_by_vmid:
+        return {}
+    names = dict(
+        session.exec(
+            select(CourseEnvironmentVersion.id, CourseEnvironment.name)
+            .join(
+                CourseEnvironment,
+                CourseEnvironment.id == CourseEnvironmentVersion.environment_id,
+            )
+            .where(col(CourseEnvironmentVersion.id).in_(set(version_by_vmid.values())))
+        ).all()
+    )
+    result: dict[int, str] = {}
+    for vmid, version_id in version_by_vmid.items():
+        name = (names.get(version_id) or "").strip()
+        if name:
+            result[vmid] = name
+    return result
+
+
 def _build_resource_public(
     resource: dict,
     db_resource,
@@ -447,11 +612,15 @@ def _build_resource_public(
     known_practice_ids: set[uuid.UUID] | None = None,
     public_urls: dict[int, list[str]] | None = None,
     display_names: dict[int, str] | None = None,
+    prefetch: _ListPrefetch | None = None,
 ) -> ResourcePublic:
     vmid = resource.get("vmid")
     # 清單頁會先把所有機器的對外網址批次查好傳進來；單筆查詢就現查這一台。
     if public_urls is None and vmid is not None:
         public_urls = public_urls_by_vmid(session, [vmid])
+    # 清單頁批次查好 IP／班級／申請單；單筆查詢就只查這一台
+    if prefetch is None:
+        prefetch = _prefetch_list(session, [(resource, db_resource)])
     class_governed = bool(
         db_resource and db_resource.allocation_scope == "teaching_class"
     )
@@ -460,27 +629,35 @@ def _build_resource_public(
     spec_fixed = class_governed or is_practice
     class_available = not class_governed
     teaching_class_name: str | None = None
+    teaching_class: TeachingClass | None = None
     if class_governed and db_resource.teaching_class_id:
-        teaching_class = session.get(TeachingClass, db_resource.teaching_class_id)
+        teaching_class = prefetch.teaching_classes.get(db_resource.teaching_class_id)
         class_available = bool(
             teaching_class
             and teaching_class.status == TeachingClassStatus.active
         )
         teaching_class_name = teaching_class.name if teaching_class else None
-    ip_address = proxmox_service.get_ip_address(node, vmid, vm_type)
-    # 線上：寫回快取；離線：回退 DB 快取。DB 出錯時 sync_ip_cache 會 rollback。
-    ip_address = resource_repo.sync_ip_cache(
-        session=session, vmid=vmid, live_ip=ip_address
+    # 線上：即時 IP（已寫回快取）；離線：DB 快取或佈建時分配的 IP
+    ip_address = prefetch.ips.get(vmid) if vmid is not None else None
+    course_environment_name = (
+        prefetch.environment_names.get(vmid)
+        if db_resource is not None and vmid is not None
+        else None
     )
     start_blocked_reason, window_start_at, window_end_at = (None, None, None)
     if vmid is not None:
         start_blocked_reason, window_start_at, window_end_at = start_window_state(
-            session=session, vmid=vmid, db_resource=db_resource,
+            session=session,
+            vmid=vmid,
+            db_resource=db_resource,
+            latest_request=(
+                prefetch.window_requests.get(vmid) if db_resource is not None else _UNSET
+            ),
         )
     quick_practice_limited = False
     source_kind: str | None = None
     if db_resource and db_resource.request_id:
-        source_request = session.get(VMRequest, db_resource.request_id)
+        source_request = prefetch.source_requests.get(db_resource.request_id)
         source_kind = source_request.request_kind if source_request else None
         quick_practice_limited = source_kind == "quick_template"
     return ResourcePublic(
@@ -536,6 +713,7 @@ def _build_resource_public(
             db_resource, is_practice=is_practice, request_kind=source_kind
         ),
         teaching_class_name=teaching_class_name,
+        course_environment_name=course_environment_name,
         public_urls=list((public_urls or {}).get(vmid, [])) if vmid is not None else [],
         start_blocked_reason=start_blocked_reason,
         window_start_at=window_start_at,
@@ -632,20 +810,24 @@ def list_all(
         )
         result = []
         owner_ids: dict[int, uuid.UUID] = {}
+        entries = [
+            r for r in resources
+            if not ((node and r.get("node") != node) or r.get("template") == 1)
+        ]
+        db_by_vmid = resource_repo.get_resources_by_vmids(
+            session=session, vmids=[r.get("vmid") for r in entries]
+        )
         pairs: list[tuple[dict, Any]] = []
-        for r in resources:
-            if (node and r.get("node") != node) or r.get("template") == 1:
-                continue
+        for r in entries:
             vmid = r.get("vmid")
-            db_resource = resource_repo.get_resource_by_vmid(
-                session=session, vmid=vmid
-            )
+            db_resource = db_by_vmid.get(vmid)
             pairs.append((r, db_resource))
             if db_resource is not None:
                 owner_ids[vmid] = db_resource.user_id
         display_names = _teaching_display_names(
             session=session, db_resources=[db for _, db in pairs]
         )
+        prefetch = _prefetch_list(session, pairs)
         for r, db_resource in pairs:
             result.append(
                 _build_resource_public(
@@ -653,6 +835,7 @@ def list_all(
                     session, known_practice_ids,
                     public_urls=public_urls,
                     display_names=display_names,
+                    prefetch=prefetch,
                 )
             )
         # 管理員視角：別人的機器都標擁有者；自己的跳過，
@@ -771,15 +954,16 @@ def list_by_user(
             session=session, user_id=user_id
         )
         owned_vmids = {r.vmid: r for r in user_resources}
-        shared_rows: dict[int, Any] = {}
-        for share in share_repo.list_shares_for_user(session=session, user_id=user_id):
-            if share.resource_vmid in owned_vmids:
-                continue
-            shared_db = resource_repo.get_resource_by_vmid(
-                session=session, vmid=share.resource_vmid
-            )
-            if shared_db is not None:
-                shared_rows[share.resource_vmid] = shared_db
+        shared_rows: dict[int, Any] = resource_repo.get_resources_by_vmids(
+            session=session,
+            vmids=[
+                share.resource_vmid
+                for share in share_repo.list_shares_for_user(
+                    session=session, user_id=user_id
+                )
+                if share.resource_vmid not in owned_vmids
+            ],
+        )
         # 老師：所帶班級底下學生的機器也列進來（有管理權，標示為「學生機器」）
         taught_rows: dict[int, Any] = {}
         owned_class_ids = list_teaching_class_ids_owned_by(
@@ -803,7 +987,11 @@ def list_by_user(
                 session=session,
                 db_resources=[*owned_vmids.values(), *shared_rows.values(), *taught_rows.values()],
             )
+            # 叢集清單走全域 single-flight 鎖，整班同時開頁面時會排隊；排隊期間
+            # 別抱著 DB 連線（持鎖那一方重連 PVE 時還要再取連線）
+            end_read_transaction(session)
             try:
+                pairs: list[tuple[dict, Any]] = []
                 for r in proxmox_service.list_all_resources():
                     if r.get("template") == 1:
                         continue
@@ -813,8 +1001,11 @@ def list_by_user(
                         or shared_rows.get(vmid)
                         or taught_rows.get(vmid)
                     )
-                    if db_row is None:
-                        continue
+                    if db_row is not None:
+                        pairs.append((r, db_row))
+                prefetch = _prefetch_list(session, pairs)
+                for r, db_row in pairs:
+                    vmid = r.get("vmid")
                     public = _build_resource_public(
                         r,
                         db_row,
@@ -824,6 +1015,7 @@ def list_by_user(
                         known_practice_ids,
                         public_urls=public_urls,
                         display_names=display_names,
+                        prefetch=prefetch,
                     )
                     if vmid in shared_rows:
                         _mark_shared(public, db_row, session)
@@ -1233,6 +1425,9 @@ def delete(
             )
             raise
 
+        # PVE 的 purge 不會刪備份檔，而 VMID 會被重用：連同這台機器的備份一起清
+        _purge_backups_best_effort(node=node, vmid=vmid)
+
         _cleanup_after_resource_removed(
             session=session,
             vmid=vmid,
@@ -1302,6 +1497,18 @@ def delete_orphan_db_record(
         details=f"Orphan DB cleanup for vmid={vmid} (VM not found in Proxmox)",
     )
     logger.info("Orphan DB record for vmid=%s cleaned up", vmid)
+
+
+def _purge_backups_best_effort(*, node: str, vmid: int) -> None:
+    """機器已從 PVE 刪除：清掉 SkyLab 為它建立的備份；失敗只記 log，不擋刪除。"""
+    try:
+        from app.services.resource import backup_service
+
+        backup_service.purge_backups_for_removed_machine(node=node, vmid=vmid)
+    except Exception:
+        logger.warning(
+            "Failed to purge backups of deleted resource %s", vmid, exc_info=True
+        )
 
 
 def _cleanup_after_resource_removed(
@@ -1634,8 +1841,54 @@ def get_session_status(
     auto_stop wins when both apply, since it's typically minutes away while
     expiry is at least hours.
     """
-    resource = resource_repo.get_resource_by_vmid(session=session, vmid=vmid)
-    running = resource_info.get("status") == "running"
+    return _session_status(
+        session=session,
+        vmid=vmid,
+        resource=resource_repo.get_resource_by_vmid(session=session, vmid=vmid),
+        running=resource_info.get("status") == "running",
+        policy=get_schedule_policy(session=session),
+    )
+
+
+def list_my_session_statuses(
+    *, session: Session, user_id: uuid.UUID
+) -> list[SessionStatusResponse]:
+    """本人所有執行中機器的 session 狀態（學生 UI 的關機警告一次輪詢完）。
+
+    原本前端每 30 秒對每台執行中的機器各打一次 ``/{vmid}/session-status``，
+    每次都要 find_resource；這裡一份叢集清單、一份排程政策就算完。
+    """
+    resources = resource_repo.get_resources_by_user(session=session, user_id=user_id)
+    if not resources:
+        return []
+    end_read_transaction(session)
+    pve_by_vmid = proxmox_service.list_all_resources_by_vmid()
+    policy = get_schedule_policy(session=session)
+    statuses: list[SessionStatusResponse] = []
+    for resource in resources:
+        entry = pve_by_vmid.get(resource.vmid)
+        if entry is None or entry.get("status") != "running":
+            continue
+        statuses.append(
+            _session_status(
+                session=session,
+                vmid=resource.vmid,
+                resource=resource,
+                running=True,
+                policy=policy,
+            )
+        )
+    return statuses
+
+
+def _session_status(
+    *,
+    session: Session,
+    vmid: int,
+    resource: Resource | None,
+    running: bool,
+    policy: Any,
+) -> SessionStatusResponse:
     auto_stop_at = resource.auto_stop_at if resource else None
     auto_stop_reason = resource.auto_stop_reason if resource else None
     request_id = getattr(resource, "request_id", None) if resource else None
@@ -1643,8 +1896,6 @@ def get_session_status(
     quick_practice_limited = bool(
         request and request.request_kind == "quick_template"
     )
-
-    policy = get_schedule_policy(session=session)
 
     minutes_until_stop: int | None = None
     auto_stop_warn = False
@@ -1657,9 +1908,7 @@ def get_session_status(
     hours_until_expiry: int | None = None
     expiry_warn = False
     if running and resource and resource.expiry_date and resource.batch_job_id is None:
-        expiry_at = datetime.combine(
-            resource.expiry_date, datetime.min.time(), tzinfo=UTC
-        ) + timedelta(days=1)
+        expiry_at = expiry_datetime(resource.expiry_date)
         delta_h = (expiry_at - _utc_now()).total_seconds() / 3600
         hours_until_expiry = max(math.ceil(delta_h), 0)
         expiry_warn = 0 < delta_h <= policy.expiry_warning_hours

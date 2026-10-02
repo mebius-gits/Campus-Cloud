@@ -1,8 +1,5 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../contexts/AuthContext";
 import { LayoutContext } from "../../layout/layoutContext";
@@ -300,6 +297,9 @@ function ChoiceRow({ choices, progress, onAnswer, onPlanNow, allowPlan = true })
   );
 }
 
+// markdown 解析器很大，等真的有 AI 回覆要顯示時才載入
+const MarkdownContent = lazy(() => import("./MarkdownContent"));
+
 function Message({ message, currentPath, onNavigate, onRecommend, onAnswer, onPlanNow, onFlowStep }) {
   const isUser = message.role === "user";
   return (
@@ -315,7 +315,9 @@ function Message({ message, currentPath, onNavigate, onRecommend, onAnswer, onPl
           <div className={styles.messageText}>{message.content}</div>
         ) : (
           <div className={`${styles.messageText} ${styles.markdown}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{message.content}</ReactMarkdown>
+            <Suspense fallback={message.content}>
+              <MarkdownContent>{message.content}</MarkdownContent>
+            </Suspense>
           </div>
         )}
         {/* 先給結果（配置），再給接下來要做的事（流程），最後才是選項 */}
@@ -1028,14 +1030,17 @@ export default function AiFloatingChat({ open = false, onOpenChange = () => {} }
               <div className={styles.emptyState}>
                 <h2>{displayName(user, t)}{t("AiFloatingChat.greetingSuffix")}</h2>
                 <p>{t("AiFloatingChat.emptyStatePrompt")}</p>
-                {/* 能力要講出來，不然沒有人知道可以叫它推薦規格、幫忙填表 */}
+                {/* 能力要講出來，不然沒有人知道可以叫它推薦規格、幫忙填表。
+                    但它只是說明、不能點：做成一般的圓點清單，可點的只有下方建議問題
+                    （原本白底細框的樣子像按鈕，常被誤點） */}
                 <ul className={styles.capabilities}>
                   {CAPABILITIES.map((item) => (
-                    <li key={item.titleKey}>
-                      <strong>{t(item.titleKey)}</strong>
-                    </li>
+                    <li key={item.titleKey}>{t(item.titleKey)}</li>
                   ))}
                 </ul>
+                {pageContext.suggestionKeys.length > 0 && (
+                  <p className={styles.suggestionsLead}>{t("AiFloatingChat.suggestionsLead")}</p>
+                )}
                 <div className={styles.suggestions}>
                   {pageContext.suggestionKeys.map((key) => (
                     <button key={key} type="button" onClick={() => send(t(key))}>
